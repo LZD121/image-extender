@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "type": "tile-set",
+  "project": "demo",
+  "kind": "tiles",
+  "slug": "sample",
+  "createdAt": "2026-10-05T00:00:00.000Z",
+  "updatedAt": "2026-10-05T00:00:00.000Z",
+  "manifest": null,
+  "files": {
+    "sheet": null,
+    "derived": ["derived/body.png"]
+  },
+  "provenance": {
+    "backend": "openrouter",
+    "model": "fixture",
+    "prompt": "fixture asset for the AI e2e suite",
+    "sceneBrief": null,
+    "artStyle": null,
+    "params": {},
+    "requested": null,
+    "returned": "64x64",
+    "cost": null,
+    "toolVersion": "fixture"
+  }
+}

@@ -435,6 +435,30 @@ Generated assets are saved to a local, git-shareable directory:
 - `provenance.cost` is reserved but currently always `null`: the value is parsed
   out of `/api/generate` responses but is not threaded into the studios' state yet.
 
+## AI-driven UI tests (Midscene + Playwright)
+
+```bash
+npm run test:ai          # 11 specs, ~15s + model latency
+npm run test:ai:report   # open the Playwright report
+```
+
+Kept separate from `npm test` (vitest: fast, layer-level, every save) because this
+one boots a real dev server and drives a real Chromium through a vision model.
+
+- **Model config**: copy `.env.midscene.example` to `.env.midscene` and point it at
+  an OpenAI-compatible endpoint exposing a multimodal model with UI localization.
+  Verify any config with `npx @midscene/cli model verify`. The checked-in example
+  targets a local gateway and contains no secret.
+- **First run** needs the browser: `npx playwright install chromium`.
+- **Test data isolation**: `e2e/fixtures/assets/` is copied to a temp dir per run
+  and passed as `IE_ASSETS_DIR`, so a spec that saves or deletes an asset can never
+  touch the repository's own `assets/`.
+- **Locators over AI**: anything structural is asserted with a normal Playwright
+  locator (exact, free, instant). `aiAssert` is reserved for what a selector cannot
+  express, e.g. "a thumbnail is rendered next to the item".
+- **Reports**: Midscene writes `midscene_run/report/*.html` (every step, with
+  screenshots), Playwright writes `playwright-report/`.
+
 ## Project structure
 
 ```

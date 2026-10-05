@@ -30,7 +30,9 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:ai": "playwright test",
+    "test:ai:report": "playwright show-report"
   },
   "dependencies": {
     "jszip": "^3.10.1",
@@ -39,6 +41,8 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@midscene/web": "^1.14.0",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",

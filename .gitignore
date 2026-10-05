@@ -49,3 +49,9 @@ next-env.d.ts
 
 # Asset library: only derived/ is versioned; raw model output stays local.
 assets/**/raw/
+
+# AI e2e suite (Midscene + Playwright)
+.env.midscene
+playwright-report/
+test-results/
+midscene_run/
