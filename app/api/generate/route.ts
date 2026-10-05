@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractCost } from '@/app/lib/generateCost'
+import { styleDirective } from '@/app/lib/stylePrompt'
 
 const DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview'
 
@@ -91,56 +92,8 @@ export async function POST(request: NextRequest) {
 
     const modelId = (typeof model === 'string' && model.trim()) ? model.trim() : DEFAULT_MODEL
 
-    // Art style descriptions
-    const artStyleDescriptions: { [key: string]: string } = {
-      'cinematic': 'cinematic photography with dramatic lighting and film grain',
-      'vintage': 'vintage film photography with faded colors and retro feel',
-      'black-white': 'black and white photography with rich contrast',
-      'macro': 'macro photography with shallow depth of field',
-      'oil-painting': 'oil painting style with visible brush strokes and rich textures',
-      'watercolor': 'watercolor painting with soft washes and flowing colors',
-      'impressionism': 'impressionist painting style with loose brushwork',
-      'abstract': 'abstract art with bold shapes and colors',
-      'pop-art': 'pop art style with bold colors and graphic elements',
-      'cubism': 'cubist style with geometric shapes and multiple perspectives',
-      'minimalist': 'minimalist art with simple forms and limited colors',
-      'digital-art': 'digital art with smooth gradients and modern aesthetics',
-      'cyberpunk': 'cyberpunk style with neon colors and futuristic elements',
-      'vaporwave': 'vaporwave aesthetic with pastel colors and retro-futuristic vibes',
-      'low-poly': 'low poly 3D art with geometric faceted surfaces',
-      'pixel-art': 'pixel art style with retro video game aesthetics',
-      '3d-render': '3D rendered look with realistic lighting and materials',
-      'anime': 'anime/manga style with bold lines and vibrant colors',
-      'cartoon': 'cartoon illustration with exaggerated features',
-      'comic-book': 'comic book style with bold inking and halftone dots',
-      'sketch': 'pencil sketch with cross-hatching and shading',
-      'ink': 'ink drawing with bold black lines and dramatic contrast',
-      'studio-ghibli': 'Studio Ghibli animation style with whimsical, hand-drawn aesthetics and rich environmental details',
-      'pixar': 'Pixar animation style with smooth 3D rendering, expressive characters, and vibrant colors',
-      'disney': 'Disney animation style with classic hand-drawn or modern 3D aesthetics and magical atmosphere',
-      'dreamworks': 'DreamWorks animation style with dynamic expressions and cinematic lighting',
-      'illumination': 'Illumination Entertainment style with bright colors, playful characters, and bold shapes',
-      'laika': 'Laika Studios stop-motion style with intricate textures and handcrafted details',
-      'cartoon-network': 'Cartoon Network style with bold outlines, simplified shapes, and vibrant colors',
-      'nickelodeon': 'Nickelodeon animation style with energetic, expressive characters and bright color palettes',
-      'aardman': 'Aardman claymation style with textured plasticine characters and British humor aesthetics',
-      'blue-sky': 'Blue Sky Studios animation style with detailed 3D rendering and dynamic action sequences',
-      'fantasy': 'fantasy art with magical and ethereal elements',
-      'sci-fi': 'science fiction with futuristic technology and environments',
-      'steampunk': 'steampunk style with Victorian-era and industrial elements',
-      'surreal': 'surrealist style with dreamlike and impossible elements',
-      'art-deco': 'Art Deco style with geometric patterns and elegant lines',
-      'art-nouveau': 'Art Nouveau with flowing organic lines and natural motifs',
-      'retro-80s': '1980s retro style with bright colors and bold graphics',
-      'retro-50s': '1950s vintage style with pastel colors and classic aesthetics'
-    }
-
     // Build the full prompt
-    let fullPrompt = prompt
-
-    if (artStyle && artStyleDescriptions[artStyle]) {
-      fullPrompt = `Create an image in ${artStyleDescriptions[artStyle]}. ${prompt}`
-    }
+    let fullPrompt = `${styleDirective(artStyle)}${prompt}`
 
     // Parallax mode: when a layer role is provided, scaffold the prompt with
     // role-specific composition rules. Non-sky layers must isolate elements
@@ -254,7 +207,7 @@ export async function POST(request: NextRequest) {
     // restyled map at known cell coordinates to pull each of the 13 unique
     // tile roles out (outer corners, edges, inner corners, body).
     if (tileSheet === true) {
-      fullPrompt = `You are restyling a structural reference image for a side-view 2D platformer tile set. The reference is attached.
+      fullPrompt = `${styleDirective(artStyle)}You are restyling a structural reference image for a side-view 2D platformer tile set. The reference is attached.
 
 THE REFERENCE — what it shows:
 - A rectangular platform silhouette on a flat magenta (#FF00FF) background.
@@ -391,7 +344,7 @@ The user's material is: "${prompt.trim()}". Paint this material onto the gray re
       }
       const anchorPlan = ANCHOR_POSE[anchorBodyPlan] ?? ANCHOR_POSE.biped
 
-      fullPrompt = `You are generating a single CHARACTER REFERENCE IMAGE for a 2D side-view game creature. This image will be used downstream as a VISUAL ANCHOR for generating an 8-frame animation sprite-sheet — the model that paints those 8 frames will be shown THIS image and asked to match it exactly. The creature's appearance in this image therefore needs to be definitive, readable, and crisp.
+      fullPrompt = `${styleDirective(artStyle)}You are generating a single CHARACTER REFERENCE IMAGE for a 2D side-view game creature. This image will be used downstream as a VISUAL ANCHOR for generating an 8-frame animation sprite-sheet — the model that paints those 8 frames will be shown THIS image and asked to match it exactly. The creature's appearance in this image therefore needs to be definitive, readable, and crisp.
 
 ${anchorPlan.pose}
 
@@ -1015,7 +968,7 @@ CRITICAL — DO NOT JUST COPY THE GUIDE:
 The guide shows the character in the SAME NEUTRAL POSE in all ${frames} cells. You are NOT being asked to reproduce that. Your job is to REPLACE THE POSE in each cell with the choreography pose described below, WHILE preserving position, scale, baseline, identity, and background EXACTLY. If your output shows the same neutral pose in every cell, you have failed the task — read the choreography section and use the prescribed pose for each cell.`
         : ''
 
-      fullPrompt = `You are generating a single SPRITE-SHEET IMAGE: a ${cols}×${rows} grid of ${frames} animation keyframes for a 2D side-view game character. Each grid cell is exactly ${cellPx}×${cellPx} pixels. The full sheet is exactly ${cols * cellPx}×${rows * cellPx} pixels, a WIDE ${cols * cellPx}:${rows * cellPx} canvas — NOT a square canvas and NOT a screenshot/mockup containing a smaller sheet.${guideBlock}
+      fullPrompt = `${styleDirective(artStyle)}You are generating a single SPRITE-SHEET IMAGE: a ${cols}×${rows} grid of ${frames} animation keyframes for a 2D side-view game character. Each grid cell is exactly ${cellPx}×${cellPx} pixels. The full sheet is exactly ${cols * cellPx}×${rows * cellPx} pixels, a WIDE ${cols * cellPx}:${rows * cellPx} canvas — NOT a square canvas and NOT a screenshot/mockup containing a smaller sheet.${guideBlock}
 
 GRID LAYOUT (single most important rule — read it twice):
 - The output is ONE IMAGE containing ${frames} separate frames laid out as ${cols} columns × ${rows} rows.
@@ -1084,11 +1037,7 @@ ${briefs.map((b, i) => `${i + 1}. ${b}`).join('\n')}`
         : `WHAT TO PAINT — YOU choose the decorations:
 - Invent a VARIED, surprising mix of decorations that fit this world. Make every one of the ${count} cells a DIFFERENT KIND of object — no two alike, no near-duplicates.`
 
-      fullPrompt = `${
-        artStyle && artStyleDescriptions[artStyle]
-          ? `Art style: ${artStyleDescriptions[artStyle]}. `
-          : ''
-      }You are painting a DECORATION / PROP ATLAS for a side-view 2D platformer — small standalone decoration sprites that get scattered ON TOP of a tile map.
+      fullPrompt = `${styleDirective(artStyle)}You are painting a DECORATION / PROP ATLAS for a side-view 2D platformer — small standalone decoration sprites that get scattered ON TOP of a tile map.
 
 LAYOUT — a clean contact sheet:
 - A grid of EXACTLY ${cols} columns × ${rows} rows = ${count} equal cells on a flat pure magenta ${KEY_COLOR_HEX} background.
