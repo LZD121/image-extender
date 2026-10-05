@@ -5,6 +5,7 @@ import path from 'node:path'
 import {
   assetsRoot,
   deleteAsset,
+  LibraryError,
   listAssets,
   readAssetFile,
   readMeta,
@@ -162,5 +163,19 @@ describe('library fs layer', () => {
     const index = await listAssets()
     expect(index.projects).toEqual([])
     expect(index.warnings).toEqual(['orphaned write directory: dungeon/tiles/mossy-stone.old-12345-999'])
+  })
+
+  it('flags a duplicate asset with a typed code the route can map to 409', async () => {
+    await saveAsset('dungeon', 'tiles', 'mossy-stone', meta(), { 'derived/body.png': PNG })
+    await expect(
+      saveAsset('dungeon', 'tiles', 'mossy-stone', meta(), { 'derived/body.png': PNG })
+    ).rejects.toBeInstanceOf(LibraryError)
+    await expect(
+      saveAsset('dungeon', 'tiles', 'mossy-stone', meta(), { 'derived/body.png': PNG })
+    ).rejects.toMatchObject({ code: 'EEXISTS' })
+
+    await expect(deleteAsset('dungeon', 'tiles', 'nope')).rejects.toMatchObject({
+      code: 'ENOTFOUND',
+    })
   })
 })

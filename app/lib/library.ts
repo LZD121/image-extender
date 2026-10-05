@@ -25,6 +25,19 @@ const DATA_URL_RE = /^data:image\/(png|jpeg|webp);base64,/
 // Leftovers from a crashed save/overwrite swap. Not assets — report, never list.
 const ORPHAN_RE = /^[a-z0-9][a-z0-9-]*\.(old|tmp)-\d+-\d+$/
 
+/**
+ * Typed errors for the cases the HTTP route maps to a status code itself.
+ * Everything else (bad payload, bad path, bad name) is a plain Error → 400.
+ */
+export type LibraryErrorCode = 'EEXISTS' | 'ENOTFOUND'
+
+export class LibraryError extends Error {
+  constructor(message: string, readonly code: LibraryErrorCode) {
+    super(message)
+    this.name = 'LibraryError'
+  }
+}
+
 export function assetsRoot(): string {
   return path.resolve(process.env.IE_ASSETS_DIR || path.join(process.cwd(), 'assets'))
 }
@@ -59,7 +72,7 @@ export async function saveAsset(
 ): Promise<string[]> {
   const dir = resolveAssetDir(assetsRoot(), project, kind, slug)
   if ((await exists(dir)) && !opts.overwrite) {
-    throw new Error(`asset already exists: ${project}/${kind}/${slug}`)
+    throw new LibraryError(`asset already exists: ${project}/${kind}/${slug}`, 'EEXISTS')
   }
 
   const entries = Object.entries(files)
@@ -119,7 +132,7 @@ export async function readAssetFile(
 
 export async function deleteAsset(project: string, kind: string, slug: string): Promise<void> {
   const dir = resolveAssetDir(assetsRoot(), project, kind, slug)
-  if (!(await exists(dir))) throw new Error(`asset not found: ${project}/${kind}/${slug}`)
+  if (!(await exists(dir))) throw new LibraryError(`asset not found: ${project}/${kind}/${slug}`, 'ENOTFOUND')
   await rm(dir, { recursive: true, force: true })
 }
 
