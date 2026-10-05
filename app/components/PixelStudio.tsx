@@ -29,6 +29,8 @@ import {
   type GridAnalysis,
   type PixelBuffer,
 } from '@/app/utils/pixelGrid'
+import LibraryPanel from '@/app/components/LibraryPanel'
+import type { CollectedAsset } from '@/app/lib/libraryCollect'
 
 type SubMode = 'stills' | 'character'
 type StillKind = 'tiles' | 'props'
@@ -92,10 +94,28 @@ export function PixelStudio() {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showProcessed, setShowProcessed] = useState<Record<string, boolean>>({})
+  const [project, setProject] = useState('')
 
   useEffect(() => {
     setKey(readPixelKey())
   }, [])
+
+  useEffect(() => {
+    try {
+      setProject(localStorage.getItem(PIXEL_PROJECT_STORAGE) ?? 'default')
+    } catch {
+      setProject('default')
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!project) return
+    try {
+      localStorage.setItem(PIXEL_PROJECT_STORAGE, project)
+    } catch {
+      /* ignore */
+    }
+  }, [project])
 
   useEffect(() => {
     writeStoredNumber(PIXEL_BLOCK_STORAGE, block)
@@ -180,6 +200,39 @@ export function PixelStudio() {
       setBusy(null)
     }
   }
+
+  /** Only candidates with a processed image can be saved. */
+  const collect = useCallback((): CollectedAsset | null => {
+    const ready = candidates.filter((c) => c.processedUrl)
+    if (ready.length === 0) return null
+    const kind = sub === 'character' ? 'sprites' : stillKind
+    const files: Record<string, string> = {}
+    const first = ready[0]
+    files['raw/source.png'] = first.sourceUrl
+    if (sub === 'character') {
+      ready.forEach((c, i) => {
+        files[`derived/dir_${String(i).padStart(2, '0')}.png`] = c.processedUrl as string
+      })
+    } else {
+      files['derived/cell.png'] = first.processedUrl as string
+    }
+    return {
+      kind,
+      files,
+      manifest: null,
+      provenance: {
+        backend: 'pixellab',
+        model: sub === 'character' ? 'create-character-v3' : 'create-image-pixflux',
+        prompt: description || null,
+        sceneBrief: null,
+        artStyle: null,
+        params: sub === 'character' ? { template, view, size } : { width, height, no_background: noBackground, block, cell },
+        requested: sub === 'character' ? `${size}x${size}` : `${width}x${height}`,
+        returned: first.figure ? `${first.figure.width}x${first.figure.height}` : null,
+        cost: null,
+      },
+    }
+  }, [candidates, sub, stillKind, description, template, view, size, width, height, noBackground, block, cell])
 
   /** Analyse a source image; decimate + crop when the gate passes. */
   const process = useCallback(
@@ -407,6 +460,25 @@ export function PixelStudio() {
       <p className="text-[10px] text-white/40">
         Figure band {DEFAULT_FIGURE_BAND.min}-{DEFAULT_FIGURE_BAND.max}px on a {cell}px cell.
       </p>
+
+      <div className="rounded border border-white/10 p-2">
+        <p className="mb-2 text-xs text-white/60">
+          保存到资产库（成品才会入库；source 原图存进 raw/）
+        </p>
+        <LibraryPanel
+          pending={async () => collect()}
+          project={project}
+          onProjectChange={setProject}
+          onLoad={(url) => {
+            // 库里存的是已完成资产：只展示，不再走一次 decimate —— 再抽一次会把图毁掉。
+            setCandidates((prev) => [
+              { id: `lib-${Date.now()}`, label: 'from library', sourceUrl: url, analysis: null, processedUrl: null, figure: null, warnings: [] },
+              ...prev,
+            ])
+          }}
+          onSaved={() => setCandidates([])}
+        />
+      </div>
     </div>
   )
 }
