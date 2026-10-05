@@ -364,3 +364,27 @@ Expected: `wrote: 8`，且 `duplicateFrames: []`。
 2. **`pixel-art` 的帧间一致性**：本次矩阵走的是**单趟**；app 本就有"锚点 → sheet"两趟流程（pass 1 锁身份）正是为此设计。**用锚点重测 pixel-art** 是下一个显然的实验。
 3. 三条文本/图像路由现在共用表，但 `pixel-art` / `low-poly` 的**强化文案只作用于图像生成路径**（extend / generate）；两个 brief 路由只共用描述。
 4. 未做：把风格结论写进 README / 推荐到 UI 默认值。
+
+---
+
+## Follow-up results（2026-10-05，四项全部执行）
+
+### 0. `npm run test:ai` 核对 —— ✅
+路由改动后重跑 11 条 Midscene UI 用例：**11 passed (12.6s)**。prompt 拼装改动未影响前端接线。
+
+### P1. `pixel-art` 锚点两趟重测 —— ✅ 有效，推荐改用两趟
+
+- Pass 1 锚点：出来的骑士本身就是**很好的像素画**（1024² 下块约 16–20px，说明模型确实在画连贯的格；平涂、有限配色、洋红干净）。
+- Pass 2 带 `spriteIdentityImage`：8 帧 4×2，**目视一致性明显优于单趟**（单趟那版第 3、7 帧明显更瘦，锚点版消失）。`sprite-align`：`wrote: 8`、`duplicateFrames: []`。
+- **一个被否决的指标，记在这里免得后人重犯**：我试过用"逐帧非背景 bbox 离散度"衡量漂移 —— **无效**。bbox 主要由**姿势**决定（迈步幅度、剑的角度），锚点版 sd 反而更大（35.0 vs 20.4）而它显然更一致。bbox 不能用来测角色漂移。
+
+### P2. `extend` 风格位置 —— ❌ **假设不成立，未改代码**
+
+- 实测（当前代码，风格在编号指令第 7 项）：用 low-poly 背景做 38% 右向扩展，**2/2 样本新区域的风格完全正确**（切面山体、平涂、配色延续）。
+- 结论：**"排在末尾会失效"这个假设没有证据支持**。不做 B 变体（前置 directive），不改代码 —— 不为一个未被观测到的缺陷增加改动面。
+- **顺带冒出一个更值钱的问题**：两次扩展都在源图右缘出现**硬竖直接缝**（结构性不连续，源图边缘的山体没被续上）。
+  - 已核实**不是工具链缺步骤**：`harmonizeHorizontalSeams` 属于 `makeTileable2D`（可平铺化），不是 extend 的通用后处理；`ie.py` 跑的 `applyFullContextResult` 就是 app 自己的 Poisson 混合。
+  - **UI 有缓解机制**（多候选 + 按 `measureSeamResidual` 取最优），而单次 headless `ie.py extend` 不走这套。所以这是"单次扩展"的已知局限，不是产品回归 —— 但值得单开 ticket。
+
+### P3. 结论固化 —— ✅
+`README.md` 新增 "Stylized art: which studio for which job"：分工表（真格 → Pixel studio；风格 → 其余五个）、配方排序（`low-poly` 最佳 / `pixel-art` 配两趟 / `cartoon` 作对照）、"必须原生分辨率目视、色数与纯度对风格化无效"、以及上述接缝与 stylePrompt 的注意点。
