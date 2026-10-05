@@ -149,3 +149,29 @@ export function cropToCell(
   }
   return { image, figure, warnings }
 }
+
+export type GridAnalysis = {
+  ok: boolean
+  block: number
+  ox: number
+  oy: number
+  purity: number
+  /** Diagnostic: distinguishes 1px-grain sources from already-blocky ones. */
+  purityAtBlockOne: number
+}
+
+/**
+ * Purity is a gate, not decoration. Below the threshold the caller must show
+ * the measurement and ask a human instead of decimating quietly.
+ */
+export function analyzeGrid(buf: PixelBuffer, block: number = DEFAULT_BLOCK, threshold: number = PURITY_THRESHOLD): GridAnalysis {
+  const best = bestPhase(buf, block)
+  return {
+    ok: best.purity >= threshold,
+    block,
+    ox: best.ox,
+    oy: best.oy,
+    purity: best.purity,
+    purityAtBlockOne: purityAt(buf, 1, 0, 0),
+  }
+}
