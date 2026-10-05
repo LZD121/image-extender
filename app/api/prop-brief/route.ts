@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
+
 // ART DIRECTOR — call #1 of the two-call props pipeline.
 //
 // A *text* model looks at the biome and the categories ALREADY in the library,
@@ -10,26 +12,6 @@ import { NextRequest, NextResponse } from 'next/server'
 // a reasoning model can deliberately reach for fresh kinds, an image model
 // cannot.
 const DEFAULT_MODEL = 'google/gemini-2.0-flash-001'
-
-const artStyleDescriptions: Record<string, string> = {
-  cinematic: 'cinematic photography with dramatic lighting and film grain',
-  vintage: 'vintage film photography with faded colors and retro feel',
-  'black-white': 'black and white photography with rich contrast',
-  'oil-painting': 'oil painting style with visible brush strokes and rich textures',
-  watercolor: 'watercolor painting with soft washes and flowing colors',
-  impressionism: 'impressionist painting style with loose brushwork',
-  'digital-art': 'digital art with smooth gradients and modern aesthetics',
-  cyberpunk: 'cyberpunk style with neon colors and futuristic elements',
-  vaporwave: 'vaporwave aesthetic with pastel colors and retro-futuristic vibes',
-  'low-poly': 'low poly 3D art with geometric faceted surfaces',
-  'pixel-art': 'pixel art style with retro video game aesthetics',
-  '3d-render': '3D rendered look with realistic lighting and materials',
-  anime: 'anime/manga style with bold lines and vibrant colors',
-  cartoon: 'cartoon illustration with exaggerated features',
-  'studio-ghibli': 'Studio Ghibli animation style with whimsical hand-drawn aesthetics',
-  fantasy: 'fantasy art with magical and ethereal elements',
-  'sci-fi': 'science fiction with futuristic technology and environments',
-}
 
 interface PropIdea {
   category: string
@@ -127,8 +109,8 @@ export async function POST(request: NextRequest) {
       : []
 
     const styleLine =
-      artStyle && artStyleDescriptions[artStyle]
-        ? `\nArt style: ${artStyleDescriptions[artStyle]}.`
+      artStyle && ART_STYLE_PROMPTS[artStyle]
+        ? `\nArt style: ${ART_STYLE_PROMPTS[artStyle]}.`
         : ''
 
     const sceneLine =
