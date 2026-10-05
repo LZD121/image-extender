@@ -570,7 +570,8 @@ describe('cropToCell', () => {
     expect(res.figure).toEqual({ width: 26, height: 28 })
     expect(res.warnings).toEqual([])
     // bottom-aligned: last figure row is the last canvas row
-    expect(isBackground([...res.image.data.slice((31 * 32 + 16) * 4, (31 * 32 + 16) * 4 + 4)] as unknown as RGBA)).toBe(false)
+    const lastRow = Array.from(res.image.data.slice((31 * 32 + 16) * 4, (31 * 32 + 16) * 4 + 4))
+    expect(isBackground(lastRow as unknown as RGBA)).toBe(false)
   })
 
   it('throws rather than rescaling a figure that does not fit', () => {
