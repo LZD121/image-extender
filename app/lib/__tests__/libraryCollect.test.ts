@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collectStudioAsset, slugify } from '@/app/lib/libraryCollect'
+import { buildAssetMeta, collectStudioAsset, slugify } from '@/app/lib/libraryCollect'
 
 const PNG = 'data:image/png;base64,AAAA'
 
@@ -128,5 +128,55 @@ describe('collectStudioAsset', () => {
       mode: 'tile',
       prompt: null, model: 'm', tileSet: [], tileSheetDataUrl: null, manifest: null,
     })).toBeNull()
+  })
+})
+
+describe('buildAssetMeta', () => {
+  it('splits raw/ and derived/ and keeps a non-null manifest type', () => {
+    const collected = collectStudioAsset({
+      mode: 'props',
+      prompt: 'rocks',
+      model: 'm',
+      propItems: [{ id: 'p1', name: 'Rock', imageUrl: PNG }],
+      propFiles: ['rock.png'],
+      propAtlasDataUrl: PNG,
+      manifest: { type: 'prop-atlas' },
+    })
+    const meta = buildAssetMeta(collected!, { project: 'dungeon', slug: 'rocks', now: '2026-10-05T00:00:00.000Z' })
+    expect(meta.type).toBe('prop-atlas')
+    expect(meta.files).toEqual({ sheet: 'raw/sheet.png', derived: ['derived/rock.png'] })
+    expect(meta.createdAt).toBe('2026-10-05T00:00:00.000Z')
+    expect(meta.provenance.backend).toBe('openrouter')
+    expect(meta.schemaVersion).toBe(1)
+  })
+
+  it('falls back to <kind>-set when the manifest has no type', () => {
+    const collected = collectStudioAsset({
+      mode: 'sprite',
+      prompt: 'knight',
+      model: 'm',
+      frames: [{ imageUrl: PNG }],
+      manifest: null,
+    })
+    const meta = buildAssetMeta(collected!, { project: 'p', slug: 'knight' })
+    expect(meta.type).toBe('sprites-set')
+    expect(meta.files).toEqual({ sheet: null, derived: ['derived/frame_01.png'] })
+  })
+
+  it('produces a meta the route accepts (shape contract)', () => {
+    const collected = collectStudioAsset({
+      mode: 'tile',
+      prompt: 'stone',
+      model: 'm',
+      tileSet: [{ role: 'body', imageUrl: PNG }],
+      tileSheetDataUrl: PNG,
+      manifest: null,
+    })
+    const meta = buildAssetMeta(collected!, { project: 'dungeon', slug: 'stone' })
+    // Every field the /api/library POST validates or surfaces in the index.
+    for (const key of ['schemaVersion', 'type', 'project', 'kind', 'slug', 'createdAt', 'updatedAt', 'manifest', 'files', 'provenance']) {
+      expect(meta).toHaveProperty(key)
+    }
+    expect(typeof meta.provenance.model).toBe('string')
   })
 })

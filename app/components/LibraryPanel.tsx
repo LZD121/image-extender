@@ -8,8 +8,8 @@ import {
   saveAsset,
   LibraryRequestError,
 } from '@/app/lib/libraryClient'
-import type { AssetKind, AssetMeta, LibraryIndex } from '@/app/lib/libraryTypes'
-import { slugify, type CollectedAsset } from '@/app/lib/libraryCollect'
+import type { AssetKind, LibraryIndex } from '@/app/lib/libraryTypes'
+import { buildAssetMeta, slugify, type CollectedAsset } from '@/app/lib/libraryCollect'
 
 export type LibraryPanelProps = {
   /** What the current studio would save, or null when there is nothing. */
@@ -78,26 +78,7 @@ export default function LibraryPanel({
     if (!dialog) return
     const collected = pending ? await pending() : null
     if (!collected) return
-    const now = new Date().toISOString()
-    const meta: AssetMeta = {
-      schemaVersion: 1,
-      type: typeof collected.manifest?.type === 'string' ? collected.manifest.type : `${collected.kind}-set`,
-      project,
-      kind: collected.kind,
-      slug: dialog.slug,
-      createdAt: now,
-      updatedAt: now,
-      manifest: collected.manifest,
-      files: {
-        sheet: Object.keys(collected.files).find((f) => f.startsWith('raw/')) ?? null,
-        derived: Object.keys(collected.files)
-          .filter((f) => f.startsWith('derived/'))
-          .sort(),
-      },
-      // `backend` and `toolVersion` are completed server-side; these values are
-      // placeholders the route overwrites.
-      provenance: { ...collected.provenance, backend: 'openrouter', toolVersion: 'web' },
-    }
+    const meta = buildAssetMeta(collected, { project, slug: dialog.slug })
     setStatus('Saving…')
     setError('')
     try {

@@ -1,4 +1,4 @@
-import type { AssetKind, Provenance } from '@/app/lib/libraryTypes'
+import type { AssetKind, AssetMeta, Provenance } from '@/app/lib/libraryTypes'
 import { TILESET_BY_ROLE, type TileSetRole } from '@/app/lib/tileset'
 
 /**
@@ -153,5 +153,38 @@ export function collectStudioAsset(input: CollectorInput): CollectedAsset | null
       const never: never = input
       throw new Error(`unhandled collector mode: ${JSON.stringify(never)}`)
     }
+  }
+}
+
+/**
+ * Assemble the on-disk meta for one collected asset. Kept pure and out of the
+ * panel so the payload the route validates is covered by tests, not by
+ * eyeballing JSX.
+ */
+export function buildAssetMeta(
+  collected: CollectedAsset,
+  opts: { project: string; slug: string; now?: string }
+): AssetMeta {
+  const now = opts.now ?? new Date().toISOString()
+  return {
+    schemaVersion: 1,
+    type:
+      typeof collected.manifest?.type === 'string'
+        ? collected.manifest.type
+        : `${collected.kind}-set`,
+    project: opts.project,
+    kind: collected.kind,
+    slug: opts.slug,
+    createdAt: now,
+    updatedAt: now,
+    manifest: collected.manifest,
+    files: {
+      sheet: Object.keys(collected.files).find((f) => f.startsWith('raw/')) ?? null,
+      derived: Object.keys(collected.files)
+        .filter((f) => f.startsWith('derived/'))
+        .sort(),
+    },
+    // Completed server-side by the route; placeholders here on purpose.
+    provenance: { ...collected.provenance, backend: 'openrouter', toolVersion: 'web' },
   }
 }
