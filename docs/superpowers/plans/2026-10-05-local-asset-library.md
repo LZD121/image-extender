@@ -322,7 +322,12 @@ import { ASSET_KINDS, type AssetKind } from '@/app/lib/libraryTypes'
  */
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
-const FILE_RE = /^(raw|derived)\/[a-z0-9][a-z0-9._-]{0,127}$/
+// NOTE (2026-10-05, after Task 3): the original draft here was
+// /^(raw|derived)\/[a-z0-9][a-z0-9._-]{0,127}$/ which ACCEPTS 'derived/x',
+// but the test table requires that to be rejected. Verified with node:
+//   /^(raw|derived)\/[a-z0-9][a-z0-9._-]{0,127}$/.test('derived/x') === true
+// The shipped regex requires an extension. All files we write are *.png.
+const FILE_RE = /^(raw|derived)\/[a-z0-9][a-z0-9._-]{0,118}\.[a-z0-9]{1,8}$/
 
 export function isValidName(name: unknown): name is string {
   return typeof name === 'string' && NAME_RE.test(name)
