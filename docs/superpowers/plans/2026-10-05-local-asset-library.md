@@ -1588,6 +1588,12 @@ git commit -m "feat(library): add asset library panel"
 
 ## Task 9: 接入 `app/page.tsx`
 
+> **⚠️ Task 9-12 已作废，见文末「修订：Task 9-12（基于 `aaa892d` 重写）」。**
+> 2026-10-05 12:04–12:31 有另一条工作流（pixel-art 产线）在本分支上追加了 23 个提交，其中
+> `app/page.tsx` 被改（`mode` 新增 `'pixel'`、渲染树插入 `<PixelStudio />`），本节的**行号与挂载点全部失效**；
+> `app/api/library/route.ts` 与 `app/lib/libraryCollect.ts` 也被它改过（backend 改为白名单）。
+> 下面保留原稿仅供追溯，**不要照着做**。
+
 **Files:**
 - Modify: `app/page.tsx`
 
@@ -1908,3 +1914,181 @@ git push fork main
 - 不要做内容寻址去重、GC
 - 不要加 `realpath` 符号链接校验（spec §9 明确接受该风险）
 - 不要给 `meta.json` 写 migration（spec §5 明确推迟）
+
+---
+
+## 修订：Task 9-12（基于 `aaa892d` 重写，2026-10-05 12:50）
+
+### 新事实（动手前必读）
+
+| 事实 | 影响 |
+|---|---|
+| pixel 线已把 `<LibraryPanel>` 挂进 **`app/components/PixelStudio.tsx`**（:32 import，:460 使用） | Task 9 只需给**其余五个 studio** 挂面板，**不要**再改 PixelStudio 的挂载 |
+| 它们的 `collect()` 是同步的，用 `pending={async () => collect()}` 适配 | 这是本仓库既有的接线风格，沿用 |
+| `app/lib/pixel.ts:43` 定义了 `PIXEL_PROJECT_STORAGE = 'extender:libraryProject'` | 这是**共享**的项目名存储键，却住在 pixel 模块里；Task 9 第一步把它搬到共享位置，**不要**另造第二个键 |
+| `app/lib/libraryCollect.ts` 现在导出 `BACKEND_LABELS` / `BackendLabel`，`Provenance.backend` 是 `BackendLabel` | `collectStudioAsset` 的返回值里 `backend` 已由收集器带出（`'openrouter'` 或 `'pixellab'`） |
+| `app/api/library/route.ts` 用白名单盖章：`IE_BACKEND_LABEL \|\| pickBackendLabel(meta?.provenance?.backend)` | `IE_BACKEND_LABEL` 的语义是**强制覆盖**；不设时采用客户端在白名单内的提议 |
+| `app/page.tsx` 的 `mode` 现在包含 `'pixel'`，渲染树里 `isPixel ? <PixelStudio />` | 面板要 gate 在 `!isPixel`，否则 pixel 模式会出现两个面板 |
+
+### Task 9：给其余五个 studio 挂面板
+
+**Files:**
+- Modify: `app/lib/libraryTypes.ts`（加共享存储键）
+- Modify: `app/lib/pixel.ts`、`app/components/PixelStudio.tsx`（改用共享键）
+- Modify: `app/page.tsx`
+
+- [ ] **Step 1: 把项目名存储键搬到共享位置（干净切换，不留 re-export）**
+
+`app/lib/libraryTypes.ts` 末尾加：
+```ts
+/** localStorage key for the library project name. Shared by every studio. */
+export const LIBRARY_PROJECT_STORAGE = 'extender:libraryProject'
+```
+`app/lib/pixel.ts`：删掉 `export const PIXEL_PROJECT_STORAGE = 'extender:libraryProject'`，改从 libraryTypes 导入并**直接使用新名**（不留旧名的别名）。
+`app/components/PixelStudio.tsx`：把 `PIXEL_PROJECT_STORAGE` 的 import 与两处使用改成 `LIBRARY_PROJECT_STORAGE`（import 源改为 `@/app/lib/libraryTypes`）。
+
+验证：`grep -rn "PIXEL_PROJECT_STORAGE" app/` 必须为空。
+
+- [ ] **Step 2: `app/page.tsx` 接线（按符号定位，别用行号）**
+
+加 import：
+```tsx
+import LibraryPanel from '@/app/components/LibraryPanel'
+import { collectStudioAsset } from '@/app/lib/libraryCollect'
+import { LIBRARY_PROJECT_STORAGE } from '@/app/lib/libraryTypes'
+```
+
+状态（紧邻 `const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL)`）：
+```tsx
+  const [libraryProject, setLibraryProject] = useState<string>('default')
+```
+水合 effect（既有读 `STORAGE_KEY`/`STORAGE_MODEL`/`STORAGE_MODE` 的那一段）里补：
+```tsx
+      setLibraryProject(localStorage.getItem(LIBRARY_PROJECT_STORAGE) || 'default')
+```
+持久化 effect 里补：
+```tsx
+      localStorage.setItem(LIBRARY_PROJECT_STORAGE, libraryProject)
+```
+
+- [ ] **Step 3: 收集器回调**（放在 `buildPropManifest` 定义之后）
+
+```tsx
+  /**
+   * Snapshot of what the current studio would hand to the library. Reads the
+   * same state the ZIP exporters read; never mutates it. Pixel mode renders its
+   * own panel inside PixelStudio, so it is not handled here.
+   */
+  const collectPendingLibraryAsset = useCallback(async () => {
+    if (mode === 'tile') {
+      return collectStudioAsset({
+        mode: 'tile',
+        prompt: tilePrompt.trim() || null,
+        model: selectedModel,
+        tileSet: tileSet.map((s) => ({ role: s.role, imageUrl: s.imageUrl })),
+        tileSheetDataUrl: await buildTileSheetDataUrl(),
+        manifest: buildTileSetManifest(),
+      })
+    }
+    if (mode === 'props') {
+      const populated = propItems.filter((p) => p.imageUrl)
+      return collectStudioAsset({
+        mode: 'props',
+        prompt: propPrompt.trim() || null,
+        model: selectedModel,
+        propItems: populated.map((p) => ({ id: p.id, name: p.name, imageUrl: p.imageUrl })),
+        propFiles: resolvePropNames(populated).map((n) => n.file),
+        propAtlasDataUrl: await buildPropAtlasDataUrl(),
+        manifest: buildPropManifest(),
+      })
+    }
+    if (mode === 'sprite') {
+      return collectStudioAsset({
+        mode: 'sprite',
+        prompt: spritePrompt.trim() || null,
+        model: selectedModel,
+        frames: spriteSheet.frames
+          .filter((f) => f.imageUrl && !f.disabled)
+          .map((f) => ({ imageUrl: f.imageUrl })),
+        manifest: null,
+      })
+    }
+    return collectStudioAsset({
+      mode: mode === 'parallax' ? 'parallax' : 'extender',
+      prompt: null,
+      model: selectedModel,
+      imageUrl: activeCandidate?.imageUrl ?? selectedImage,
+      dimensions: activeCandidate
+        ? candidateDims[selectedCandidateIdx] ?? null
+        : currentImageDimensions,
+      manifest: null,
+    })
+  }, [
+    mode, tilePrompt, tileSet, propPrompt, propItems, spritePrompt, spriteSheet,
+    activeCandidate, selectedImage, candidateDims, selectedCandidateIdx,
+    currentImageDimensions, selectedModel, buildTileSheetDataUrl,
+    buildPropAtlasDataUrl, buildTileSetManifest,
+  ])
+```
+
+> 先 `grep -n "const buildTileSheetDataUrl\|const buildPropAtlasDataUrl\|const buildTileSetManifest\|const resolvePropNames" app/page.tsx` 确认这三个 builder 仍是组件内的 `const xxx = async () => …`（若是 `useCallback`，按实际写法调整 deps）。`resolvePropNames` 从 `@/app/lib/props` 导入。
+
+- [ ] **Step 4: 渲染面板（gate 在 `!isPixel`）**
+
+在模式三元表达式**闭合之后**、`<CommandBar …>` 那段注释**之前**插入：
+
+```tsx
+      {/* Asset library: pixel mode embeds its own panel inside PixelStudio. */}
+      {!isPixel && (
+        <div className="mx-auto w-full max-w-5xl px-4 pb-4">
+          <LibraryPanel
+            pending={collectPendingLibraryAsset}
+            project={libraryProject}
+            onProjectChange={setLibraryProject}
+            onLoad={(url) => void applyImageToActiveLayer(url, { fromUpload: true })}
+          />
+        </div>
+      )}
+```
+
+（`isPixel` 已存在于渲染作用域；`applyImageToActiveLayer` 是既有回调。）
+
+- [ ] **Step 5: 手动验证**（本任务唯一有效验收）
+
+```bash
+npm run dev
+```
+1. Tiles 生成一张 → Save to library → 改名/保存 → `ls -R assets/<project>/tiles/*/` 确认 `raw/` 与 `derived/` 都在。
+2. **刷新页面** → 面板仍列得出该资产、缩略图显示（同源 URL 不污染 canvas）。
+3. 点资产名 → 图载入 studio。
+4. 切到 **Pixel** 模式 → 确认**只有 PixelStudio 内那一个面板**（没出现两个）。
+5. 同名再存 → 409 → `Save as -v2` 真的写入新 slug（这是 Task 8 修过的路径）。
+
+- [ ] **Step 6: 提交**
+```bash
+npx tsc --noEmit && npm test
+git add app/lib/libraryTypes.ts app/lib/pixel.ts app/components/PixelStudio.tsx app/page.tsx
+git commit -m "feat(library): mount the asset panel in the five non-pixel studios"
+```
+
+### Task 10：cost 透传（内容不变）
+
+原 Task 10 的代码仍然有效，仅一处补充：`/api/generate` 返回的 `cost` 目前**没有任何消费者**（面板的 meta builder 不写 `cost`）。所以除了 `extractCost` + 返回字段，**再加一步**：让 `CollectedAsset.provenance.cost` 能从生成响应带过来——即 `app/page.tsx` 在拿到 `data.cost` 时存进 state（`lastGenerationCost`），并在 `collectPendingLibraryAsset` 里传给各分支的 `provenance.cost`。
+若这一步在 30 分钟内做不干净（要改 4 个 studio 的响应处理），**就只做 `extractCost` + 返回字段**，并在报告里说明"cost 尚无消费者"——不要为了凑完而把 4 个响应路径都改乱。
+
+### Task 11：仓库配置与文档（内容基本不变，两处要改）
+
+1. `.env.example` 里 `IE_BACKEND_LABEL` 的注释要写清新语义：
+```
+# Force the label recorded in meta.json provenance.backend (default: take the
+# client's value when it is one of openrouter | pixellab, else 'openrouter').
+IE_BACKEND_LABEL=
+```
+2. README 的 Asset library 一节补一句 pixel 产线也入库（`backend: pixellab`），并说明 `raw/` 不入版本库的代价。
+其余（`.gitattributes`、`.gitignore`、README 主体）照原稿。
+
+### Task 12：收尾验证（补充两条）
+
+- 原 Step 1-3 照做。
+- **新增**：`git status --porcelain` 必须只剩 `?? .serena/`；并确认 `assets/` 未进版本库（`git check-ignore -v --no-index assets/x/raw/sheet.png` 命中）。
+- **新增**：跑一次 Task 5 Step 6 的 **15 MB POST 探针**（spec §13.1 唯一契约风险点）。若 413 → 停手并改 spec，不要就地改代码。
