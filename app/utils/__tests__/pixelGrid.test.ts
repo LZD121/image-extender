@@ -1,6 +1,6 @@
 // app/utils/__tests__/pixelGrid.test.ts
 import { describe, expect, it } from 'vitest'
-import { analyzeGrid, bestPhase, cropToCell, decimateByMode, isBackground, PURITY_THRESHOLD, purityAt, type PixelBuffer, type RGBA } from '@/app/utils/pixelGrid'
+import { analyzeGrid, bestPhase, cropToCell, decimateByMode, isBackground, purityAt, type PixelBuffer, type RGBA } from '@/app/utils/pixelGrid'
 
 const TRANSPARENT: RGBA = [0, 0, 0, 0]
 
@@ -119,20 +119,20 @@ describe('cropToCell', () => {
 })
 
 describe('analyzeGrid', () => {
-  it('passes a real lattice', () => {
+  it('reports the lattice phase and its purity', () => {
     const res = analyzeGrid(offsetLattice(), 2)
-    expect(res.ok).toBe(true)
+    expect(res.block).toBe(2)
     expect(res.ox).toBe(1)
     expect(res.oy).toBe(1)
     expect(res.purity).toBe(1)
   })
 
-  it('refuses to call a smooth image decimatable', () => {
+  it('reports a low purity for an image with no lattice at all', () => {
+    // Purity is informational, not a gate — but it must still MEASURE
+    // something: a smooth ramp has almost no uniform 2x2 tiles.
     const smooth = makeBuffer(16, 16)
     let v = 0
     for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { v += 11; setPx(smooth, x, y, [v % 256, 7, 9, 255]) }
-    const res = analyzeGrid(smooth, 2)
-    expect(res.ok).toBe(false)
-    expect(res.purity).toBeLessThan(PURITY_THRESHOLD)
+    expect(analyzeGrid(smooth, 2).purity).toBeLessThan(0.1)
   })
 })

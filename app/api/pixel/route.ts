@@ -100,7 +100,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return json({ error: 'invalid JSON body' }, 400)
   }
 
-  const op = payload.op
+  // The browser client puts the op in the query string for every call, POSTs
+  // included; accept both so the two halves cannot drift apart again.
+  const op = request.nextUrl.searchParams.get('op') ?? payload.op
   if (!isPixelOp(op) || (op !== 'pixflux' && op !== 'character')) {
     return json({ error: 'unknown op' }, 400)
   }

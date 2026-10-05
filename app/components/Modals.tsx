@@ -654,9 +654,9 @@ export function ApiKeyModal({
         </a>
 
         <div className="flex items-center justify-between gap-2">
-          {!required && onSkip ? (
+          {onSkip ? (
             <button onClick={onSkip} className="btn btn-ghost">
-              Use server env
+              {required ? 'Skip — I only need the pixel studio' : 'Use server env'}
             </button>
           ) : (
             <span />

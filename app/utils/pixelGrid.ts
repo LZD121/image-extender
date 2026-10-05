@@ -16,17 +16,6 @@ export type PixelBuffer = { data: Uint8ClampedArray; width: number; height: numb
 export const DEFAULT_BLOCK = 2
 export const DEFAULT_CELL = 32
 export const DEFAULT_FIGURE_BAND = { min: 24, max: 28 } as const
-/**
- * Purity is an imposition-loss metric, not a quality bar: vendor output has
- * 1px grain, so the 2x2 lattice is IMPOSED and purity is expected to be low.
- * Measured at block=2 on real output (2026-10-05):
- *   gemini-3.1-flash-image, no lattice at all .. 0.0476  -> must block
- *   PixelLab pixflux tile ..................... 0.2305  -> must pass
- *   PixelLab character rotation ............... 0.4766  -> must pass
- * 0.15 sits between the two classes; anything in between is a judgement call,
- * which is why the UI shows the number and offers an explicit override.
- */
-export const PURITY_THRESHOLD = 0.15
 
 function px(buf: PixelBuffer, x: number, y: number): RGBA {
   const i = (y * buf.width + x) * 4
@@ -161,24 +150,23 @@ export function cropToCell(
 }
 
 export type GridAnalysis = {
-  ok: boolean
   block: number
   ox: number
   oy: number
+  /**
+   * Fraction of `block x block` tiles that are a single colour at this phase.
+   * Purely informational: vendor output is 1px-grain, so the lattice is
+   * IMPOSED and this measures how lossy that imposition was, not whether the
+   * asset is acceptable. Measured at block=2 on real output (2026-10-05):
+   * 0.0476 (gemini, no lattice), 0.0927 and 0.2305 (two pixellab tiles from
+   * the same prompt), 0.4766 (pixellab character). The spread within one kind
+   * exceeds the gap between kinds, so this cannot be a gate.
+   */
   purity: number
 }
 
-/**
- * Purity is a gate, not decoration. Below the threshold the caller must show
- * the measurement and ask a human instead of decimating quietly.
- */
-export function analyzeGrid(buf: PixelBuffer, block: number = DEFAULT_BLOCK, threshold: number = PURITY_THRESHOLD): GridAnalysis {
+/** Phase + purity of the lattice we are about to impose. */
+export function analyzeGrid(buf: PixelBuffer, block: number = DEFAULT_BLOCK): GridAnalysis {
   const best = bestPhase(buf, block)
-  return {
-    ok: best.purity >= threshold,
-    block,
-    ox: best.ox,
-    oy: best.oy,
-    purity: best.purity,
-  }
+  return { block, ox: best.ox, oy: best.oy, purity: best.purity }
 }

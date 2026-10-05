@@ -16,6 +16,15 @@ function get(query: string, key: string | null = 'k') {
   const headers = key === null ? {} : { [PIXEL_KEY_HEADER]: key }
   return new NextRequest(new URL(`/api/pixel?${query}`, 'http://localhost:3000'), { headers } as never)
 }
+/** The browser client puts the op in the query string even for POSTs. */
+function postTo(query: string, body: unknown, key: string | null = 'k') {
+  const headers = key === null ? {} : { [PIXEL_KEY_HEADER]: key }
+  return new NextRequest(new URL(`/api/pixel?${query}`, 'http://localhost:3000'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  } as never)
+}
 
 describe('/api/pixel', () => {
   it('rejects a missing key before doing anything else', async () => {
@@ -54,6 +63,21 @@ describe('/api/pixel', () => {
   it('refuses a non-https image url', async () => {
     const res = await GET(get('op=image&url=' + encodeURIComponent('http://api.pixellab.ai/x.png')))
     expect(res.status).toBe(400)
+  })
+
+  it('reads the op from the query string on POST (the browser client sends it there)', async () => {
+    const res = await POST(postTo('op=pixflux', {}))
+    expect(res.status).toBe(400)
+    // reached the body validator, which proves the query op was recognised
+    expect(await res.text()).toContain('description')
+  })
+
+  it('keeps the allow-list in force for a query-string op', async () => {
+    for (const op of ['/v2/balance', '../x', 'nope']) {
+      const res = await POST(postTo(`op=${encodeURIComponent(op)}`, { description: 'x' }))
+      expect(res.status).toBe(400)
+      expect(await res.text()).toContain('unknown op')
+    }
   })
 
   it('validates the characterStatus id', async () => {

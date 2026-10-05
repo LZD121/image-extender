@@ -234,29 +234,31 @@ export function PixelStudio() {
     }
   }, [candidates, sub, stillKind, description, template, view, size, width, height, noBackground, block, cell])
 
-  /** Analyse a source image; decimate + crop when the gate passes. */
+  /**
+   * Analyse a source image, then impose the lattice: decimate by the detected
+   * phase and crop to the cell. Purity is reported, never gated — it measures
+   * how lossy the imposition is, and vendor output is 1px-grain by nature, so
+   * gating on it would block most real assets.
+   */
   const process = useCallback(
-    async (candidate: Candidate, force = false) => {
+    async (candidate: Candidate) => {
       const apply = async (buf: PixelBuffer) => {
         const analysis = analyzeGrid(buf, block)
-        const shouldApply = force || analysis.ok
         let processedUrl: string | null = null
         let figure: { width: number; height: number } | null = null
         let warnings: string[] = []
-        if (shouldApply) {
-          const decimated = decimateByMode(buf, analysis.block, analysis.ox, analysis.oy)
-          try {
-            const cropped = cropToCell(decimated, {
-              cell,
-              minFigureHeight: DEFAULT_FIGURE_BAND.min,
-              maxFigureHeight: DEFAULT_FIGURE_BAND.max,
-            })
-            processedUrl = pixelsToDataUrl(cropped.image)
-            figure = cropped.figure
-            warnings = cropped.warnings
-          } catch (err) {
-            warnings = [err instanceof Error ? err.message : 'crop failed']
-          }
+        const decimated = decimateByMode(buf, analysis.block, analysis.ox, analysis.oy)
+        try {
+          const cropped = cropToCell(decimated, {
+            cell,
+            minFigureHeight: DEFAULT_FIGURE_BAND.min,
+            maxFigureHeight: DEFAULT_FIGURE_BAND.max,
+          })
+          processedUrl = pixelsToDataUrl(cropped.image)
+          figure = cropped.figure
+          warnings = cropped.warnings
+        } catch (err) {
+          warnings = [err instanceof Error ? err.message : 'crop failed']
         }
         setCandidates((prev) =>
           prev.map((x) => (x.id === candidate.id ? { ...x, analysis, processedUrl, figure, warnings } : x)),
@@ -420,9 +422,8 @@ export function PixelStudio() {
             />
             <p className="mt-1 truncate text-[10px] text-white/60">{c.label}</p>
             {c.analysis && (
-              <p className={`mt-1 text-[10px] ${c.analysis.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+              <p className="mt-1 text-[10px] text-white/60">
                 block={c.analysis.block} phase=({c.analysis.ox},{c.analysis.oy}) purity={c.analysis.purity.toFixed(4)}
-                {c.analysis.ok ? ' ✓' : ' ✗ 未通过格点检测'}
               </p>
             )}
             {c.figure && (
@@ -444,15 +445,6 @@ export function PixelStudio() {
               >
                 {showProcessed[c.id] ? 'source' : 'processed'}
               </button>
-              {c.analysis && !c.analysis.ok && (
-                <button
-                  type="button"
-                  onClick={() => void process(c, true)}
-                  className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px]"
-                >
-                  仍然施加
-                </button>
-              )}
             </div>
           </div>
         ))}
