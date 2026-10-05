@@ -156,8 +156,6 @@ export type GridAnalysis = {
   ox: number
   oy: number
   purity: number
-  /** Diagnostic: distinguishes 1px-grain sources from already-blocky ones. */
-  purityAtBlockOne: number
 }
 
 /**
@@ -172,6 +170,5 @@ export function analyzeGrid(buf: PixelBuffer, block: number = DEFAULT_BLOCK, thr
     ox: best.ox,
     oy: best.oy,
     purity: best.purity,
-    purityAtBlockOne: purityAt(buf, 1, 0, 0),
   }
 }
