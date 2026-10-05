@@ -696,6 +696,15 @@ git add app/lib/library.ts app/lib/__tests__/library.test.ts
 git commit -m "feat(library): add atomic fs layer for the asset library"
 ```
 
+> **IMPLEMENTATION DRIFT (as built, commits `eb54397` → `d55ceb9` → `13e0f51` → `31d78da`).** 下面的代码块是初稿；实际落地在四处更强，**Task 5 及以后必须按实际版本写**：
+>
+> 1. **覆盖是"挪开再顶上"**，不是 `rm` + `rename`：先把旧目录 `rename` 成 `<dir>.old-<pid>-<ts>`，新目录顶上成功后才删 backup；失败则回滚 backup。初稿在两步之间崩溃会丢数据。
+> 2. **`listAssets` 校验 meta 形状**：`slug`/`type` 必须都是 string，否则进 `warnings`（初稿只 `JSON.parse`，`{}` 会被当成正常资产列出）。
+> 3. **孤儿写目录会告警**：形如 `<slug>.old-<digits>-<digits>` / `.tmp-<digits>-<digits>` 的目录记 `orphaned write directory: <project>/<kind>/<name>` 并跳过（双故障下不会静默消失）。
+> 4. **导出了 `LibraryError` / `LibraryErrorCode`**（`'EEXISTS' | 'ENOTFOUND'`）：`saveAsset` 同名抛 `EEXISTS`，`deleteAsset` 缺失抛 `ENOTFOUND`。**route 用 `err.code` 映射状态码，禁止用错误文案前缀判断**（Task 5 的初稿写的 `message.startsWith('asset already exists')` 是错的）。
+>
+> 测试 11 条全绿（`app/lib/__tests__/library.test.ts`）。
+
 ---
 
 ## Task 5: 路由 —— GET 索引 / meta / 文件
@@ -948,9 +957,9 @@ export async function POST(request: NextRequest) {
     const written = await saveAsset(project, kind, slug, stamped, files, { overwrite })
     return NextResponse.json({ path: `${project}/${kind}/${slug}`, written }, { status: overwrite ? 200 : 201 })
   } catch (err) {
-    const message = (err as Error).message
-    const status = message.startsWith('asset already exists') ? 409 : 400
-    return bad(message, status)
+    const err2 = err as { message?: string; code?: string }
+    const status = err2.code === 'EEXISTS' ? 409 : 400
+    return bad(err2.message || 'save failed', status)
   }
 }
 
