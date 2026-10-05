@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { extractCost } from '@/app/lib/generateCost'
 
 const DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview'
 
@@ -1347,7 +1348,7 @@ ${
         .slice(0, 64)
     }
 
-    return NextResponse.json({ imageUrl, names })
+    return NextResponse.json({ imageUrl, names, cost: extractCost(data) })
   } catch (error) {
     console.error('Error in generate route:', error)
     return NextResponse.json(
