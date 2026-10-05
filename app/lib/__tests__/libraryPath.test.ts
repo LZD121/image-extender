@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import path from 'node:path'
 import {
   assertInsideRoot,
+  isValidKind,
   isValidName,
   isValidRelPath,
   resolveAssetDir,
@@ -26,6 +27,13 @@ describe('isValidName', () => {
   it('rejects names longer than 64 chars', () => {
     expect(isValidName('a'.repeat(64))).toBe(true)
     expect(isValidName('a'.repeat(65))).toBe(false)
+  })
+})
+
+describe('isValidKind', () => {
+  it('accepts only the five asset kinds', () => {
+    for (const k of ['tiles', 'sprites', 'props', 'parallax', 'extend']) expect(isValidKind(k)).toBe(true)
+    for (const k of ['tile', 'TILES', '', 'raw', '../tiles']) expect(isValidKind(k)).toBe(false)
   })
 })
 
@@ -63,12 +71,26 @@ describe('assertInsideRoot', () => {
     expect(() => assertInsideRoot(ROOT, '/tmp/other/x.png')).toThrow(/outside/)
     expect(() => assertInsideRoot(ROOT, path.join(ROOT, '../escape.png'))).toThrow(/outside/)
   })
+
+  it('rejects a sibling directory whose name merely shares the prefix', () => {
+    expect(() => assertInsideRoot(ROOT, '/tmp/ie-assets-evil/x.png')).toThrow(/outside/)
+    expect(() => assertInsideRoot(ROOT, ROOT + '-evil')).toThrow(/outside/)
+  })
 })
 
 describe('resolveAssetDir / resolveAssetFile', () => {
   it('builds the canonical layout', () => {
     expect(resolveAssetDir(ROOT, 'dungeon', 'tiles', 'mossy-stone')).toBe(
       path.join(ROOT, 'dungeon', 'tiles', 'mossy-stone')
+    )
+  })
+
+  it('builds the canonical file path for a valid rel', () => {
+    expect(resolveAssetFile(ROOT, 'dungeon', 'tiles', 'mossy-stone', 'derived/body.png')).toBe(
+      path.join(ROOT, 'dungeon', 'tiles', 'mossy-stone', 'derived', 'body.png')
+    )
+    expect(resolveAssetFile(ROOT, 'dungeon', 'tiles', 'mossy-stone', 'raw/sheet.png')).toBe(
+      path.join(ROOT, 'dungeon', 'tiles', 'mossy-stone', 'raw', 'sheet.png')
     )
   })
 
