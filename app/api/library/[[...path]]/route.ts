@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { LibraryError, deleteAsset, listAssets, readAssetFile, readMeta, saveAsset } from '@/app/lib/library'
 import { isValidKind, isValidName, isValidRelPath } from '@/app/lib/libraryPath'
+import { BACKEND_LABELS } from '@/app/lib/libraryCollect'
 import type { AssetMeta } from '@/app/lib/libraryTypes'
 
 // fs needs the Node runtime, and the index must never be cached.
@@ -26,6 +27,11 @@ const CONTENT_TYPES: Record<string, string> = {
 
 function bad(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status })
+}
+
+/** A client may only propose a label we already know — never a free-form string. */
+function pickBackendLabel(value: unknown): string {
+  return typeof value === 'string' && (BACKEND_LABELS as readonly string[]).includes(value) ? value : 'openrouter'
 }
 
 function parseAssetIds(segments: string[] | undefined) {
@@ -119,7 +125,7 @@ export async function POST(request: NextRequest) {
     updatedAt: new Date().toISOString(),
     provenance: {
       ...meta.provenance,
-      backend: process.env.IE_BACKEND_LABEL || 'openrouter',
+      backend: process.env.IE_BACKEND_LABEL || pickBackendLabel(meta?.provenance?.backend),
     },
   }
 

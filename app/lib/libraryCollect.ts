@@ -16,11 +16,16 @@ import { TILESET_BY_ROLE, type TileSetRole } from '@/app/lib/tileset'
  * invariant, and sharing a collector would put it at risk for no gain.
  */
 
+/** Labels the library route will accept from a client. */
+export const BACKEND_LABELS = ['openrouter', 'pixellab'] as const
+export type BackendLabel = (typeof BACKEND_LABELS)[number]
+
 export type CollectedAsset = {
   kind: AssetKind
   files: Record<string, string>
   manifest: Record<string, unknown> | null
-  provenance: Omit<Provenance, 'backend' | 'toolVersion'>
+  /** `backend` is the real producer; `toolVersion` is still stamped by the panel. */
+  provenance: Omit<Provenance, 'toolVersion'> & { backend: BackendLabel }
 }
 
 export type CollectorInput =
@@ -69,6 +74,7 @@ export function slugify(input: string): string {
 }
 
 const base = (prompt: string | null, model: string) => ({
+  backend: 'openrouter' as BackendLabel,
   model,
   prompt,
   sceneBrief: null,
@@ -184,7 +190,7 @@ export function buildAssetMeta(
         .filter((f) => f.startsWith('derived/'))
         .sort(),
     },
-    // Completed server-side by the route; placeholders here on purpose.
-    provenance: { ...collected.provenance, backend: 'openrouter', toolVersion: 'web' },
+    // The route re-stamps `backend` from the allow-list; `toolVersion` is ours.
+    provenance: { ...collected.provenance, toolVersion: 'web' },
   }
 }

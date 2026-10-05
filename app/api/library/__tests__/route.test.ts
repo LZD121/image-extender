@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { NextRequest } from 'next/server'
 import { GET, POST, DELETE } from '../[[...path]]/route'
+import { readMeta } from '@/app/lib/library'
 
 const PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
@@ -82,6 +83,34 @@ describe('/api/library', () => {
     await POST(save())
     const res = await GET(req('/api/library/dungeon/tiles/mossy-stone'))
     expect(res.status).toBe(400)
+  })
+
+  it('honours a known backend label from the client', async () => {
+    delete process.env.IE_BACKEND_LABEL
+    const meta2 = { ...meta, provenance: { ...meta.provenance, backend: 'pixellab' } }
+    const res = await POST(
+      req('/api/library', {
+        method: 'POST',
+        body: JSON.stringify({ project: 'dungeon', kind: 'tiles', slug: 'pixel-tile', meta: meta2, files: { 'derived/body.png': PNG } }),
+      }),
+    )
+    expect(res.status).toBe(201)
+    const saved = await readMeta('dungeon', 'tiles', 'pixel-tile')
+    expect(saved.provenance.backend).toBe('pixellab')
+  })
+
+  it('falls back to openrouter for an unknown backend label', async () => {
+    delete process.env.IE_BACKEND_LABEL
+    const meta2 = { ...meta, provenance: { ...meta.provenance, backend: 'evil' } }
+    const res = await POST(
+      req('/api/library', {
+        method: 'POST',
+        body: JSON.stringify({ project: 'dungeon', kind: 'tiles', slug: 'forged', meta: meta2, files: { 'derived/body.png': PNG } }),
+      }),
+    )
+    expect(res.status).toBe(201)
+    const saved = await readMeta('dungeon', 'tiles', 'forged')
+    expect(saved.provenance.backend).toBe('openrouter')
   })
 
   it('never lets the client choose the recorded backend', async () => {
