@@ -45,11 +45,11 @@ export default function LibraryPanel({
   const [index, setIndex] = useState<LibraryIndex | null>(null)
   const [status, setStatus] = useState<string>('')
   const [error, setError] = useState<string>('')
-  const [dialog, setDialog] = useState<{ kind: AssetKind; slug: string } | null>(null)
+  const [dialog, setDialog] = useState<{ slug: string } | null>(null)
   const [conflict, setConflict] = useState(false)
+  const [staged, setStaged] = useState<CollectedAsset | null>(null)
 
   const refresh = useCallback(async () => {
-    if (!pending) return
     try {
       setIndex(await fetchIndex())
       setError('')
@@ -57,7 +57,7 @@ export default function LibraryPanel({
       setIndex(null)
       setError(err instanceof LibraryRequestError ? err.message : 'asset library unavailable')
     }
-  }, [pending])
+  }, [])
 
   useEffect(() => {
     void refresh()
@@ -70,35 +70,36 @@ export default function LibraryPanel({
       setStatus('Nothing to save yet — generate something first.')
       return
     }
+    setStaged(collected)
     setStatus('')
-    setDialog({ kind: collected.kind, slug: slugify(collected.provenance.prompt || collected.kind) })
+    setDialog({ slug: slugify(collected.provenance.prompt || collected.kind) })
   }
 
-  const commitSave = async (overwrite: boolean) => {
-    if (!dialog) return
-    const collected = pending ? await pending() : null
-    if (!collected) return
-    const meta = buildAssetMeta(collected, { project, slug: dialog.slug })
+  const commitSave = async (overwrite: boolean, slugOverride?: string) => {
+    const slug = slugOverride ?? dialog?.slug
+    if (!dialog || !slug || !staged) return
+    const meta = buildAssetMeta(staged, { project, slug })
     setStatus('Saving…')
     setError('')
     try {
       const res = await saveAsset({
         project,
-        kind: collected.kind,
-        slug: dialog.slug,
+        kind: staged.kind,
+        slug,
         meta,
-        files: collected.files,
+        files: staged.files,
         overwrite,
       })
       onSaved?.(res.path)
       setStatus(`Saved ${res.path}`)
       setDialog(null)
       setConflict(false)
+      setStaged(null)
       await refresh()
     } catch (err) {
       if (err instanceof LibraryRequestError && err.status === 409) {
         setConflict(true)
-        setError(`“${dialog.slug}” already exists in ${project}.`)
+        setError(`“${slug}” already exists in ${project}.`)
         return
       }
       setError(err instanceof Error ? err.message : 'save failed')
@@ -108,6 +109,7 @@ export default function LibraryPanel({
   const remove = async (kind: AssetKind, slug: string) => {
     try {
       await deleteAsset(project, kind, slug)
+      setStaged(null)
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'delete failed')
@@ -168,7 +170,7 @@ export default function LibraryPanel({
                 <button
                   type="button"
                   className="rounded bg-white/5 px-2 py-0.5 text-xs"
-                  onClick={() => setDialog({ ...dialog, slug: slugify(`${dialog.slug}-v2`) })}
+                  onClick={() => void commitSave(false, slugify(`${dialog.slug}-v2`))}
                 >
                   Save as {slugify(`${dialog.slug}-v2`)}
                 </button>
@@ -188,6 +190,7 @@ export default function LibraryPanel({
               onClick={() => {
                 setDialog(null)
                 setConflict(false)
+                setStaged(null)
               }}
             >
               Cancel
