@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
@@ -127,5 +127,30 @@ describe('library fs layer', () => {
     await deleteAsset('dungeon', 'tiles', 'mossy-stone')
     const index = await listAssets()
     expect(index.projects).toHaveLength(0)
+  })
+
+  it('keeps the previous asset when an overwrite fails', async () => {
+    await saveAsset('dungeon', 'tiles', 'mossy-stone', meta(), { 'derived/body.png': PNG })
+    await expect(
+      saveAsset('dungeon', 'tiles', 'mossy-stone', meta(), {
+        'derived/body.png': PNG,
+        'derived/bad.png': 'nope',
+      }, { overwrite: true })
+    ).rejects.toThrow(/data URL/)
+
+    const still = await readMeta('dungeon', 'tiles', 'mossy-stone')
+    expect(still.slug).toBe('mossy-stone')
+    const leftovers = (await readdir(root, { recursive: true }) as string[]).filter((p) => p.includes('.tmp-') || p.includes('.old-'))
+    expect(leftovers).toEqual([])
+  })
+
+  it('warns instead of listing a meta.json that parses but is hollow', async () => {
+    const dir = path.join(root, 'dungeon', 'tiles', 'hollow')
+    await mkdir(dir, { recursive: true })
+    await writeFile(path.join(dir, 'meta.json'), '{}')
+
+    const index = await listAssets()
+    expect(index.warnings).toHaveLength(1)
+    expect(index.projects).toEqual([])
   })
 })

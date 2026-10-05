@@ -78,8 +78,22 @@ export async function saveAsset(
       await writeFile(target, buf)
     }
     await writeFile(path.join(tmp, 'meta.json'), JSON.stringify(meta, null, 2) + '\n')
-    if (opts.overwrite && (await exists(dir))) await rm(dir, { recursive: true, force: true })
-    await rename(tmp, dir)
+    // Crash-safe overwrite: move the old asset aside, promote the new one, and
+    // only then delete the old. A crash mid-swap leaves either the old or the
+    // new asset on disk, never nothing.
+    const backup = `${dir}.old-${process.pid}-${Date.now()}`
+    let moved = false
+    if (await exists(dir)) {
+      await rename(dir, backup)
+      moved = true
+    }
+    try {
+      await rename(tmp, dir)
+    } catch (err) {
+      if (moved) await rename(backup, dir).catch(() => {})
+      throw err
+    }
+    if (moved) await rm(backup, { recursive: true, force: true })
   } catch (err) {
     await rm(tmp, { recursive: true, force: true })
     throw err
@@ -132,14 +146,17 @@ export async function listAssets(): Promise<LibraryIndex> {
       )
       for (const slug of slugDirs) {
         try {
-          const meta = JSON.parse(
+          const parsed = JSON.parse(
             await readFile(path.join(kindDir, slug.name, 'meta.json'), 'utf8')
           ) as AssetMeta
+          if (typeof parsed?.slug !== 'string' || typeof parsed?.type !== 'string') {
+            throw new Error('meta.json is missing slug/type')
+          }
           assets.push({
             slug: slug.name,
-            type: meta.type,
-            updatedAt: meta.updatedAt,
-            derived: meta.files?.derived ?? [],
+            type: parsed.type,
+            updatedAt: parsed.updatedAt,
+            derived: parsed.files?.derived ?? [],
           })
         } catch {
           warnings.push(`unreadable meta.json: ${project.name}/${kind}/${slug.name}`)
