@@ -65,6 +65,13 @@ describe('/api/pixel', () => {
     expect(res.status).toBe(400)
   })
 
+  it('serves the image op without our API key, since <img> cannot send the header', async () => {
+    // Reaching the host check (403) rather than the key check (401) is the
+    // point: a canvas/image load must be able to proxy vendor pixels.
+    const res = await GET(get('op=image&url=' + encodeURIComponent('https://evil.example/x.png'), null))
+    expect(res.status).toBe(403)
+  })
+
   it('reads the op from the query string on POST (the browser client sends it there)', async () => {
     const res = await POST(postTo('op=pixflux', {}))
     expect(res.status).toBe(400)
@@ -83,5 +90,20 @@ describe('/api/pixel', () => {
   it('validates the characterStatus id', async () => {
     const res = await GET(get('op=characterStatus&id=../../etc/passwd'))
     expect(res.status).toBe(400)
+  })
+
+  it('accepts the character size as a bare number (the browser client sends that)', async () => {
+    const res = await POST(postTo('op=character', { image_size: 64 }))
+    expect(res.status).toBe(400)
+    // Reached the description check, so image_size passed validation.
+    expect(await res.text()).toContain('description')
+  })
+
+  it('rejects the vendor-shaped {width,height} size on our own route', async () => {
+    // The route owns the vendor wire format; a client sending the vendor's
+    // object shape must fail loudly instead of silently wrapping it.
+    const res = await POST(postTo('op=character', { description: 'x', image_size: { width: 64, height: 64 } }))
+    expect(res.status).toBe(400)
+    expect(await res.text()).toContain('image_size must be an integer')
   })
 })

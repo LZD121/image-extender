@@ -120,25 +120,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const key = pickKey(request)
-  if (!key) return json({ error: `missing ${PIXEL_KEY_HEADER}` }, 401)
-
   const op = request.nextUrl.searchParams.get('op')
   if (!isPixelOp(op) || op === 'pixflux' || op === 'character') {
     return json({ error: 'unknown op' }, 400)
   }
 
-  if (op === 'characterStatus') {
-    const id = request.nextUrl.searchParams.get('id') ?? ''
-    if (!CHARACTER_ID.test(id)) return json({ error: 'invalid character id' }, 400)
-    const res = await fetch(`${PIXELLAB_BASE}/characters/${id}`, {
-      headers: { authorization: `Bearer ${key}` },
-      cache: 'no-store',
-    })
-    return relay(res)
-  }
+  // The `image` op must work without our header: it is consumed by <img> and
+  // by canvas loads, neither of which can send `x-pixellab-key`. It never
+  // calls the vendor with the key anyway — the host allow-list below is the
+  // real boundary, and the CDN URLs are public.
+  if (op !== 'image') {
+    const key = pickKey(request)
+    if (!key) return json({ error: `missing ${PIXEL_KEY_HEADER}` }, 401)
 
-  if (op === 'balance') {
+    if (op === 'characterStatus') {
+      const id = request.nextUrl.searchParams.get('id') ?? ''
+      if (!CHARACTER_ID.test(id)) return json({ error: 'invalid character id' }, 400)
+      const res = await fetch(`${PIXELLAB_BASE}/characters/${id}`, {
+        headers: { authorization: `Bearer ${key}` },
+        cache: 'no-store',
+      })
+      return relay(res)
+    }
+
     const res = await fetch(`${PIXELLAB_BASE}/balance`, {
       headers: { authorization: `Bearer ${key}` },
       cache: 'no-store',

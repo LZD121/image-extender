@@ -188,7 +188,9 @@ export const pixellab: PixelGenerator = {
         description: req.description,
         template_id: req.template,
         view: req.view,
-        image_size: { width: req.size, height: req.size },
+        // A bare number, not the vendor's {width,height}: the route owns the
+        // vendor wire format and wraps it into a square image_size itself.
+        image_size: req.size,
         no_background: true,
         ...(req.seed === null || req.seed === undefined ? {} : { seed: req.seed }),
       },
