@@ -16,7 +16,17 @@ export type PixelBuffer = { data: Uint8ClampedArray; width: number; height: numb
 export const DEFAULT_BLOCK = 2
 export const DEFAULT_CELL = 32
 export const DEFAULT_FIGURE_BAND = { min: 24, max: 28 } as const
-export const PURITY_THRESHOLD = 0.95
+/**
+ * Purity is an imposition-loss metric, not a quality bar: vendor output has
+ * 1px grain, so the 2x2 lattice is IMPOSED and purity is expected to be low.
+ * Measured at block=2 on real output (2026-10-05):
+ *   gemini-3.1-flash-image, no lattice at all .. 0.0476  -> must block
+ *   PixelLab pixflux tile ..................... 0.2305  -> must pass
+ *   PixelLab character rotation ............... 0.4766  -> must pass
+ * 0.15 sits between the two classes; anything in between is a judgement call,
+ * which is why the UI shows the number and offers an explicit override.
+ */
+export const PURITY_THRESHOLD = 0.15
 
 function px(buf: PixelBuffer, x: number, y: number): RGBA {
   const i = (y * buf.width + x) * 4
