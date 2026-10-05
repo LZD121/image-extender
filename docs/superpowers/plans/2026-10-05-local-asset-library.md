@@ -1028,6 +1028,16 @@ git add app/api/library app/api/library/__tests__/route.test.ts
 git commit -m "feat(library): add /api/library route (index, meta, file, save, delete)"
 ```
 
+> **IMPLEMENTATION DRIFT (as built, commits `a6876fd` → `bb940e4` → `23e9e4a`).** 上面的代码块是初稿；实际落地：
+>
+> 1. **backend 必须服务端盖章**：`backend: process.env.IE_BACKEND_LABEL || 'openrouter'` —— **不要**回退到客户端的 `meta.provenance.backend`（复审探针证实：env 未设置时客户端伪造值会原样落盘）。默认值 `'openrouter'` 是对的，因为 6 个路由都硬编码 OpenRouter。
+> 2. **深层路径缺 `ctx.params` 时返回 400 `missing route params`**，不是静默返回索引（`pathname !== '/api/library'` 时）。
+> 3. **尺寸上限按 base64 的 4/3 膨胀从事实派生**：`MAX_FILE_CHARS = ceil(40MiB*4/3)+256`、`MAX_TOTAL_CHARS = ceil(200MiB*4/3)+1024`；超限文案是 `payload too large`（它限制的是已缓冲之后的文件总量，不是整个 body）。
+> 4. 命名：`parseAssetIds()`（不是 `triple()`）；`UNUSABLE_FS_CODES` 用 `Set<string>`。
+> 5. 错误映射：`LibraryError.code === 'EEXISTS'` → 409；fs 的 `ENOTDIR/EACCES/EROFS/EISDIR/ENOSPC` → 500；其余 → 400。
+>
+> 测试 8 条全绿（`app/api/library/__tests__/route.test.ts`）。另外 `/api/library/a/b/c` 返回 **400**（`b` 不是合法 kind），不是初稿里写的 404。
+
 ---
 
 ## Task 6: studio 状态收集器（纯函数）

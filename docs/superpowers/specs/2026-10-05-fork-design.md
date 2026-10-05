@@ -139,7 +139,7 @@ $IE_ASSETS_DIR/
 **校验规则（全部在 `library.ts` 内实现并测试）**
 
 - `project` / `kind` / `slug`：`^[a-z0-9][a-z0-9-]{0,63}$`
-- `file` 的 relpath：`^(raw|derived)/[a-z0-9][a-z0-9._-]{0,127}$`
+- `file` 的 relpath：`^(raw|derived)/[a-z0-9][a-z0-9._-]{0,118}\.[a-z0-9]{1,8}$`（必须带扩展名 —— 初稿的 `{0,127}` 会放行 `derived/x`，已在 Task 3 修正）
 - 解析后的绝对路径必须以 `path.resolve(IE_ASSETS_DIR)` 为前缀；否则 `400`
 - 一次 POST **只允许一个资产**（避免大 body 与部分失败）
 - 单个文件 ≤ 40 MB，单次请求总 body ≤ 200 MB，超出返回 `413`
