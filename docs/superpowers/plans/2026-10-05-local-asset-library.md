@@ -1065,7 +1065,7 @@ describe('slugify', () => {
 
 describe('collectStudioAsset', () => {
   it('collects tiles: one derived PNG per role plus the sheet', () => {
-    const out = collectStudioAsset('tile', {
+    const out = collectStudioAsset({ mode: 'tile',
       prompt: 'mossy stone',
       model: 'google/gemini-3.1-flash-image-preview',
       tileSet: [
@@ -1081,7 +1081,7 @@ describe('collectStudioAsset', () => {
   })
 
   it('collects props with their file names and the manifest', () => {
-    const out = collectStudioAsset('props', {
+    const out = collectStudioAsset({ mode: 'props',
       prompt: 'rocks',
       model: 'm',
       propItems: [{ id: 'p1', name: 'Rock', imageUrl: PNG }],
@@ -1095,7 +1095,7 @@ describe('collectStudioAsset', () => {
   })
 
   it('collects sprite frames reindexed to contiguous names', () => {
-    const out = collectStudioAsset('sprite', {
+    const out = collectStudioAsset({ mode: 'sprite',
       prompt: 'knight',
       model: 'm',
       frames: [{ imageUrl: PNG }, { imageUrl: null }, { imageUrl: PNG }],
@@ -1106,7 +1106,7 @@ describe('collectStudioAsset', () => {
   })
 
   it('collects a single extender/parallax image', () => {
-    const out = collectStudioAsset('extender', {
+    const out = collectStudioAsset({ mode: 'extender',
       prompt: null,
       model: 'm',
       imageUrl: PNG,
@@ -1119,7 +1119,7 @@ describe('collectStudioAsset', () => {
   })
 
   it('returns null when there is nothing to save', () => {
-    expect(collectStudioAsset('tile', {
+    expect(collectStudioAsset({ mode: 'tile',
       prompt: null, model: 'm', tileSet: [], tileSheetDataUrl: null, manifest: null,
     })).toBeNull()
   })
@@ -1631,7 +1631,7 @@ import { collectStudioAsset } from '@/app/lib/libraryCollect'
    */
   const collectPendingLibraryAsset = useCallback(async () => {
     if (mode === 'tile') {
-      return collectStudioAsset('tile', {
+      return collectStudioAsset({ mode: 'tile',
         prompt: tilePrompt.trim() || null,
         model: selectedModel,
         tileSet: tileSet.map((s) => ({ role: s.role, imageUrl: s.imageUrl })),
@@ -1642,7 +1642,7 @@ import { collectStudioAsset } from '@/app/lib/libraryCollect'
     }
     if (mode === 'props') {
       const populated = propItems.filter((p) => p.imageUrl)
-      return collectStudioAsset('props', {
+      return collectStudioAsset({ mode: 'props',
         prompt: propPrompt.trim() || null,
         model: selectedModel,
         propItems: populated.map((p) => ({ id: p.id, name: p.name, imageUrl: p.imageUrl })),
@@ -1652,7 +1652,7 @@ import { collectStudioAsset } from '@/app/lib/libraryCollect'
       })
     }
     if (mode === 'sprite') {
-      return collectStudioAsset('sprite', {
+      return collectStudioAsset({ mode: 'sprite',
         prompt: spritePrompt.trim() || null,
         model: selectedModel,
         frames: spriteSheet.frames.filter((f) => f.imageUrl && !f.disabled).map((f) => ({ imageUrl: f.imageUrl })),
