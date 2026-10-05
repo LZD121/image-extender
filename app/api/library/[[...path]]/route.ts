@@ -41,6 +41,11 @@ function triple(segments: string[] | undefined) {
 export async function GET(request: NextRequest, ctx?: { params?: { path?: string[] } }) {
   const segments = ctx?.params?.path
   if (!segments || segments.length === 0) {
+    // /api/library itself is the index; a deeper path without params is a
+    // programming error, not an index request.
+    if (request.nextUrl.pathname.replace(/\/$/, '') !== '/api/library') {
+      return bad('missing route params')
+    }
     try {
       return NextResponse.json(await listAssets())
     } catch (err) {
@@ -117,7 +122,7 @@ export async function POST(request: NextRequest) {
     updatedAt: new Date().toISOString(),
     provenance: {
       ...meta.provenance,
-      backend: process.env.IE_BACKEND_LABEL || meta.provenance?.backend || 'openrouter',
+      backend: process.env.IE_BACKEND_LABEL || 'openrouter',
     },
   }
 

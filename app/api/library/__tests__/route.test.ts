@@ -78,14 +78,22 @@ describe('/api/library', () => {
     expect(bytes.subarray(1, 4).toString('ascii')).toBe('PNG')
   })
 
-  it('serves an asset through the route when ctx is omitted by a caller mistake', async () => {
-    // Guards the Next signature: without ctx the route must not pretend the
-    // request is the index — it falls back to the index, which is the only
-    // safe interpretation. This documents the contract the UI must respect.
+  it('rejects a deep path when the caller forgot to pass ctx', async () => {
     await POST(save())
     const res = await GET(req('/api/library/dungeon/tiles/mossy-stone'))
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ projects: expect.any(Array), warnings: expect.any(Array) })
+    expect(res.status).toBe(400)
+  })
+
+  it('never lets the client choose the recorded backend', async () => {
+    delete process.env.IE_BACKEND_LABEL
+    const forged = { ...meta, provenance: { ...meta.provenance, backend: 'forged' } }
+    expect((await POST(req('/api/library', {
+      method: 'POST',
+      body: JSON.stringify({ project: 'dungeon', kind: 'tiles', slug: 'mossy-stone', meta: forged, files: { 'derived/body.png': PNG } }),
+    }))).status).toBe(201)
+
+    const metaRes = await GET(req('/api/library/dungeon/tiles/mossy-stone'), ctx(['dungeon', 'tiles', 'mossy-stone']))
+    expect((await metaRes.json()).provenance.backend).toBe('openrouter')
   })
 
   it('rejects invalid names and traversal with 400 and writes nothing', async () => {
