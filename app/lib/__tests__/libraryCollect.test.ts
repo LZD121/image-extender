@@ -14,7 +14,8 @@ describe('slugify', () => {
 
 describe('collectStudioAsset', () => {
   it('collects tiles: one derived PNG per role plus the sheet', () => {
-    const out = collectStudioAsset('tile', {
+    const out = collectStudioAsset({
+      mode: 'tile',
       prompt: 'mossy stone',
       model: 'google/gemini-3.1-flash-image-preview',
       tileSet: [
@@ -30,7 +31,8 @@ describe('collectStudioAsset', () => {
   })
 
   it('reports zero derived tiles when only the sheet exists', () => {
-    const out = collectStudioAsset('tile', {
+    const out = collectStudioAsset({
+      mode: 'tile',
       prompt: null, model: 'm', tileSet: [], tileSheetDataUrl: PNG, manifest: null,
     })
     expect(out?.kind).toBe('tiles')
@@ -38,7 +40,8 @@ describe('collectStudioAsset', () => {
   })
 
   it('collects props with their file names and the manifest', () => {
-    const out = collectStudioAsset('props', {
+    const out = collectStudioAsset({
+      mode: 'props',
       prompt: 'rocks',
       model: 'm',
       propItems: [{ id: 'p1', name: 'Rock', imageUrl: PNG }],
@@ -51,19 +54,38 @@ describe('collectStudioAsset', () => {
     expect(out?.manifest).toEqual({ type: 'prop-atlas' })
   })
 
-  it('refuses props without a matching propFiles list', () => {
+  it('refuses props whose propFiles count does not match the populated props', () => {
     expect(() =>
-      collectStudioAsset('props', {
+      collectStudioAsset({
+        mode: 'props',
         prompt: 'r', model: 'm',
         propItems: [{ id: 'p1', name: 'Rock', imageUrl: PNG }],
+        propFiles: [],
         propAtlasDataUrl: null,
         manifest: null,
       })
-    ).toThrow(/propFiles/)
+    ).toThrow(/propFiles must match/)
+  })
+
+  it('refuses props with duplicate file names', () => {
+    expect(() =>
+      collectStudioAsset({
+        mode: 'props',
+        prompt: 'r', model: 'm',
+        propItems: [
+          { id: 'p1', name: 'Rock', imageUrl: PNG },
+          { id: 'p2', name: 'Rock', imageUrl: PNG },
+        ],
+        propFiles: ['rock.png', 'rock.png'],
+        propAtlasDataUrl: null,
+        manifest: null,
+      })
+    ).toThrow(/duplicate/)
   })
 
   it('collects sprite frames reindexed to contiguous names', () => {
-    const out = collectStudioAsset('sprite', {
+    const out = collectStudioAsset({
+      mode: 'sprite',
       prompt: 'knight',
       model: 'm',
       frames: [{ imageUrl: PNG }, { imageUrl: null }, { imageUrl: PNG }],
@@ -73,8 +95,9 @@ describe('collectStudioAsset', () => {
     expect(Object.keys(out?.files ?? {})).toEqual(['derived/frame_01.png', 'derived/frame_02.png'])
   })
 
-  it('collects a single extender/parallax image', () => {
-    const out = collectStudioAsset('extender', {
+  it('collects a single extender image', () => {
+    const out = collectStudioAsset({
+      mode: 'extender',
       prompt: null,
       model: 'm',
       imageUrl: PNG,
@@ -86,8 +109,23 @@ describe('collectStudioAsset', () => {
     expect(out?.provenance.returned).toBe('1413x1024')
   })
 
+  it('collects a parallax image', () => {
+    const out = collectStudioAsset({
+      mode: 'parallax',
+      prompt: 'hills',
+      model: 'm',
+      imageUrl: PNG,
+      dimensions: { width: 2, height: 3 },
+      manifest: null,
+    })
+    expect(out?.kind).toBe('parallax')
+    expect(Object.keys(out?.files ?? {})).toEqual(['derived/image.png'])
+    expect(out?.provenance.returned).toBe('2x3')
+  })
+
   it('returns null when there is nothing to save', () => {
-    expect(collectStudioAsset('tile', {
+    expect(collectStudioAsset({
+      mode: 'tile',
       prompt: null, model: 'm', tileSet: [], tileSheetDataUrl: null, manifest: null,
     })).toBeNull()
   })
