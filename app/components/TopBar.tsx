@@ -84,6 +84,7 @@ export function ModeToggle({
     { value: 'tile', label: 'Tiles', Icon: Icons.Layers, hint: 'Seamless tile textures' },
     { value: 'props', label: 'Props', Icon: Icons.Sprout, hint: 'Scatter decorations' },
     { value: 'sprite', label: 'Sprite', Icon: Icons.Play, hint: 'Character animations' },
+    { value: 'pixel', label: 'Pixel', Icon: Icons.Pixel, hint: 'True pixel-art grid' },
   ]
   return (
     <div

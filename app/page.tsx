@@ -5,6 +5,7 @@ import { CommandBar } from '@/app/components/CommandBar'
 import { EmptyState } from '@/app/components/EmptyState'
 import { ApiKeyModal, ErrorToast, GenerateModal, SettingsDrawer, Toggle } from '@/app/components/Modals'
 import { ParallaxStudio } from '@/app/components/ParallaxStudio'
+import { PixelStudio } from '@/app/components/PixelStudio'
 import { PropStudio } from '@/app/components/PropStudio'
 import { SpriteStudio } from '@/app/components/SpriteStudio'
 import { TileStudio } from '@/app/components/TileStudio'
@@ -216,7 +217,8 @@ export default function Home() {
         savedMode === 'extender' ||
         savedMode === 'tile' ||
         savedMode === 'sprite' ||
-        savedMode === 'props'
+        savedMode === 'props' ||
+        savedMode === 'pixel'
       ) {
         setModeState(savedMode)
       }
@@ -3756,6 +3758,7 @@ export default function Home() {
   const isTile = mode === 'tile'
   const isSprite = mode === 'sprite'
   const isProps = mode === 'props'
+  const isPixel = mode === 'pixel'
 
   const variantSelectorEl =
     isResult && variantCount > 1 ? (
@@ -3820,7 +3823,9 @@ export default function Home() {
                 ? propItems.some((p) => !!p.imageUrl)
                 : isSprite
                   ? spriteSheet.frames.some((f) => !!f.imageUrl)
-                  : !!selectedImage
+                  : isPixel
+                    ? false
+                    : !!selectedImage
         }
         mode={mode}
         setMode={setMode}
@@ -3931,6 +3936,8 @@ export default function Home() {
           onGenerate={openGenerateModal}
           onDropFile={handleFile}
         />
+      ) : isPixel ? (
+        <PixelStudio />
       ) : !displayImage ? (
         <EmptyState
           mode={mode}
