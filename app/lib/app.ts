@@ -55,6 +55,9 @@ export type Mode = 'extender' | 'parallax' | 'tile' | 'sprite' | 'props' | 'pixe
 
 export const STORAGE_MODE = 'extender:mode'
 
+/** localStorage key for the asset library's project name, shared by all studios. */
+export const LIBRARY_PROJECT_STORAGE = 'extender:libraryProject'
+
 /**
  * Common engine-friendly horizontal targets for sidescroller backgrounds.
  * Multiples of common 16:9 game widths so tiling lands on clean boundaries.

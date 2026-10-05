@@ -9,13 +9,12 @@ import { PixelStudio } from '@/app/components/PixelStudio'
 import { PropStudio } from '@/app/components/PropStudio'
 import LibraryPanel from '@/app/components/LibraryPanel'
 import { collectStudioAsset } from '@/app/lib/libraryCollect'
-import { LIBRARY_PROJECT_STORAGE } from '@/app/lib/libraryTypes'
 import { SpriteStudio } from '@/app/components/SpriteStudio'
 import { TileStudio } from '@/app/components/TileStudio'
 import { TopBar } from '@/app/components/TopBar'
 import { ResultActions, VariantSelector } from '@/app/components/VariantSelector'
 import { Workspace } from '@/app/components/Workspace'
-import { Candidate, Direction, EXTENSION_PERCENT, Mode, STORAGE_KEY, STORAGE_MODE, STORAGE_MODEL } from '@/app/lib/app'
+import { Candidate, Direction, EXTENSION_PERCENT, LIBRARY_PROJECT_STORAGE, Mode, STORAGE_KEY, STORAGE_MODE, STORAGE_MODEL } from '@/app/lib/app'
 import { findStyleLabel } from '@/app/lib/artStyles'
 import { DEFAULT_MODEL, MODELS, getModelConfig, skipsArtDirectorReview } from '@/app/lib/models'
 import { LAYER_ORDER, LAYER_ROLES, LayerRole, PARALLAX_MAX_AUTO_STEPS, ParallaxLayer, WORKFLOW_ORDER, createDefaultLayers, getRecommendedLayerIndex, getWorkflowPrerequisite } from '@/app/lib/parallax'
@@ -1999,10 +1998,14 @@ export default function Home() {
 
   /**
    * Snapshot of what the current studio would hand to the library. Reads the
-   * same state the ZIP exporters read; never mutates it. Pixel mode renders its
-   * own panel inside PixelStudio, so it is not handled here.
+   * same state the ZIP exporters read; never mutates it. Deliberately NOT
+   * memoised: the builders it calls (buildTileSheetDataUrl, buildPropManifest,
+   * …) are re-created every render, so a useCallback here would either be
+   * invalidated on every render or close over stale state (sceneBrief lives
+   * inside buildPropManifest). Pixel mode renders its own panel inside
+   * PixelStudio, so it is not handled here.
    */
-  const collectPendingLibraryAsset = useCallback(async () => {
+  const collectPendingLibraryAsset = async () => {
     if (mode === 'tile') {
       return collectStudioAsset({
         mode: 'tile',
@@ -2046,12 +2049,7 @@ export default function Home() {
         : currentImageDimensions,
       manifest: null,
     })
-  }, [
-    mode, tilePrompt, tileSet, propPrompt, propItems, spritePrompt, spriteSheet,
-    activeCandidate, selectedImage, candidateDims, selectedCandidateIdx,
-    currentImageDimensions, selectedModel, buildTileSheetDataUrl,
-    buildPropAtlasDataUrl, buildTileSetManifest,
-  ])
+  }
 
   /** Generate one batch of PROP_BATCH decorations and append them. Used for the
    * first batch AND every "add more" — the model freely invents the items. */
@@ -4043,6 +4041,7 @@ export default function Home() {
             project={libraryProject}
             onProjectChange={setLibraryProject}
             onLoad={(url) => {
+              // pixel renders its own panel and never reaches this gate.
               // Parallax loads into its active layer; every other studio takes
               // the global-image path (the same one uploads take).
               if (mode === 'parallax') void applyImageToActiveLayer(url, { fromUpload: true })

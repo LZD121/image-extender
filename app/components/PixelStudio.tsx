@@ -30,7 +30,7 @@ import {
 } from '@/app/utils/pixelGrid'
 import LibraryPanel from '@/app/components/LibraryPanel'
 import type { CollectedAsset } from '@/app/lib/libraryCollect'
-import { LIBRARY_PROJECT_STORAGE } from '@/app/lib/libraryTypes'
+import { LIBRARY_PROJECT_STORAGE } from '@/app/lib/app'
 
 type SubMode = 'stills' | 'character'
 type StillKind = 'tiles' | 'props'
