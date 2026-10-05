@@ -1,6 +1,6 @@
 // app/utils/__tests__/pixelGrid.test.ts
 import { describe, expect, it } from 'vitest'
-import { bestPhase, purityAt, type PixelBuffer, type RGBA } from '@/app/utils/pixelGrid'
+import { bestPhase, decimateByMode, purityAt, type PixelBuffer, type RGBA } from '@/app/utils/pixelGrid'
 
 const TRANSPARENT: RGBA = [0, 0, 0, 0]
 
@@ -56,5 +56,30 @@ describe('bestPhase', () => {
       }
     }
     expect(bestPhase(smooth, 2).purity).toBeLessThan(0.95)
+  })
+})
+
+describe('decimateByMode', () => {
+  it('takes the block mode and never invents a colour', () => {
+    const RED: RGBA = [200, 30, 30, 255]
+    const BLUE: RGBA = [30, 30, 200, 255]
+    const buf = makeBuffer(2, 2, RED)
+    setPx(buf, 1, 1, BLUE) // 3 red, 1 blue
+    const out = decimateByMode(buf, 2, 0, 0)
+    expect(out.width).toBe(1)
+    expect(out.height).toBe(1)
+    expect(Array.from(out.data)).toEqual([...RED])
+  })
+
+  it('keeps the output colour set a subset of the input', () => {
+    const buf = offsetLattice()
+    const out = decimateByMode(buf, 2, 1, 1)
+    const input = new Set<string>()
+    for (let i = 0; i < buf.width * buf.height; i++) {
+      input.add(buf.data.slice(i * 4, i * 4 + 4).join(','))
+    }
+    for (let i = 0; i < out.width * out.height; i++) {
+      expect(input.has(out.data.slice(i * 4, i * 4 + 4).join(','))).toBe(true)
+    }
   })
 })

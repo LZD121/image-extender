@@ -61,3 +61,31 @@ export function bestPhase(buf: PixelBuffer, block: number): { ox: number; oy: nu
   }
   return best
 }
+
+/**
+ * Mode of every `block x block` tile — never the average. Averaging also
+ * reaches purity 1.0 but inflates the palette (measured 20 -> 54..73 colours).
+ */
+export function decimateByMode(buf: PixelBuffer, block: number, ox: number, oy: number): PixelBuffer {
+  const width = Math.floor((buf.width - ox) / block)
+  const height = Math.floor((buf.height - oy) / block)
+  const out: PixelBuffer = { data: new Uint8ClampedArray(Math.max(width, 0) * Math.max(height, 0) * 4), width: Math.max(width, 0), height: Math.max(height, 0) }
+  for (let by = 0; by < out.height; by++) {
+    for (let bx = 0; bx < out.width; bx++) {
+      const counts = new Map<string, { colour: RGBA; n: number }>()
+      for (let y = 0; y < block; y++) {
+        for (let x = 0; x < block; x++) {
+          const colour = px(buf, ox + bx * block + x, oy + by * block + y)
+          const key = colour.join(',')
+          const hit = counts.get(key)
+          if (hit) hit.n += 1
+          else counts.set(key, { colour, n: 1 })
+        }
+      }
+      let top: { colour: RGBA; n: number } | null = null
+      for (const entry of Array.from(counts.values())) if (!top || entry.n > top.n) top = entry
+      if (top) out.data.set(top.colour, (by * out.width + bx) * 4)
+    }
+  }
+  return out
+}
