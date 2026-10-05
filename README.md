@@ -459,6 +459,48 @@ one boots a real dev server and drives a real Chromium through a vision model.
 - **Reports**: Midscene writes `midscene_run/report/*.html` (every step, with
   screenshots), Playwright writes `playwright-report/`.
 
+## Stylized art: which studio for which job
+
+Two different things get called "pixel art", and only one of them is a pixel-art
+generator. Measured on this fork, 2026-10-05:
+
+| You want | Use | Why |
+|---|---|---|
+| **A real pixel grid** — 2×2 block purity 1.0, zero partial alpha, 13 colours | the **Pixel** studio (PixelLab) | Diffusion models *paint* a pixel look; they do not *place* pixels. Gemini scored 0.05 purity on a strict grid contract vs PixelLab's 0.84–0.87, and its output still held ~5,800 colours after a best-phase decimate |
+| **A stylized look** — retro/pixel-ish or low-poly, for sprites, tiles, props, backgrounds | the other five studios with `Art style` set | Style is a look, not a lattice; general models do this well |
+
+### Recipes that measured well
+
+- **`low-poly`** — the strongest result by a distance. Faceted flat-shaded
+  planes with crisp edges; eight-frame walk sheets came out consistent in build,
+  colour and silhouette, and `sprite-align` reported no duplicate frames. It also
+  produces excellent faceted backgrounds. **Start here.**
+- **`pixel-art`** — reads correctly at native resolution (flat blocks, limited
+  palette, hard edges), but a single-pass sheet drifted in two of eight frames.
+  Use the **two-pass sprite flow** (generate the character anchor first, then the
+  sheet with it attached as the identity reference); the anchored sheet was
+  visibly steadier.
+- **`cartoon`** — a clean third option; useful as a control when judging whether
+  a style change did anything.
+
+Judge these **by eye at native resolution**. Colour count and block-purity are
+useless for stylized art: a hard-edged limited-palette render can carry *more*
+distinct RGB values than a soft painterly one, because every block edge
+anti-aliases.
+
+### Caveats
+
+- **Outpainting a hard-edged source can leave a structural seam.** Both samples
+  of a 38% right extension showed a vertical discontinuity where the source's
+  edge content was not continued. The Poisson blend fixes colour offsets, not
+  missing structure. The UI mitigates this by generating several candidates and
+  keeping the one with the lowest seam residual; a single headless `ie.py extend`
+  attempt does not.
+- A style only reaches the model when the prompt path carries it. That was
+  broken for the sprite-sheet, tile-sheet and sprite-anchor paths until
+  2026-10-05; `app/lib/stylePrompt.ts` is now the single source for every route
+  that mentions a style.
+
 ## Project structure
 
 ```
