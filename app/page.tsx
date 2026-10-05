@@ -271,6 +271,17 @@ export default function Home() {
     } catch {}
   }, [libraryProject, hydrated])
 
+  // PixelStudio owns the same key while it is mounted (it reads and writes the
+  // project name itself), so re-read on every mode change. Without this, a
+  // rename made in pixel mode is invisible here and the next save silently
+  // lands in the old project directory.
+  useEffect(() => {
+    if (!hydrated) return
+    try {
+      setLibraryProject(localStorage.getItem(LIBRARY_PROJECT_STORAGE) || 'default')
+    } catch {}
+  }, [mode, hydrated])
+
   const handleSaveApiKey = (key: string) => {
     setApiKey(key)
     setShowApiKeyModal(false)
@@ -4041,9 +4052,15 @@ export default function Home() {
             project={libraryProject}
             onProjectChange={setLibraryProject}
             onLoad={(url) => {
-              // pixel renders its own panel and never reaches this gate.
-              // Parallax loads into its active layer; every other studio takes
-              // the global-image path (the same one uploads take).
+              // Tile, sprite and props render dedicated studios that never read
+              // the global image, so loading into them would be a silent no-op
+              // (their own upload buttons refuse the same way).
+              if (mode === 'tile' || mode === 'sprite' || mode === 'props') {
+                setError('Switch to Extender or Parallax to open a library asset.')
+                return
+              }
+              // Parallax loads into its active layer; Extender takes the global
+              // image, the same path uploads take. Pixel never reaches this gate.
               if (mode === 'parallax') void applyImageToActiveLayer(url, { fromUpload: true })
               else loadDataUrlAsImage(url, 'from-library.png')
             }}

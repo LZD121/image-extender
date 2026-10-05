@@ -419,7 +419,7 @@ Optional custom prompt and art style live in the bottom command bar.
 Generated assets are saved to a local, git-shareable directory:
 
     assets/<project>/<kind>/<slug>/
-      meta.json      # manifest + provenance (backend, model, params, cost)
+      meta.json      # manifest + provenance (backend, model, params)
       raw/           # model output — gitignored
       derived/       # finished tiles / frames / atlases — versioned
 
@@ -432,6 +432,8 @@ Generated assets are saved to a local, git-shareable directory:
 - `raw/` is deliberately not versioned: one 4096² sheet is ~11 MB and a hundred of
   them would make the repository unusable. The prompt and parameters in `meta.json`
   are enough to regenerate it.
+- `provenance.cost` is reserved but currently always `null`: the value is parsed
+  out of `/api/generate` responses but is not threaded into the studios' state yet.
 
 ## Project structure
 
