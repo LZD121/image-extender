@@ -519,7 +519,8 @@ export function decimateByMode(buf: PixelBuffer, block: number, ox: number, oy: 
         }
       }
       let top: { colour: RGBA; n: number } | null = null
-      for (const entry of counts.values()) if (!top || entry.n > top.n) top = entry
+      // Array.from: this repo's tsconfig targets es5 without downlevelIteration (TS2802).
+      for (const entry of Array.from(counts.values())) if (!top || entry.n > top.n) top = entry
       if (top) out.data.set(top.colour, (by * out.width + bx) * 4)
     }
   }
