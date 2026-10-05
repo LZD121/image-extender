@@ -1031,9 +1031,6 @@ git commit -m "feat(pixel): add allow-listed BYOK proxy for the pixellab API"
 
 import { useCallback, useEffect, useState } from 'react'
 import {
-  DEFAULT_BLOCK,
-  DEFAULT_CELL,
-  DEFAULT_FIGURE_BAND,
   PIXEL_VIEWS,
   PIXEL_TEMPLATES,
   PIXEL_BLOCK_STORAGE,
@@ -1049,7 +1046,8 @@ import {
   type PixelTemplate,
   type PixelView,
 } from '@/app/lib/pixel'
-import { type GridAnalysis, type PixelBuffer } from '@/app/utils/pixelGrid'
+// DEFAULT_BLOCK / DEFAULT_CELL / DEFAULT_FIGURE_BAND 定义在 pixelGrid.ts（Task 2），不在 pixel.ts。
+import { DEFAULT_BLOCK, DEFAULT_CELL, DEFAULT_FIGURE_BAND, type GridAnalysis, type PixelBuffer } from '@/app/utils/pixelGrid'
 // Task 8 会往这一行补 analyzeGrid / cropToCell / decimateByMode —— 本任务还不使用它们，先不要提前 import。
 
 type SubMode = 'stills' | 'character'
