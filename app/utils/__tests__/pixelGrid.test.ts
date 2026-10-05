@@ -1,6 +1,6 @@
 // app/utils/__tests__/pixelGrid.test.ts
 import { describe, expect, it } from 'vitest'
-import { bestPhase, decimateByMode, purityAt, type PixelBuffer, type RGBA } from '@/app/utils/pixelGrid'
+import { bestPhase, cropToCell, decimateByMode, isBackground, purityAt, type PixelBuffer, type RGBA } from '@/app/utils/pixelGrid'
 
 const TRANSPARENT: RGBA = [0, 0, 0, 0]
 
@@ -81,5 +81,39 @@ describe('decimateByMode', () => {
     for (let i = 0; i < out.width * out.height; i++) {
       expect(input.has(out.data.slice(i * 4, i * 4 + 4).join(','))).toBe(true)
     }
+  })
+})
+
+/** A `w x h` opaque figure at (x, y) on a transparent canvas. */
+function withFigure(canvas: number, x: number, y: number, w: number, h: number): PixelBuffer {
+  const buf = makeBuffer(canvas, canvas)
+  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) setPx(buf, x + xx, y + yy, [90, 160, 90, 255])
+  return buf
+}
+
+describe('cropToCell', () => {
+  it('places the figure without changing its pixel size', () => {
+    const src = withFigure(48, 10, 12, 26, 28)
+    const res = cropToCell(src, { cell: 32, minFigureHeight: 24, maxFigureHeight: 28 })
+    expect(res.image.width).toBe(32)
+    expect(res.image.height).toBe(32)
+    expect(res.figure).toEqual({ width: 26, height: 28 })
+    expect(res.warnings).toEqual([])
+    // bottom-aligned: last figure row is the last canvas row
+    const lastRow = Array.from(res.image.data.slice((31 * 32 + 16) * 4, (31 * 32 + 16) * 4 + 4))
+    expect(isBackground(lastRow as unknown as RGBA)).toBe(false)
+  })
+
+  it('throws rather than rescaling a figure that does not fit', () => {
+    const src = withFigure(48, 4, 4, 40, 40)
+    expect(() => cropToCell(src, { cell: 32 })).toThrow(/does not fit/)
+  })
+
+  it('warns when the figure height leaves the band, but still crops', () => {
+    const src = withFigure(48, 10, 10, 20, 31)
+    const res = cropToCell(src, { cell: 32, minFigureHeight: 24, maxFigureHeight: 28 })
+    expect(res.warnings).toHaveLength(1)
+    expect(res.warnings[0]).toContain('31px')
+    expect(res.figure).toEqual({ width: 20, height: 31 })
   })
 })

@@ -89,3 +89,63 @@ export function decimateByMode(buf: PixelBuffer, block: number, ox: number, oy: 
   }
   return out
 }
+
+/** Transparent or magenta: both mean "not the figure". */
+export function isBackground(c: RGBA): boolean {
+  return c[3] < 8 || (c[0] > 200 && c[1] < 80 && c[2] > 200)
+}
+
+function emptyBuffer(width: number, height: number): PixelBuffer {
+  return { data: new Uint8ClampedArray(Math.max(width, 0) * Math.max(height, 0) * 4), width: Math.max(width, 0), height: Math.max(height, 0) }
+}
+
+/**
+ * Place the figure into a `cell x cell` canvas, horizontally centred and
+ * bottom-aligned. Integer pixels only: this function NEVER resamples. If the
+ * figure is larger than the cell it throws — fix `image_size` so the figure is
+ * born at the right height instead of shrinking a finished sprite.
+ */
+export function cropToCell(
+  src: PixelBuffer,
+  opts: { cell: number; minFigureHeight?: number; maxFigureHeight?: number },
+): { image: PixelBuffer; figure: { width: number; height: number }; warnings: string[] } {
+  let minX = src.width
+  let minY = src.height
+  let maxX = -1
+  let maxY = -1
+  for (let y = 0; y < src.height; y++) {
+    for (let x = 0; x < src.width; x++) {
+      if (isBackground(px(src, x, y))) continue
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+  }
+  if (maxX < 0) {
+    return { image: emptyBuffer(opts.cell, opts.cell), figure: { width: 0, height: 0 }, warnings: ['no figure pixels found'] }
+  }
+  const figure = { width: maxX - minX + 1, height: maxY - minY + 1 }
+  if (figure.width > opts.cell || figure.height > opts.cell) {
+    throw new Error(
+      `cropToCell: figure ${figure.width}x${figure.height} does not fit ${opts.cell}x${opts.cell}; change image_size instead of rescaling`,
+    )
+  }
+  const warnings: string[] = []
+  const band = `${opts.minFigureHeight}-${opts.maxFigureHeight}`
+  if (opts.minFigureHeight !== undefined && figure.height < opts.minFigureHeight) {
+    warnings.push(`figure ${figure.height}px below the ${band} band`)
+  }
+  if (opts.maxFigureHeight !== undefined && figure.height > opts.maxFigureHeight) {
+    warnings.push(`figure ${figure.height}px above the ${band} band`)
+  }
+  const image = emptyBuffer(opts.cell, opts.cell)
+  const dx = Math.floor((opts.cell - figure.width) / 2)
+  const dy = opts.cell - figure.height
+  for (let y = 0; y < figure.height; y++) {
+    for (let x = 0; x < figure.width; x++) {
+      image.data.set(px(src, minX + x, minY + y), ((dy + y) * opts.cell + dx + x) * 4)
+    }
+  }
+  return { image, figure, warnings }
+}
