@@ -7,18 +7,15 @@ import type { AssetMeta } from '@/app/lib/libraryTypes'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const MAX_FILE_CHARS = 40 * 1024 * 1024 * 1.4
-const MAX_BODY_CHARS = 200 * 1024 * 1024
+// A base64 data URL carries 4/3 of its decoded size in characters.
+// 40 MiB decoded ≈ 55.9 M characters; +256 covers the "data:image/png;base64," prefix.
+const MAX_FILE_CHARS = Math.ceil((40 * 1024 * 1024 * 4) / 3) + 256
+// All files in one request. The route buffers the JSON body before this check,
+// so this bounds how much decoded data we then hold on top of it.
+const MAX_TOTAL_CHARS = Math.ceil((200 * 1024 * 1024 * 4) / 3) + 1024
 
 /** fs failures that mean "the library is not usable", not "your input is bad". */
-const UNUSABLE_FS_CODES: Record<string, true> = {
-  ENOTDIR: true,
-  EACCES: true,
-  EROFS: true,
-  EISDIR: true,
-  ENOENT: true,
-  ENOSPC: true,
-}
+const UNUSABLE_FS_CODES = new Set(['ENOTDIR', 'EACCES', 'EROFS', 'EISDIR', 'ENOENT', 'ENOSPC'])
 
 const CONTENT_TYPES: Record<string, string> = {
   png: 'image/png',
@@ -31,7 +28,7 @@ function bad(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status })
 }
 
-function triple(segments: string[] | undefined) {
+function parseAssetIds(segments: string[] | undefined) {
   if (!segments || segments.length !== 3) return null
   const [project, kind, slug] = segments
   if (!isValidName(project) || !isValidKind(kind) || !isValidName(slug)) return null
@@ -56,7 +53,7 @@ export async function GET(request: NextRequest, ctx?: { params?: { path?: string
     }
   }
 
-  const ids = triple(segments)
+  const ids = parseAssetIds(segments)
   if (!ids) return bad('invalid asset path')
 
   const rel = request.nextUrl.searchParams.get('file')
@@ -109,7 +106,7 @@ export async function POST(request: NextRequest) {
     if (dataUrl.length > MAX_FILE_CHARS) return bad(`file too large: ${rel}`, 413)
   }
   const total = Object.values(files).reduce((n, v) => n + v.length, 0)
-  if (total > MAX_BODY_CHARS) return bad('request body too large', 413)
+  if (total > MAX_TOTAL_CHARS) return bad('payload too large', 413)
 
   // The backend that actually served the generation is a server-side fact —
   // never trust the client for it.
@@ -132,7 +129,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     if (err instanceof LibraryError && err.code === 'EEXISTS') return bad(err.message, 409)
     const code = (err as NodeJS.ErrnoException).code
-    if (code && UNUSABLE_FS_CODES[code]) {
+    if (code && UNUSABLE_FS_CODES.has(code)) {
       return bad(`asset library unavailable: ${(err as Error).message}`, 500)
     }
     return bad((err as Error).message || 'save failed', 400)
@@ -140,7 +137,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(_request: NextRequest, ctx?: { params?: { path?: string[] } }) {
-  const ids = triple(ctx?.params?.path)
+  const ids = parseAssetIds(ctx?.params?.path)
   if (!ids) return bad('invalid asset path')
   try {
     await deleteAsset(ids.project, ids.kind, ids.slug)
