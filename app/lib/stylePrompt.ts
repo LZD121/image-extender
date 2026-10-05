@@ -1,5 +1,11 @@
 /**
- * The single source of truth for art-style prompt text.
+ * The single source of truth for art-style prompt text — every route that
+ * mentions a style (generate, extend, prop-brief, scene-brief) now reads it.
+ *
+ * Scope note: the strengthened `pixel-art` / `low-poly` wording only reaches
+ * the image generation paths (`generate`, `extend`). The two text brief routes
+ * share the plain description as-is — they hand it to a reasoning model, where a
+ * `RENDER STYLE` directive would address the wrong reader.
  *
  * The table used to be inlined in `app/api/generate/route.ts`, where three of
  * the four prompt branches reassigned `fullPrompt` and silently dropped it.

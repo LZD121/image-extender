@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
+
 // Default model when the client doesn't specify one.
 const DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview'
 
@@ -150,51 +152,8 @@ KEY INSTRUCTIONS:
 6. Preserve the exact style, quality, and atmosphere of the existing content`
 
     // Add art style if provided
-    const artStyleDescriptions: { [key: string]: string } = {
-      'cinematic': 'cinematic photography with dramatic lighting and film grain',
-      'vintage': 'vintage film photography with faded colors and retro feel',
-      'black-white': 'black and white photography with rich contrast',
-      'macro': 'macro photography with shallow depth of field',
-      'oil-painting': 'oil painting style with visible brush strokes and rich textures',
-      'watercolor': 'watercolor painting with soft washes and flowing colors',
-      'impressionism': 'impressionist painting style with loose brushwork',
-      'abstract': 'abstract art with bold shapes and colors',
-      'pop-art': 'pop art style with bold colors and graphic elements',
-      'cubism': 'cubist style with geometric shapes and multiple perspectives',
-      'minimalist': 'minimalist art with simple forms and limited colors',
-      'digital-art': 'digital art with smooth gradients and modern aesthetics',
-      'cyberpunk': 'cyberpunk style with neon colors and futuristic elements',
-      'vaporwave': 'vaporwave aesthetic with pastel colors and retro-futuristic vibes',
-      'low-poly': 'low poly 3D art with geometric faceted surfaces',
-      'pixel-art': 'pixel art style with retro video game aesthetics',
-      '3d-render': '3D rendered look with realistic lighting and materials',
-      'anime': 'anime/manga style with bold lines and vibrant colors',
-      'cartoon': 'cartoon illustration with exaggerated features',
-      'comic-book': 'comic book style with bold inking and halftone dots',
-      'sketch': 'pencil sketch with cross-hatching and shading',
-      'ink': 'ink drawing with bold black lines and dramatic contrast',
-      'studio-ghibli': 'Studio Ghibli animation style with whimsical, hand-drawn aesthetics and rich environmental details',
-      'pixar': 'Pixar animation style with smooth 3D rendering, expressive characters, and vibrant colors',
-      'disney': 'Disney animation style with classic hand-drawn or modern 3D aesthetics and magical atmosphere',
-      'dreamworks': 'DreamWorks animation style with dynamic expressions and cinematic lighting',
-      'illumination': 'Illumination Entertainment style with bright colors, playful characters, and bold shapes',
-      'laika': 'Laika Studios stop-motion style with intricate textures and handcrafted details',
-      'cartoon-network': 'Cartoon Network style with bold outlines, simplified shapes, and vibrant colors',
-      'nickelodeon': 'Nickelodeon animation style with energetic, expressive characters and bright color palettes',
-      'aardman': 'Aardman claymation style with textured plasticine characters and British humor aesthetics',
-      'blue-sky': 'Blue Sky Studios animation style with detailed 3D rendering and dynamic action sequences',
-      'fantasy': 'fantasy art with magical and ethereal elements',
-      'sci-fi': 'science fiction with futuristic technology and environments',
-      'steampunk': 'steampunk style with Victorian-era and industrial elements',
-      'surreal': 'surrealist style with dreamlike and impossible elements',
-      'art-deco': 'Art Deco style with geometric patterns and elegant lines',
-      'art-nouveau': 'Art Nouveau with flowing organic lines and natural motifs',
-      'retro-80s': '1980s retro style with bright colors and bold graphics',
-      'retro-50s': '1950s vintage style with pastel colors and classic aesthetics'
-    }
-    
-    if (artStyle && artStyleDescriptions[artStyle]) {
-      prompt += `\n\n7. ARTISTIC STYLE: Create the extended area in ${artStyleDescriptions[artStyle]}`
+    if (artStyle && ART_STYLE_PROMPTS[artStyle]) {
+      prompt += `\n\n7. ARTISTIC STYLE: Create the extended area in ${ART_STYLE_PROMPTS[artStyle]}`
       prompt += `\n   - Apply this style consistently to the new content`
       prompt += `\n   - Ensure smooth transition from original to styled extension`
       prompt += `\n   - The style should blend naturally with the existing content at the boundary`
@@ -271,7 +230,7 @@ KEY INSTRUCTIONS:
       prompt += `\n\nSHARED SCENE DIRECTION — maintain this art direction exactly in the new area (palette, lighting, mood, style). Do not drift from it:\n${sceneBrief.trim()}`
     }
 
-    prompt += `\n\nFINAL OUTPUT: Return the complete image with the blank area filled. The result must look like a single, unified ${artStyle && artStyleDescriptions[artStyle] ? 'artistic work' : 'scene'} with absolutely no visible seams. The boundary should be completely invisible.`
+    prompt += `\n\nFINAL OUTPUT: Return the complete image with the blank area filled. The result must look like a single, unified ${artStyle && ART_STYLE_PROMPTS[artStyle] ? 'artistic work' : 'scene'} with absolutely no visible seams. The boundary should be completely invisible.`
 
     if (extensionInfo?.newWidth && extensionInfo?.newHeight) {
       prompt += `\n\nOUTPUT DIMENSIONS: Return the image at exactly ${extensionInfo.newWidth}x${extensionInfo.newHeight} pixels. Do NOT crop, letterbox, or change the aspect ratio. Fill every pixel of the light gray extension area — no gray or white pixels should remain.`
