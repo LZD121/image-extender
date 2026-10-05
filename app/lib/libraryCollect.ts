@@ -66,7 +66,13 @@ export function collectStudioAsset(
     }
     if (input.tileSheetDataUrl) files['raw/sheet.png'] = input.tileSheetDataUrl
     if (Object.keys(files).length === 0) return null
-    return { kind: 'tiles', files, manifest: input.manifest, provenance: { ...p, params: { roles: Object.keys(files).length } } }
+    const derived = Object.keys(files).filter((f) => f.startsWith('derived/')).length
+    return {
+      kind: 'tiles',
+      files,
+      manifest: input.manifest,
+      provenance: { ...p, params: { derived, sheet: 'raw/sheet.png' in files } },
+    }
   }
 
   if (mode === 'props') {
@@ -74,9 +80,11 @@ export function collectStudioAsset(
     const populated = (input.propItems ?? []).filter(
       (x): x is { id: string; name: string; imageUrl: string } => !!x.imageUrl
     )
+    if (populated.length && input.propFiles?.length !== populated.length) {
+      throw new Error('collectStudioAsset(props): propFiles must match the populated prop count')
+    }
     populated.forEach((item, i) => {
-      const file = input.propFiles?.[i] ?? `${slugify(item.name)}.png`
-      files[`derived/${file}`] = item.imageUrl
+      files[`derived/${input.propFiles![i]}`] = item.imageUrl
     })
     if (input.propAtlasDataUrl) files['raw/sheet.png'] = input.propAtlasDataUrl
     if (Object.keys(files).length === 0) return null
