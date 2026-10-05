@@ -32,8 +32,10 @@ export const PIXELLAB_BASE = 'https://api.pixellab.ai/v2'
 export const PIXEL_KEY_HEADER = 'x-pixellab-key'
 
 /**
- * Hosts the `image` op may proxy. Rotation URLs come back on a CDN host —
- * Task 13 prints the real one; add it here if the proxy answers 403.
+ * Hosts the `image` op may proxy. Rotation URLs are served from
+ * `backblaze.pixellab.ai` (verified live 2026-10-05 — the proxy returned 200
+ * for a real rotation), which the bare-domain suffix rule below already
+ * covers. Keep the suffix rather than pinning one bucket host.
  */
 export const PIXEL_IMAGE_HOSTS = ['api.pixellab.ai', 'pixellab.ai']
 

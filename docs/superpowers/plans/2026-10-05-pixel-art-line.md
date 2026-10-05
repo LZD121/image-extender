@@ -12,6 +12,18 @@
 
 **前置条件：** 资产库计划（`2026-10-05-local-asset-library.md`）Task 1–10 已完成。本计划的 Task 10/11 依赖它的 `app/lib/libraryClient.ts` 与 `app/components/LibraryPanel.tsx`。
 
+## ⚠️ 执行后的偏离记录（2026-10-05，Task 13 的真实运行驱动）
+
+**本文档下面的三处代码块已在执行后被实测推翻，仓库里的代码是修正版。照抄旧代码会把修复回退掉。**
+
+1. **纯度门禁不存在了**（作废 Task 5/8 的相应代码）：`analyzeGrid` 只返回 `{ block, ox, oy, purity }`；studio **总是**施加格点；`PURITY_THRESHOLD` 与「仍然施加」按钮已删。依据：五个实测点（0.0476 / 0.0927 / 0.1494 / 0.2305 / 0.4766）证明**类内波动 > 类间差距**，任何阈值都是掷硬币。详见 spec §7.3。
+2. **`/api/pixel` 的 POST 必须同时接受 query 里的 `op`**：客户端把它放 query（GET/POST 一致），而路由原先只读 body → 所有 POST 都 400。修正为 `const op = request.nextUrl.searchParams.get('op') ?? payload.op`，并有两条回归测试锁住这条缝。
+3. **key 模态框在 `required` 模式也提供 Skip**：首启无 OpenRouter key 时它原本没有关闭按钮，而 OpenRouter key 字段就挡在像素 studio 前面——像素产线根本进不去。
+
+另外两条实测收口：`purityAtBlockOne` 已删（恒为 1.0）；图片代理的真实 CDN 主机是 `backblaze.pixellab.ai`，被 `pixellab.ai` 后缀规则覆盖（实测代理返回 200）。
+
+---
+
 ---
 
 ## File Structure
@@ -1564,7 +1576,7 @@ git commit -m "feat(pixel): add the character sub-mode with polling"
 - [ ] **Step 1: 加 import 与项目名状态**
 
 ```tsx
-import { LibraryPanel } from '@/app/components/LibraryPanel'
+import LibraryPanel from '@/app/components/LibraryPanel' // 默认导出，已核实
 import type { CollectedAsset } from '@/app/lib/libraryCollect'
 ```
 
@@ -1867,16 +1879,24 @@ import { PixelStudio } from '@/app/components/PixelStudio'
         {mode === 'pixel' && <PixelStudio />}
 ```
 
-3. 找到渲染 `<LibraryPanel` 的那一行（资产库计划 Task 9），给它加条件：
+3. **共享库面板的让位条件**（`page.tsx` 里由资产库计划 Task 9 挂载）：
+
+先跑 `grep -n "LibraryPanel" app/page.tsx`：
+
+- **有命中** → 给它加条件，避免像素模式下页面上出现两个面板：
 
 ```tsx
         {mode !== 'pixel' && <LibraryPanel … />}
 ```
 
+- **无命中**（说明资产库计划 Task 9 还没落地）→ 本步**跳过**，在提交信息里写 `panel guard pending`，并把这件事报告出来。像素 studio 自带自己的面板，功能不受影响；等 Task 9 落地后补一行条件即可。
+
 - [ ] **Step 5: 类型检查 + 构建**
 
-Run: `npx tsc --noEmit && npm run lint`
-Expected: 无错误
+Run: `npx tsc --noEmit && npm run build`
+Expected: 无错误。**不要跑 `npm run lint`** —— 本仓库没有安装/配置 eslint，`next lint` 会交互式询问初始化，在 agent 里会挂死。
+
+（`npm run build` 是挂载新组件的真实验证：它会把整棵组件树编译一遍。）
 
 - [ ] **Step 6: 提交**
 
@@ -1937,8 +1957,10 @@ export const PIXEL_IMAGE_HOSTS = ['api.pixellab.ai', 'pixellab.ai', '<real-host>
 ```bash
 npx tsc --noEmit
 npm test
-npm run lint
+npm run build
 ```
+
+（同样**不要**跑 `npm run lint`：无 eslint 配置，会交互式卡住。）
 
 Expected: 全绿
 
