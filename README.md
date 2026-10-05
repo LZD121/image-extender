@@ -414,6 +414,25 @@ Optional custom prompt and art style live in the bottom command bar.
   - Reasoning / vision QA (scene brief, prop art director, tile review):
     `google/gemini-2.0-flash-001`
 
+## Asset library
+
+Generated assets are saved to a local, git-shareable directory:
+
+    assets/<project>/<kind>/<slug>/
+      meta.json      # manifest + provenance (backend, model, params, cost)
+      raw/           # model output — gitignored
+      derived/       # finished tiles / frames / atlases — versioned
+
+- Every studio can save its result: Extender, Parallax, Tiles, Sprite, Props and
+  the Pixel studio. `kind` follows the studio; the Pixel studio records
+  `backend: pixellab`.
+- `IE_ASSETS_DIR` overrides the location (default `<repo>/assets`).
+- Sharing with a teammate is `git pull` — one directory per asset means two people
+  adding assets never touch the same files, so there are no merge conflicts.
+- `raw/` is deliberately not versioned: one 4096² sheet is ~11 MB and a hundred of
+  them would make the repository unusable. The prompt and parameters in `meta.json`
+  are enough to regenerate it.
+
 ## Project structure
 
 ```

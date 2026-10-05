@@ -46,3 +46,6 @@ next-env.d.ts
 
 # Vercel
 .vercel
+
+# Asset library: only derived/ is versioned; raw model output stays local.
+assets/**/raw/
