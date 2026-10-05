@@ -22,10 +22,12 @@ import {
   DEFAULT_BLOCK,
   DEFAULT_CELL,
   DEFAULT_FIGURE_BAND,
+  analyzeGrid,
+  cropToCell,
+  decimateByMode,
   type GridAnalysis,
   type PixelBuffer,
 } from '@/app/utils/pixelGrid'
-// Task 8 会往这一行补 analyzeGrid / cropToCell / decimateByMode —— 本任务还不使用它们，先不要提前 import。
 
 type SubMode = 'stills' | 'character'
 type StillKind = 'tiles' | 'props'
@@ -116,6 +118,44 @@ export function PixelStudio() {
     }
   }, [key])
 
+  /** Analyse a source image; decimate + crop when the gate passes. */
+  const process = useCallback(
+    async (candidate: Candidate, force = false) => {
+      const apply = async (buf: PixelBuffer) => {
+        const analysis = analyzeGrid(buf, block)
+        const shouldApply = force || analysis.ok
+        let processedUrl: string | null = null
+        let figure: { width: number; height: number } | null = null
+        let warnings: string[] = []
+        if (shouldApply) {
+          const decimated = decimateByMode(buf, analysis.block, analysis.ox, analysis.oy)
+          try {
+            const cropped = cropToCell(decimated, {
+              cell,
+              minFigureHeight: DEFAULT_FIGURE_BAND.min,
+              maxFigureHeight: DEFAULT_FIGURE_BAND.max,
+            })
+            processedUrl = pixelsToDataUrl(cropped.image)
+            figure = cropped.figure
+            warnings = cropped.warnings
+          } catch (err) {
+            warnings = [err instanceof Error ? err.message : 'crop failed']
+          }
+        }
+        setCandidates((prev) =>
+          prev.map((x) => (x.id === candidate.id ? { ...x, analysis, processedUrl, figure, warnings } : x)),
+        )
+      }
+      try {
+        const buf = await loadPixels(candidate.sourceUrl)
+        await apply(buf)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'could not read the image')
+      }
+    },
+    [block, cell],
+  )
+
   const submit = async () => {
     setError(null)
     if (!key) {
@@ -132,10 +172,17 @@ export function PixelStudio() {
         { description, width, height, noBackground, seed: null },
         key,
       )
-      setCandidates((prev) => [
-        { id: `${Date.now()}`, label: description.slice(0, 40), sourceUrl: dataUrl, analysis: null, processedUrl: null, figure: null, warnings: [] },
-        ...prev,
-      ])
+      const candidate: Candidate = {
+        id: `${Date.now()}`,
+        label: description.slice(0, 40),
+        sourceUrl: dataUrl,
+        analysis: null,
+        processedUrl: null,
+        figure: null,
+        warnings: [],
+      }
+      setCandidates((prev) => [candidate, ...prev])
+      await process(candidate)
       void refreshBalance()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'generation failed')
@@ -245,8 +292,47 @@ export function PixelStudio() {
       <div className="grid grid-cols-3 gap-3">
         {candidates.map((c) => (
           <div key={c.id} className="rounded border border-white/10 p-2">
-            <img src={showProcessed[c.id] && c.processedUrl ? c.processedUrl : c.sourceUrl} alt={c.label} className="w-full [image-rendering:pixelated]" />
+            <img
+              src={showProcessed[c.id] && c.processedUrl ? c.processedUrl : c.sourceUrl}
+              alt={c.label}
+              className="w-full [image-rendering:pixelated]"
+            />
             <p className="mt-1 truncate text-[10px] text-white/60">{c.label}</p>
+            {c.analysis && (
+              <p className={`mt-1 text-[10px] ${c.analysis.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                block={c.analysis.block} phase=({c.analysis.ox},{c.analysis.oy}) purity={c.analysis.purity.toFixed(4)}
+                {c.analysis.ok ? ' ✓' : ' ✗ 未通过格点检测'}
+              </p>
+            )}
+            {c.figure && (
+              <p className="text-[10px] text-white/40">
+                figure {c.figure.width}x{c.figure.height}
+              </p>
+            )}
+            {c.warnings.map((w) => (
+              <p key={w} className="text-[10px] text-amber-400">
+                {w}
+              </p>
+            ))}
+            <div className="mt-1 flex gap-1">
+              <button
+                type="button"
+                onClick={() => setShowProcessed((s) => ({ ...s, [c.id]: !s[c.id] }))}
+                disabled={!c.processedUrl}
+                className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] disabled:opacity-40"
+              >
+                {showProcessed[c.id] ? 'source' : 'processed'}
+              </button>
+              {c.analysis && !c.analysis.ok && (
+                <button
+                  type="button"
+                  onClick={() => void process(c, true)}
+                  className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px]"
+                >
+                  仍然施加
+                </button>
+              )}
+            </div>
           </div>
         ))}
       </div>
