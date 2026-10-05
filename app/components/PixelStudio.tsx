@@ -10,6 +10,7 @@ import {
   PIXEL_PROJECT_STORAGE,
   fetchBalance,
   pixellab,
+  proxiedImageUrl,
   readPixelKey,
   readStoredNumber,
   writePixelKey,
@@ -117,6 +118,68 @@ export function PixelStudio() {
       setError(err instanceof Error ? err.message : 'balance failed')
     }
   }, [key])
+
+  const POLL_EVERY_MS = 5000
+  const POLL_LIMIT_MS = 10 * 60 * 1000
+
+  const generateCharacter = async () => {
+    setError(null)
+    if (!key) {
+      setError('粘贴 PixelLab key。')
+      return
+    }
+    if (!description.trim()) {
+      setError('先描述这个角色。')
+      return
+    }
+    setBusy('提交角色（8 方向，约 2–5 分钟）…')
+    let characterId: string
+    try {
+      const created = await pixellab.createCharacter({ description, template, view, size, seed: null }, key)
+      characterId = created.characterId
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'character submit failed')
+      setBusy(null)
+      return
+    }
+
+    const startedAt = Date.now()
+    try {
+      for (;;) {
+        const job = await pixellab.pollCharacter(characterId, key)
+        if (job.status === 'failed') {
+          setError(`角色生成失败（character_id=${characterId}）；不会自动重试。`)
+          return
+        }
+        if (job.status === 'completed' && job.images.length > 0) {
+          const made: Candidate[] = job.images.map((url, i) => ({
+            id: `${characterId}-${i}`,
+            label: `${description.slice(0, 24)} #${i}`,
+            sourceUrl: proxiedImageUrl(url),
+            analysis: null,
+            processedUrl: null,
+            figure: null,
+            warnings: [],
+          }))
+          setCandidates((prev) => [...made, ...prev])
+          for (const candidate of made) await process(candidate)
+          void refreshBalance()
+          return
+        }
+        if (Date.now() - startedAt > POLL_LIMIT_MS) {
+          setError(`轮询超时（10 分钟）。character_id=${characterId} —— 用“再查一次”继续，不要重新提交。`)
+          return
+        }
+        const { promise, resolve } = Promise.withResolvers<void>()
+        setTimeout(resolve, POLL_EVERY_MS)
+        await promise
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'polling failed')
+    } finally {
+      setBusy(null)
+    }
+  }
 
   /** Analyse a source image; decimate + crop when the gate passes. */
   const process = useCallback(
@@ -282,8 +345,13 @@ export function PixelStudio() {
           cell{' '}
           <input type="number" value={cell} onChange={(e) => setCell(Math.max(8, Number(e.target.value)))} className="w-14 rounded bg-white/5 px-1" />
         </label>
-        <button type="button" onClick={() => void submit()} disabled={busy !== null} className="rounded bg-white/10 px-3 py-1">
-          {busy ?? 'Generate'}
+        <button
+          type="button"
+          onClick={() => void (sub === 'stills' ? submit() : generateCharacter())}
+          disabled={busy !== null}
+          className="rounded bg-white/10 px-3 py-1"
+        >
+          {busy ?? (sub === 'stills' ? 'Generate' : 'Generate character (8 dirs)')}
         </button>
       </div>
 
