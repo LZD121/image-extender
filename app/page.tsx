@@ -7,6 +7,9 @@ import { ApiKeyModal, ErrorToast, GenerateModal, SettingsDrawer, Toggle } from '
 import { ParallaxStudio } from '@/app/components/ParallaxStudio'
 import { PixelStudio } from '@/app/components/PixelStudio'
 import { PropStudio } from '@/app/components/PropStudio'
+import LibraryPanel from '@/app/components/LibraryPanel'
+import { collectStudioAsset } from '@/app/lib/libraryCollect'
+import { LIBRARY_PROJECT_STORAGE } from '@/app/lib/libraryTypes'
 import { SpriteStudio } from '@/app/components/SpriteStudio'
 import { TileStudio } from '@/app/components/TileStudio'
 import { TopBar } from '@/app/components/TopBar'
@@ -193,6 +196,7 @@ export default function Home() {
   // "hydrating" state so we don't flash the modal before reading storage.
   const [apiKey, setApiKey] = useState('')
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL)
+  const [libraryProject, setLibraryProject] = useState<string>('default')
   const skipArtDirectorReview = skipsArtDirectorReview(selectedModel)
   const [hydrated, setHydrated] = useState(false)
   const [showApiKeyModal, setShowApiKeyModal] = useState(false)
@@ -209,6 +213,7 @@ export default function Home() {
       const m = localStorage.getItem(STORAGE_MODEL) || ''
       const savedMode = localStorage.getItem(STORAGE_MODE) || ''
       setApiKey(k)
+      setLibraryProject(localStorage.getItem(LIBRARY_PROJECT_STORAGE) || 'default')
       if (m && MODELS.some((mm) => mm.value === m)) {
         setSelectedModel(m)
       }
@@ -258,6 +263,14 @@ export default function Home() {
       localStorage.setItem(STORAGE_MODEL, selectedModel)
     } catch {}
   }, [selectedModel, hydrated])
+
+  // Persist the library project name so all six studios share one folder.
+  useEffect(() => {
+    if (!hydrated) return
+    try {
+      localStorage.setItem(LIBRARY_PROJECT_STORAGE, libraryProject)
+    } catch {}
+  }, [libraryProject, hydrated])
 
   const handleSaveApiKey = (key: string) => {
     setApiKey(key)
@@ -1983,6 +1996,62 @@ export default function Home() {
       }),
     }
   }
+
+  /**
+   * Snapshot of what the current studio would hand to the library. Reads the
+   * same state the ZIP exporters read; never mutates it. Pixel mode renders its
+   * own panel inside PixelStudio, so it is not handled here.
+   */
+  const collectPendingLibraryAsset = useCallback(async () => {
+    if (mode === 'tile') {
+      return collectStudioAsset({
+        mode: 'tile',
+        prompt: tilePrompt.trim() || null,
+        model: selectedModel,
+        tileSet: tileSet.map((s) => ({ role: s.role, imageUrl: s.imageUrl })),
+        tileSheetDataUrl: await buildTileSheetDataUrl(),
+        manifest: buildTileSetManifest(),
+      })
+    }
+    if (mode === 'props') {
+      const populated = propItems.filter((p) => p.imageUrl)
+      return collectStudioAsset({
+        mode: 'props',
+        prompt: propPrompt.trim() || null,
+        model: selectedModel,
+        propItems: populated.map((p) => ({ id: p.id, name: p.name ?? '', imageUrl: p.imageUrl })),
+        propFiles: resolvePropNames(populated).map((n) => n.file),
+        propAtlasDataUrl: await buildPropAtlasDataUrl(),
+        manifest: buildPropManifest(),
+      })
+    }
+    if (mode === 'sprite') {
+      return collectStudioAsset({
+        mode: 'sprite',
+        prompt: spritePrompt.trim() || null,
+        model: selectedModel,
+        frames: spriteSheet.frames
+          .filter((f) => f.imageUrl && !f.disabled)
+          .map((f) => ({ imageUrl: f.imageUrl })),
+        manifest: null,
+      })
+    }
+    return collectStudioAsset({
+      mode: mode === 'parallax' ? 'parallax' : 'extender',
+      prompt: null,
+      model: selectedModel,
+      imageUrl: activeCandidate?.imageUrl ?? selectedImage,
+      dimensions: activeCandidate
+        ? candidateDims[selectedCandidateIdx] ?? null
+        : currentImageDimensions,
+      manifest: null,
+    })
+  }, [
+    mode, tilePrompt, tileSet, propPrompt, propItems, spritePrompt, spriteSheet,
+    activeCandidate, selectedImage, candidateDims, selectedCandidateIdx,
+    currentImageDimensions, selectedModel, buildTileSheetDataUrl,
+    buildPropAtlasDataUrl, buildTileSetManifest,
+  ])
 
   /** Generate one batch of PROP_BATCH decorations and append them. Used for the
    * first batch AND every "add more" — the model freely invents the items. */
@@ -3964,6 +4033,23 @@ export default function Home() {
           variantSelector={variantSelectorEl}
           resultActions={resultActionsEl}
         />
+      )}
+
+      {/* Asset library: pixel mode embeds its own panel inside PixelStudio. */}
+      {!isPixel && (
+        <div className="mx-auto w-full max-w-5xl px-4 pb-4">
+          <LibraryPanel
+            pending={collectPendingLibraryAsset}
+            project={libraryProject}
+            onProjectChange={setLibraryProject}
+            onLoad={(url) => {
+              // Parallax loads into its active layer; every other studio takes
+              // the global-image path (the same one uploads take).
+              if (mode === 'parallax') void applyImageToActiveLayer(url, { fromUpload: true })
+              else loadDataUrlAsImage(url, 'from-library.png')
+            }}
+          />
+        </div>
       )}
 
       {/* Command bar: extender mode shows it once an image exists; parallax

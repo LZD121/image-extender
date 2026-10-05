@@ -40,7 +40,6 @@ export const PIXEL_KEY_HEADER = 'x-pixellab-key'
 export const PIXEL_IMAGE_HOSTS = ['api.pixellab.ai', 'pixellab.ai']
 
 export const PIXEL_KEY_STORAGE = 'extender:pixelKey'
-export const PIXEL_PROJECT_STORAGE = 'extender:libraryProject'
 export const PIXEL_BLOCK_STORAGE = 'extender:pixelBlock'
 export const PIXEL_CELL_STORAGE = 'extender:pixelCell'
 

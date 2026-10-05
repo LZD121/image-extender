@@ -50,3 +50,6 @@ export type LibraryAssetSummary = {
 export type LibraryKindGroup = { name: AssetKind; assets: LibraryAssetSummary[] }
 export type LibraryProjectGroup = { name: string; kinds: LibraryKindGroup[] }
 export type LibraryIndex = { projects: LibraryProjectGroup[]; warnings: string[] }
+
+/** localStorage key for the library project name. Shared by every studio. */
+export const LIBRARY_PROJECT_STORAGE = 'extender:libraryProject'

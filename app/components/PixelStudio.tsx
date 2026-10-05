@@ -7,7 +7,6 @@ import {
   PIXEL_TEMPLATES,
   PIXEL_BLOCK_STORAGE,
   PIXEL_CELL_STORAGE,
-  PIXEL_PROJECT_STORAGE,
   fetchBalance,
   pixellab,
   proxiedImageUrl,
@@ -31,6 +30,7 @@ import {
 } from '@/app/utils/pixelGrid'
 import LibraryPanel from '@/app/components/LibraryPanel'
 import type { CollectedAsset } from '@/app/lib/libraryCollect'
+import { LIBRARY_PROJECT_STORAGE } from '@/app/lib/libraryTypes'
 
 type SubMode = 'stills' | 'character'
 type StillKind = 'tiles' | 'props'
@@ -102,7 +102,7 @@ export function PixelStudio() {
 
   useEffect(() => {
     try {
-      setProject(localStorage.getItem(PIXEL_PROJECT_STORAGE) ?? 'default')
+      setProject(localStorage.getItem(LIBRARY_PROJECT_STORAGE) ?? 'default')
     } catch {
       setProject('default')
     }
@@ -111,7 +111,7 @@ export function PixelStudio() {
   useEffect(() => {
     if (!project) return
     try {
-      localStorage.setItem(PIXEL_PROJECT_STORAGE, project)
+      localStorage.setItem(LIBRARY_PROJECT_STORAGE, project)
     } catch {
       /* ignore */
     }
