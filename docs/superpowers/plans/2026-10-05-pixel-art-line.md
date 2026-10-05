@@ -28,8 +28,7 @@
 | Modify `app/components/TopBar.tsx:82-86` | mode 列表加一条 |
 | Modify `app/components/icons.tsx` | 加 `Pixel` 图标 |
 | Modify `app/page.tsx` | import + 挂载 + 像素模式不渲染共享库面板 |
-| Modify `app/lib/libraryCollect.ts` | `CollectedAsset` 带上 `backend`（来源必须被真实记录） |
-| Modify `app/components/LibraryPanel.tsx` | 不再硬编码 `backend: 'openrouter'` |
+| Modify `app/lib/libraryCollect.ts` | `CollectedAsset` 带上 `backend`；`buildAssetMeta()` 用它而不是硬编码 |
 | Modify `app/api/library/[[...path]]/route.ts` | 客户端 backend 走**白名单**（保住"不许伪造任意值"这条安全属性） |
 | Modify `app/api/library/__tests__/route.test.ts` | 白名单两条用例 |
 
@@ -1640,12 +1639,19 @@ import type { CollectedAsset } from '@/app/lib/libraryCollect'
           pending={async () => collect()}
           project={project}
           onProjectChange={setProject}
+          onLoad={(url) => {
+            // 库里存的是**已完成**资产：只展示，不再走一次 decimate —— 再抽一次会把图毁掉。
+            setCandidates((prev) => [
+              { id: `lib-${Date.now()}`, label: 'from library', sourceUrl: url, analysis: null, processedUrl: null, figure: null, warnings: [] },
+              ...prev,
+            ])
+          }}
           onSaved={() => setCandidates([])}
         />
       </div>
 ```
 
-**注意：** `LibraryPanel` 的 props 以 `app/components/LibraryPanel.tsx` 实际导出为准。执行前先读那个文件的前 40 行；若签名不同（例如项目名回调叫别的名字），按实际签名调整这四行，**不要改面板本身**。
+**注意（已核实落地版）**：真实 `LibraryPanelProps` 是 `{ pending, project, onProjectChange, onLoad, onSaved? }` —— `onLoad` 是**必填**（上面已给），`onSaved` 收一个 `path: string` 参数（忽略即可）。签名若与上面不同，以 `app/components/LibraryPanel.tsx` 为准，**但不要改面板本身**。
 
 - [ ] **Step 4: 类型检查**
 
@@ -1664,9 +1670,8 @@ git commit -m "feat(pixel): save decimated assets into the library"
 ## Task 11: 让 `/api/library` 记录真实来源（白名单）
 
 **Files:**
-- Modify: `app/lib/libraryCollect.ts`（`CollectedAsset` 带上 `backend`）
-- Modify: `app/components/LibraryPanel.tsx`（不再硬编码 `openrouter`）
-- Modify: `app/api/library/[[...path]]/route.ts`（客户端值走白名单）
+- Modify: `app/lib/libraryCollect.ts`（`CollectedAsset` 带上 `backend`；`base()` 设默认标签；`buildAssetMeta()` 不再硬编码）
+- Modify: `app/api/library/[[...path]]/route.ts`（客户端值走 `BACKEND_LABELS` 白名单）
 - Test: `app/api/library/__tests__/route.test.ts`
 
 **为什么必须做：** 现在路由第 122 行是 `backend: process.env.IE_BACKEND_LABEL || 'openrouter'` —— 像素资产会被记成 `openrouter`，而资产库 spec §2.3 的成功标准是"后端可追溯"。改成白名单后，客户端只能从已知标签里选，**不能伪造任意值**（原来的安全属性保住）。
@@ -1754,16 +1759,17 @@ const base = (prompt: string | null, model: string) => ({
 })
 ```
 
-`app/components/LibraryPanel.tsx`：把
+`app/lib/libraryCollect.ts` 的 `buildAssetMeta()`（实际落地版在这里构造 meta，**不在面板里**）：把
 
-```tsx
-      provenance: { ...collected.provenance, backend: 'openrouter', toolVersion: 'web' },
+```ts
+    // Completed server-side by the route; placeholders here on purpose.
+    provenance: { ...collected.provenance, backend: 'openrouter', toolVersion: 'web' },
 ```
 
 改成
 
-```tsx
-      provenance: { ...collected.provenance, toolVersion: 'web' },
+```ts
+    provenance: { ...collected.provenance, toolVersion: 'web' },
 ```
 
 `app/api/library/[[...path]]/route.ts`：把
