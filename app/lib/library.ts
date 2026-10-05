@@ -22,6 +22,8 @@ import {
  */
 
 const DATA_URL_RE = /^data:image\/(png|jpeg|webp);base64,/
+// Leftovers from a crashed save/overwrite swap. Not assets — report, never list.
+const ORPHAN_RE = /^[a-z0-9][a-z0-9-]*\.(old|tmp)-\d+-\d+$/
 
 export function assetsRoot(): string {
   return path.resolve(process.env.IE_ASSETS_DIR || path.join(process.cwd(), 'assets'))
@@ -141,10 +143,15 @@ export async function listAssets(): Promise<LibraryIndex> {
       const kindDir = path.join(root, project.name, kind)
       if (!(await exists(kindDir))) continue
       const assets = []
-      const slugDirs = (await readdir(kindDir, { withFileTypes: true })).filter(
-        (d) => d.isDirectory() && isValidName(d.name)
+      const slugDirs = (await readdir(kindDir, { withFileTypes: true })).filter((d) =>
+        d.isDirectory()
       )
       for (const slug of slugDirs) {
+        if (ORPHAN_RE.test(slug.name)) {
+          warnings.push(`orphaned write directory: ${project.name}/${kind}/${slug.name}`)
+          continue
+        }
+        if (!isValidName(slug.name)) continue
         try {
           const parsed = JSON.parse(
             await readFile(path.join(kindDir, slug.name, 'meta.json'), 'utf8')

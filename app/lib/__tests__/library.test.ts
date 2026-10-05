@@ -153,4 +153,14 @@ describe('library fs layer', () => {
     expect(index.warnings).toHaveLength(1)
     expect(index.projects).toEqual([])
   })
+
+  it('warns about orphaned write directories instead of silently dropping them', async () => {
+    const dir = path.join(root, 'dungeon', 'tiles', 'mossy-stone.old-12345-999')
+    await mkdir(dir, { recursive: true })
+    await writeFile(path.join(dir, 'meta.json'), JSON.stringify(meta('mossy-stone')))
+
+    const index = await listAssets()
+    expect(index.projects).toEqual([])
+    expect(index.warnings).toEqual(['orphaned write directory: dungeon/tiles/mossy-stone.old-12345-999'])
+  })
 })
