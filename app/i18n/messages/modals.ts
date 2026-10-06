@@ -40,6 +40,7 @@ export const modals: Namespace = {
       'Only models this project has verified are listed — {provider} reports {count} more that this project has not run.',
     'modals.models.textOnly':
       'Suppliers here that generate no images at all: {vendors}.',
+    'modals.models.vendorsTruncated': '…and {count} more',
     'modals.models.filterTitle': 'Only models served by {vendor}',
     'modals.models.unverified': 'not verified here',
     'modals.models.showCount': 'Show {count} more that {provider} reports (unverified)',
@@ -142,6 +143,7 @@ export const modals: Namespace = {
     'modals.models.verifiedMore':
       '这里只列出本项目验证过的模型——{provider} 还报告了 {count} 个本项目尚未运行的模型。',
     'modals.models.textOnly': '此处的以下供应商完全不生成图像：{vendors}。',
+    'modals.models.vendorsTruncated': '……以及另外 {count} 个',
     'modals.models.filterTitle': '仅显示由 {vendor} 提供的模型',
     'modals.models.unverified': '未在此验证',
     'modals.models.showCount': '显示 {provider} 报告的另外 {count} 个（未验证）',

@@ -49,6 +49,16 @@ function withCode(text: string, code: string): React.ReactNode {
   return withInline(text, code, mono(code))
 }
 
+/**
+ * A big gateway reports dozens of suppliers, and most of them only do text, so
+ * the "generates no images" note would become a wall of names.
+ */
+const VENDOR_LIST_LIMIT = 8
+
+function shortenVendors(vendors: string[]): { shown: string[]; rest: number } {
+  return { shown: vendors.slice(0, VENDOR_LIST_LIMIT), rest: Math.max(0, vendors.length - VENDOR_LIST_LIMIT) }
+}
+
 /** Radio-style choice card — shared by the gateway list and the model list. */
 function ChoiceCard({
   title,
@@ -204,6 +214,7 @@ export function SettingsDrawer({
   const textOnlySuppliers = Array.from(new Set(models.map((m) => m.vendor)))
     .filter((v) => !imageSuppliers.has(v))
     .sort()
+  const textOnlyShown = shortenVendors(textOnlySuppliers)
   // Nothing offered here yet → fall back to the ids this app is curated around,
   // or to this gateway's default, and let the copy say so.
   const imageOptions: ModelOption[] =
@@ -219,6 +230,7 @@ export function SettingsDrawer({
   const qaVerified = pick.verifiedQa
   const qaOther = pick.otherQa
   const qaSuppliers = Array.from(new Set([...qaVerified, ...qaOther].map((m) => m.vendor))).sort()
+  const qaSuppliersShown = shortenVendors(qaSuppliers)
   const activeConfig = getModelConfig(selectedModel, imageChoices)
 
   if (!open) return null
@@ -346,9 +358,12 @@ export function SettingsDrawer({
                   <>
                     {' '}
                     {withInline(
-                      t('modals.models.textOnly', { vendors: textOnlySuppliers.join(', ') }),
-                      textOnlySuppliers.join(', '),
-                      <span className="font-mono">{textOnlySuppliers.join(', ')}</span>
+                      t('modals.models.textOnly', { vendors: textOnlyShown.shown.join(', ') }),
+                      textOnlyShown.shown.join(', '),
+                      <span className="font-mono">{textOnlyShown.shown.join(', ')}</span>
+                    )}
+                    {textOnlyShown.rest > 0 && (
+                      <> {t('modals.models.vendorsTruncated', { count: textOnlyShown.rest })}</>
                     )}
                   </>
                 )}
@@ -462,9 +477,12 @@ export function SettingsDrawer({
                 <>
                   {' '}
                   {withInline(
-                    t('modals.qa.suppliers', { vendors: qaSuppliers.join(', ') }),
-                    qaSuppliers.join(', '),
-                    <span className="font-mono">{qaSuppliers.join(', ')}</span>
+                    t('modals.qa.suppliers', { vendors: qaSuppliersShown.shown.join(', ') }),
+                    qaSuppliersShown.shown.join(', '),
+                    <span className="font-mono">{qaSuppliersShown.shown.join(', ')}</span>
+                  )}
+                  {qaSuppliersShown.rest > 0 && (
+                    <> {t('modals.models.vendorsTruncated', { count: qaSuppliersShown.rest })}</>
                   )}
                 </>
               )}

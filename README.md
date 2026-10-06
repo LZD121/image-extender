@@ -458,8 +458,10 @@ refused a text model (`403 does not have access to model …`), and the reverse.
   with the failures named in the comment — and everything else a gateway
   reports sits behind `Show N more (unverified)`, flagged `not verified here`
   if you pick it. The art-director select is grouped the same way. OpenRouter
-  has no verified entry because its picker *is* the curated `MODELS` table,
-  verified by construction.
+  has no verified entry: it *is* the platform the app is built against, so its
+  picker trusts the catalogue outright and lists every image model it reports.
+  The curated `MODELS` table is only what that picker falls back to before the
+  first successful check.
 - One fallback default per gateway is the only other hardcoded model id, and it
   is shown only before the first successful check.
 - An **image model** and an **art-director model** are separate settings: the
