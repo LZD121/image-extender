@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
+import { chatCompletion } from '@/app/lib/llmChat'
+import { messageText } from '@/app/lib/llmResponse'
 import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
-
-const DEFAULT_MODEL = 'google/gemini-2.0-flash-001'
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     })
     if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
-    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa', routeDefault: DEFAULT_MODEL })
+    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa' })
 
     const styleLine =
       artStyle && ART_STYLE_PROMPTS[artStyle]
@@ -46,44 +46,19 @@ Rules for your brief:
 
 Write the shared scene brief for all parallax layers.`
 
-    const response = await fetch(target.url, {
-      method: 'POST',
-      headers: target.headers,
-      body: JSON.stringify({
-        model: modelId,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        max_tokens: 400,
-        // Some gateways (APIMart) default to SSE, which is not JSON to parse.
-        stream: false,
-        temperature: 0.4,
-      }),
+    const reply = await chatCompletion({
+      target,
+      model: modelId,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      maxTokens: 400,
+      temperature: 0.4,
     })
+    if (!reply.ok) return NextResponse.json({ error: reply.error }, { status: reply.status })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      return NextResponse.json(
-        { error: errorData.error?.message || 'Failed to generate scene brief' },
-        { status: response.status }
-      )
-    }
-
-    const data = await response.json()
-    const content = data.choices?.[0]?.message?.content
-    const sceneBrief =
-      typeof content === 'string'
-        ? content.trim()
-        : Array.isArray(content)
-          ? content
-              .map((p: { text?: string; type?: string }) =>
-                typeof p?.text === 'string' ? p.text : ''
-              )
-              .join('')
-              .trim()
-          : ''
-
+    const sceneBrief = messageText(reply.message.content).trim()
     if (!sceneBrief) {
       return NextResponse.json(
         { error: 'No scene brief returned from model' },

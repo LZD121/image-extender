@@ -9,10 +9,10 @@ import {
   type IeConfig,
   loadIeConfig,
   profileKey,
-  resolveConfigModel,
   resolveProfile,
   validateIeConfig,
 } from '@/app/lib/ieConfig'
+import { PROVIDERS } from '@/app/lib/providers'
 import { llmCredentials, llmTarget, modelOrDefault } from '@/app/lib/llmServer'
 
 let dir: string
@@ -139,14 +139,6 @@ describe('profile resolution', () => {
     expect(profileKey({ provider: 'magpie' })).toBe('')
   })
 
-  it('resolves models: body, then profile kind, then route default', () => {
-    const profile = { provider: 'magpie' as const, imageModel: 'profile-image', qaModel: 'profile-qa' }
-    expect(resolveConfigModel('body-model', profile, 'image', 'route')).toBe('body-model')
-    expect(resolveConfigModel(undefined, profile, 'image', 'route')).toBe('profile-image')
-    expect(resolveConfigModel('  ', profile, 'qa', 'route')).toBe('profile-qa')
-    expect(resolveConfigModel(undefined, null, 'qa', 'route')).toBe('route')
-  })
-
   it('returns null for an unknown profile id', () => {
     expect(resolveProfile(valid, 'nope')).toBeNull()
     expect(resolveProfile(valid, 42)?.provider).toBeUndefined()
@@ -159,7 +151,7 @@ describe('request precedence (llmTarget / modelOrDefault)', () => {
     const target = llmTarget({ provider: 'openrouter', profile: 'local-magpie', apiKey: 'sk-or-x', title: 't' })
     expect('error' in target).toBe(false)
     expect('url' in target && target.url).toBe('https://openrouter.ai/api/v1/chat/completions')
-    expect(modelOrDefault({ model: undefined, provider: 'openrouter', profile: 'local-magpie', kind: 'image', routeDefault: 'route-default' })).toBe('route-default')
+    expect(modelOrDefault({ model: undefined, provider: 'openrouter', profile: 'local-magpie', kind: 'image' })).toBe(PROVIDERS.openrouter.imageModel)
   })
 
   it('uses the named profile: gateway URL, key from its env var, its models', async () => {
@@ -183,7 +175,7 @@ describe('request precedence (llmTarget / modelOrDefault)', () => {
     expect('url' in target && target.url).toBe('http://127.0.0.1:3425/v1/chat/completions')
     // magpie needs no key, so the request proceeds with no credential at all.
     expect('error' in target).toBe(false)
-    expect(modelOrDefault({ model: undefined, provider: undefined, kind: 'image', routeDefault: 'route-default' })).toBe('teamo-router/gemini-3.1-flash-image')
+    expect(modelOrDefault({ model: undefined, provider: undefined, kind: 'image' })).toBe('teamo-router/gemini-3.1-flash-image')
   })
 
   it('is a hard, actionable error for a profile id the file does not define', async () => {
@@ -202,6 +194,22 @@ describe('request precedence (llmTarget / modelOrDefault)', () => {
     delete process.env.OPENROUTER_API_KEY
     const bare = llmTarget({ provider: 'openrouter', apiKey: undefined, title: 't' })
     expect('error' in bare && bare.error).toMatch(/API key missing/)
+  })
+
+  it('names the gateway its own default model, whatever that gateway is', async () => {
+    process.env.IE_CONFIG = await writeConfig('apimart.json', {
+      defaultProfile: 'art',
+      profiles: { art: { provider: 'apimart', apiKeyEnv: 'APIMART_TEST_KEY' } },
+    })
+    expect(modelOrDefault({ model: undefined, provider: undefined, kind: 'image' })).toBe(PROVIDERS.apimart.imageModel)
+  })
+
+  it('uses the qa default for kind qa', () => {
+    expect(modelOrDefault({ model: undefined, provider: 'openrouter', kind: 'qa' })).toBe(PROVIDERS.openrouter.qaModel)
+  })
+
+  it('trims a body model', () => {
+    expect(modelOrDefault({ model: '  x/y  ', provider: 'openrouter', kind: 'image' })).toBe('x/y')
   })
 })
 

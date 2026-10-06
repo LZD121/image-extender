@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
+import { chatCompletion } from '@/app/lib/llmChat'
+import { messageText } from '@/app/lib/llmResponse'
 import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
 
 // ART DIRECTOR — call #1 of the two-call props pipeline.
@@ -12,7 +14,6 @@ import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
 // from rendering (image) is what stops the "same loop" of lanterns/nests/pots:
 // a reasoning model can deliberately reach for fresh kinds, an image model
 // cannot.
-const DEFAULT_MODEL = 'google/gemini-2.0-flash-001'
 
 interface PropIdea {
   category: string
@@ -96,7 +97,7 @@ export async function POST(request: NextRequest) {
     })
     if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
-    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa', routeDefault: DEFAULT_MODEL })
+    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa' })
 
     const n = Math.max(1, Math.min(24, Math.round(Number(count) || 8)))
     const existingList: string[] = Array.isArray(existing)
@@ -136,44 +137,21 @@ Output STRICT JSON only — no prose, no markdown fences. Schema:
 
 Propose ${n} brand-new decoration props as strict JSON.`
 
-    const response = await fetch(target.url, {
-      method: 'POST',
-      headers: target.headers,
-      body: JSON.stringify({
-        model: modelId,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        max_tokens: 900,
-        // Some gateways (APIMart) default to SSE, which is not JSON to parse.
-        stream: false,
-        // High temperature: this is the CREATIVE step. We want it reaching for
-        // novel kinds, not playing it safe.
-        temperature: 1.0,
-      }),
+    const reply = await chatCompletion({
+      target,
+      model: modelId,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      maxTokens: 900,
+      // High temperature: this is the CREATIVE step. We want it reaching for
+      // novel kinds, not playing it safe.
+      temperature: 1.0,
     })
+    if (!reply.ok) return NextResponse.json({ error: reply.error }, { status: reply.status })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      return NextResponse.json(
-        { error: errorData.error?.message || 'Failed to generate prop brief' },
-        { status: response.status }
-      )
-    }
-
-    const data = await response.json()
-    const content = data.choices?.[0]?.message?.content
-    const raw =
-      typeof content === 'string'
-        ? content
-        : Array.isArray(content)
-          ? content
-              .map((p: { text?: string }) => (typeof p?.text === 'string' ? p.text : ''))
-              .join('')
-          : ''
-
-    const ideas = parseIdeas(raw).slice(0, n)
+    const ideas = parseIdeas(messageText(reply.message.content).trim()).slice(0, n)
     if (ideas.length === 0) {
       return NextResponse.json(
         { error: 'Art director returned no usable ideas' },

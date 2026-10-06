@@ -17,6 +17,8 @@ import { Workspace } from '@/app/components/Workspace'
 import { Candidate, Direction, EXTENSION_PERCENT, LIBRARY_PROJECT_STORAGE, Mode, STORAGE_MODE, STORAGE_MODEL, STORAGE_PROVIDER, STORAGE_QA_MODEL, apiKeyStorageKey } from '@/app/lib/app'
 import { useI18n } from '@/app/lib/i18n'
 import { DEFAULT_MODEL, getModelConfig, skipsArtDirectorReview } from '@/app/lib/models'
+import { toWire, type GenerateRequest } from '@/app/lib/generateRequest'
+import { studioRequest } from '@/app/lib/studioRequest'
 import { DEFAULT_PROVIDER, PROVIDERS, isProviderId, type ProviderId } from '@/app/lib/providers'
 import { LAYER_ORDER, LAYER_ROLES, LayerRole, PARALLAX_MAX_AUTO_STEPS, ParallaxLayer, WORKFLOW_ORDER, createDefaultLayers, getRecommendedLayerIndex, getWorkflowPrerequisite } from '@/app/lib/parallax'
 import { PROP_BATCH, PROP_BATCH_COLS, PROP_BATCH_H, PROP_BATCH_ROWS, PROP_BATCH_W, PROP_TILE_SIZE, PropItem, nextPropId, propAtlasLayout, resolvePropNames } from '@/app/lib/props'
@@ -572,26 +574,28 @@ export default function Home() {
 
   // ── Generate from scratch ──────────────────────────────────────────────────
 
+  /** One policy for every request that needs a key: flag it, then offer it. */
+  const onNeedsKey = useCallback(() => {
+    setApiKeyRequired(true)
+    setShowApiKeyModal(true)
+  }, [])
+
   const deriveSceneBrief = useCallback(
     async (anchorPrompt: string) => {
       if (!anchorPrompt.trim()) return
       setSceneBriefLoading(true)
       try {
-        const response = await fetch('/api/scene-brief', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        const data = await studioRequest<{ sceneBrief?: string }>(
+          '/api/scene-brief',
+          {
             anchorPrompt: anchorPrompt.trim(),
             artStyle: artStyle !== 'none' ? artStyle : undefined,
             apiKey: apiKey || undefined,
             provider,
             model: qaModel,
-          }),
-        })
-        const data = await response.json()
-        if (!response.ok) {
-          throw new Error(data.error || t('extender.error.sceneDirection'))
-        }
+          },
+          { fallbackMessage: t('extender.error.sceneDirection') }
+        )
         if (typeof data.sceneBrief === 'string' && data.sceneBrief.trim()) {
           setSceneBrief(data.sceneBrief.trim())
         }
@@ -616,35 +620,29 @@ export default function Home() {
     try {
       const layerRole =
         mode === 'parallax' ? activeLayer?.role : undefined
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: generatePrompt,
-          width: generateWidth,
-          height: generateHeight,
-          artStyle: artStyle !== 'none' ? artStyle : undefined,
-          apiKey: apiKey || undefined,
-          provider,
-          model: selectedModel,
-          layerRole,
-          sceneBrief:
-            mode === 'parallax' &&
-            layerRole &&
-            layerRole !== WORKFLOW_ORDER[0] &&
-            sceneBrief.trim()
-              ? sceneBrief.trim()
-              : undefined,
-        }),
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        if (response.status === 401) {
-          setApiKeyRequired(true)
-          setShowApiKeyModal(true)
-        }
-        throw new Error(data.error || t('extender.error.generateImage'))
+      const wire = {
+        prompt: generatePrompt,
+        width: generateWidth,
+        height: generateHeight,
+        artStyle: artStyle !== 'none' ? artStyle : undefined,
+        apiKey: apiKey || undefined,
+        provider,
+        model: selectedModel,
+        sceneBrief:
+          mode === 'parallax' &&
+          layerRole &&
+          layerRole !== WORKFLOW_ORDER[0] &&
+          sceneBrief.trim()
+            ? sceneBrief.trim()
+            : undefined,
       }
+      const request: GenerateRequest = layerRole
+        ? { ...wire, kind: 'parallax', layerRole }
+        : { ...wire, kind: 'plain' }
+      const data = await studioRequest<{ imageUrl?: string }>('/api/generate', toWire(request), {
+        on401: onNeedsKey,
+        fallbackMessage: t('extender.error.generateImage'),
+      })
       if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
       const anchorPromptUsed = generatePrompt.trim()
       if (mode === 'parallax') {
@@ -693,10 +691,9 @@ export default function Home() {
         expandedCanvas: string,
         body: Record<string, unknown>
       ) => {
-        const response = await fetch('/api/extend', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        const data = await studioRequest<{ imageUrl?: string }>(
+          '/api/extend',
+          {
             expandedCanvas,
             direction,
             extensionAmount: EXTENSION_PERCENT,
@@ -711,14 +708,9 @@ export default function Home() {
                 ? sceneBrief.trim()
                 : undefined,
             ...body,
-          }),
-        })
-        const data = await response.json()
-        if (!response.ok) {
-          const err = new Error(data.error || t('extender.error.extendImage')) as Error & { status?: number }
-          err.status = response.status
-          throw err
-        }
+          },
+          { on401: onNeedsKey, fallbackMessage: t('extender.error.extendImage') }
+        )
         return data.imageUrl as string
       }
 
@@ -888,10 +880,6 @@ export default function Home() {
       const e = err as Error & { status?: number }
       setError(e.message || t('extender.error.occurred'))
       setActiveDirection(null)
-      if (e.status === 401) {
-        setApiKeyRequired(true)
-        setShowApiKeyModal(true)
-      }
     } finally {
       setLoading(false)
       setProgressMsg(null)
@@ -920,10 +908,6 @@ export default function Home() {
     } catch (err) {
       const e = err as Error & { status?: number }
       setError(e.message || t('extender.error.occurred'))
-      if (e.status === 401) {
-        setApiKeyRequired(true)
-        setShowApiKeyModal(true)
-      }
     } finally {
       setLoading(false)
       setProgressMsg(null)
@@ -1169,10 +1153,10 @@ export default function Home() {
 
     try {
       const tileGuideImage = buildTileSheetGuideDataUrl()
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await studioRequest<{ imageUrl?: string }>(
+        '/api/generate',
+        toWire({
+          kind: 'tileMode',
           prompt: tilePrompt,
           width: TILESET_TILE_SIZE,
           height: TILESET_TILE_SIZE,
@@ -1180,21 +1164,11 @@ export default function Home() {
           apiKey: apiKey || undefined,
           provider,
           model: selectedModel,
-          tileMode: true,
           tileRole: role,
           sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
         }),
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        if (response.status === 401) {
-          setApiKeyRequired(true)
-          setShowApiKeyModal(true)
-        }
-        throw new Error(
-          data.error || t('extender.error.tileRole', { label: roleLabel })
-        )
-      }
+        { on401: onNeedsKey, fallbackMessage: t('extender.error.tileRole', { label: roleLabel }) }
+      )
       if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
 
       setTileProgressMsg(
@@ -1375,10 +1349,9 @@ export default function Home() {
     sheetImage: string | null
   ): Promise<{ ok: boolean; issues: string[]; fix: string } | null> => {
     try {
-      const res = await fetch('/api/tile-review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await studioRequest<{ ok?: boolean; issues?: string[]; fix?: string }>(
+        '/api/tile-review',
+        {
           prompt: tilePrompt,
           sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
           apiKey: apiKey || undefined,
@@ -1386,12 +1359,11 @@ export default function Home() {
           model: qaModel,
           previewImage,
           sheetImage: sheetImage || undefined,
-        }),
-      })
-      if (!res.ok) return null
-      const data = await res.json()
+        },
+        { on401: onNeedsKey }
+      )
       if (typeof data?.ok !== 'boolean') return null
-      return data
+      return { ok: data.ok, issues: data.issues ?? [], fix: data.fix ?? '' }
     } catch {
       return null
     }
@@ -1431,10 +1403,10 @@ export default function Home() {
       fixNotes?: string
     ): Promise<Partial<Record<TileSetRole, string>> | null> => {
       const tileGuideImage = buildTileSheetGuideDataUrl()
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await studioRequest<{ imageUrl?: string }>(
+        '/api/generate',
+        toWire({
+          kind: 'tileSheet',
           prompt: tilePrompt,
           width: TILE_TEMPLATE_W,
           height: TILE_TEMPLATE_H,
@@ -1442,20 +1414,12 @@ export default function Home() {
           apiKey: apiKey || undefined,
           provider,
           model: selectedModel,
-          tileSheet: true,
           tileGuideImage,
           tileFixNotes: fixNotes,
           sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
         }),
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        if (response.status === 401) {
-          setApiKeyRequired(true)
-          setShowApiKeyModal(true)
-        }
-        throw new Error(data.error || t('extender.error.tileSheet'))
-      }
+        { on401: onNeedsKey, fallbackMessage: t('extender.error.tileSheet') }
+      )
       if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
       if (tileStopRef.current) return null
 
@@ -1938,7 +1902,7 @@ export default function Home() {
     if (all.length === 0) return undefined
     // This image is a small STYLE ANCHOR — its only job is to lock palette /
     // lighting / rendering, which text can't convey. De-duplication is handled
-    // separately by a cheap TEXT name list (see propAvoidHint), so we keep this
+    // separately by a cheap TEXT name list (see the ITEMS text line), so we keep this
     // tiny and FIXED-SIZE: a 3-col swatch of up to 9 props sampled evenly across
     // the whole library, regardless of how big the library grows.
     const CAP = 9
@@ -1999,10 +1963,9 @@ export default function Home() {
     items: PropItem[]
   ): Promise<{ category: string; description: string }[]> => {
     try {
-      const res = await fetch('/api/prop-brief', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await studioRequest<{ ideas?: { category: string; description: string }[] }>(
+        '/api/prop-brief',
+        {
           prompt: propPrompt,
           sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
           artStyle: artStyle !== 'none' ? artStyle : undefined,
@@ -2011,10 +1974,9 @@ export default function Home() {
           model: qaModel,
           count,
           existing: propCategoriesOf(items),
-        }),
-      })
-      if (!res.ok) return []
-      const data = await res.json()
+        },
+        { on401: onNeedsKey }
+      )
       return Array.isArray(data.ideas) ? data.ideas : []
     } catch {
       return []
@@ -2192,10 +2154,10 @@ export default function Home() {
       // CALL #2 — RENDER. The image model paints exactly the art director's
       // list, matched to the style anchor.
       setPropProgressMsg(propBatchStart(0))
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await studioRequest<{ imageUrl?: string }>(
+        '/api/generate',
+        toWire({
+          kind: 'propSheet',
           prompt: propPrompt,
           width: PROP_BATCH_W,
           height: PROP_BATCH_H,
@@ -2203,7 +2165,6 @@ export default function Home() {
           apiKey: apiKey || undefined,
           provider,
           model: selectedModel,
-          propSheet: true,
           propCols: PROP_BATCH_COLS,
           propRows: PROP_BATCH_ROWS,
           propCount: PROP_BATCH,
@@ -2211,15 +2172,8 @@ export default function Home() {
           propList: briefs.length ? briefs : undefined,
           sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
         }),
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        if (response.status === 401) {
-          setApiKeyRequired(true)
-          setShowApiKeyModal(true)
-        }
-        throw new Error(data.error || t('extender.error.generateProps'))
-      }
+        { on401: onNeedsKey, fallbackMessage: t('extender.error.generateProps') }
+      )
       if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
       if (propStopRef.current) {
         dropBatch()
@@ -2317,10 +2271,10 @@ export default function Home() {
       // Art director picks ONE fresh kind that isn't already in the library.
       const ideas = await fetchPropIdeas(1, others)
       const idea = ideas[0]
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await studioRequest<{ imageUrl?: string }>(
+        '/api/generate',
+        toWire({
+          kind: 'propMode',
           prompt: propPrompt,
           width: PROP_TILE_SIZE,
           height: PROP_TILE_SIZE,
@@ -2328,20 +2282,12 @@ export default function Home() {
           apiKey: apiKey || undefined,
           provider,
           model: selectedModel,
-          propMode: true,
           propRole: idea?.description,
           propRefImage: refImage,
           sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
         }),
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        if (response.status === 401) {
-          setApiKeyRequired(true)
-          setShowApiKeyModal(true)
-        }
-        throw new Error(data.error || t('extender.error.rerollProp'))
-      }
+        { on401: onNeedsKey, fallbackMessage: t('extender.error.rerollProp') }
+      )
       if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
       setPropProgressMsg(t('extender.progress.processing'))
       const processed = await postProcessProp(data.imageUrl)
@@ -2499,10 +2445,10 @@ export default function Home() {
   const runSpriteAnchorPass = async (
     prompt: string
   ): Promise<{ imageUrl: string; rawImageUrl: string }> => {
-    const response = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const data = await studioRequest<{ imageUrl?: string }>(
+      '/api/generate',
+      toWire({
+        kind: 'spriteAnchor',
         prompt,
         width: SPRITE_FRAME_SIZE,
         height: SPRITE_FRAME_SIZE,
@@ -2510,19 +2456,11 @@ export default function Home() {
         apiKey: apiKey || undefined,
         provider,
         model: selectedModel,
-        spriteAnchor: true,
         spriteBodyPlan,
         sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
       }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      if (response.status === 401) {
-        setApiKeyRequired(true)
-        setShowApiKeyModal(true)
-      }
-      throw new Error(data.error || t('extender.error.characterAnchor'))
-    }
+      { on401: onNeedsKey, fallbackMessage: t('extender.error.characterAnchor') }
+    )
     if (!data.imageUrl) throw new Error(t('extender.error.noAnchorImage'))
     const rawImageUrl: string = data.imageUrl
     const keyedImageUrl = await chromaKeyToAlpha(rawImageUrl)
@@ -2561,10 +2499,10 @@ export default function Home() {
         console.warn('Sprite guide build failed; proceeding without it:', err)
       }
     }
-    const response = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const data = await studioRequest<{ imageUrl?: string }>(
+      '/api/generate',
+      toWire({
+        kind: 'spriteSheet',
         prompt,
         width: SPRITE_SHEET_W,
         height: SPRITE_SHEET_H,
@@ -2572,7 +2510,6 @@ export default function Home() {
         apiKey: apiKey || undefined,
         provider,
         model: selectedModel,
-        spriteSheet: true,
         spriteAnim,
         spriteBodyPlan,
         spriteFrameCount: SPRITE_FRAME_COUNT,
@@ -2589,15 +2526,8 @@ export default function Home() {
         spriteFixNotes: fixNotes,
         sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
       }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      if (response.status === 401) {
-        setApiKeyRequired(true)
-        setShowApiKeyModal(true)
-      }
-      throw new Error(data.error || t('extender.error.spriteSheet'))
-    }
+      { on401: onNeedsKey, fallbackMessage: t('extender.error.spriteSheet') }
+    )
     if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
     const rawSheetUrl: string = data.imageUrl
     const rawCells = await sliceImageGrid(rawSheetUrl, {
@@ -2716,10 +2646,9 @@ export default function Home() {
   ): Promise<{ ok: boolean; issues: string[]; fix: string } | null> => {
     if (!sheetImage) return null
     try {
-      const res = await fetch('/api/sprite-review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await studioRequest<{ ok?: boolean; issues?: string[]; fix?: string }>(
+        '/api/sprite-review',
+        {
           prompt: spritePrompt.trim() || undefined,
           anim: spriteAnim,
           bodyPlan: spriteBodyPlan,
@@ -2729,12 +2658,11 @@ export default function Home() {
           model: qaModel,
           sheetImage,
           anchorImage: anchorImage || undefined,
-        }),
-      })
-      if (!res.ok) return null
-      const data = await res.json()
+        },
+        { on401: onNeedsKey }
+      )
       if (typeof data?.ok !== 'boolean') return null
-      return data
+      return { ok: data.ok, issues: data.issues ?? [], fix: data.fix ?? '' }
     } catch {
       return null
     }
@@ -3566,10 +3494,6 @@ export default function Home() {
     } catch (err) {
       const e = err as Error & { status?: number }
       setError(e.message || t('extender.error.autoExtend'))
-      if (e.status === 401) {
-        setApiKeyRequired(true)
-        setShowApiKeyModal(true)
-      }
     } finally {
       setLoading(false)
       setActiveDirection(null)

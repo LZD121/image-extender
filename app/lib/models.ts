@@ -1,6 +1,6 @@
 'use client'
 
-import type { GatewayModel } from '@/app/lib/providers'
+import { PROVIDERS, type GatewayModel } from '@/app/lib/providers'
 
 export type ModelOption = {
   value: string
@@ -72,8 +72,7 @@ export const MODELS: ModelOption[] = [
   },
 ]
 
-
-export const DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview'
+export const DEFAULT_MODEL = PROVIDERS.openrouter.imageModel
 
 /**
  * Timings for a model id. A gateway-discovered id is timed by its own heuristics

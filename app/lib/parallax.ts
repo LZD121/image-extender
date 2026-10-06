@@ -1,5 +1,12 @@
 'use client'
 
+import { LAYER_ORDER, type LayerRole } from '@/app/lib/layerRoles'
+
+// The role list and its type live in a server-readable module; re-exported here
+// so the studio keeps importing them from the parallax model.
+export { LAYER_ORDER }
+export type { LayerRole }
+
 export const PARALLAX_TARGET_PRESETS: { value: number; label: string; hint: string }[] = [
   { value: 3840, label: '3840 px', hint: '2 × 1080p screens' },
   { value: 5120, label: '5120 px', hint: '4 × 720p screens' },
@@ -18,9 +25,6 @@ export const PARALLAX_MAX_AUTO_STEPS = 14
 // elements), Near (foreground props). Each non-sky layer is rendered against
 // a flat magenta key that we client-side replace with transparency.
 // ─────────────────────────────────────────────────────────────────────────────
-
-
-export type LayerRole = 'sky' | 'far' | 'mid' | 'near'
 
 export interface ParallaxLayer {
   id: string
@@ -112,10 +116,6 @@ export const LAYER_ROLES: Record<LayerRole, LayerRoleSpec> = {
     defaultHeight: 544,
   },
 }
-
-/** Visual / compositing order in the layer panel and preview (back → front). */
-
-export const LAYER_ORDER: LayerRole[] = ['sky', 'far', 'mid', 'near']
 
 /** Build workflow order — front → back so the anchor layer is composed first. */
 

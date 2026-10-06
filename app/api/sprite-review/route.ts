@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
+import { chatCompletion } from '@/app/lib/llmChat'
+import { messageText, parseReviewJson } from '@/app/lib/llmResponse'
 
 // QA ART DIRECTOR for sprite sheets — the review half of the sprite pipeline.
 //
@@ -11,7 +13,6 @@ import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
 // fringe, and whether they read as a coherent animation for the requested
 // action. If clean it approves; otherwise it returns a fix report the image
 // model uses to repaint the sheet (the locked anchor identity is preserved).
-const DEFAULT_MODEL = 'google/gemini-2.0-flash-001'
 
 // Per-body-plan animation expectations. The QA director judges the sheet
 // against the animation the user actually asked for, and the anatomy of the
@@ -115,43 +116,6 @@ const PLAN_RULES: Record<
   },
 }
 
-interface Review {
-  ok: boolean
-  issues: string[]
-  fix: string
-}
-
-function parseReview(raw: string): Review | null {
-  if (!raw) return null
-  const text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
-  const tryParse = (s: string): unknown => {
-    try {
-      return JSON.parse(s)
-    } catch {
-      return null
-    }
-  }
-  let data: unknown = tryParse(text)
-  if (!data) {
-    const s = text.indexOf('{')
-    const e = text.lastIndexOf('}')
-    if (s !== -1 && e > s) data = tryParse(text.slice(s, e + 1))
-  }
-  if (!data || typeof data !== 'object') return null
-  const o = data as Record<string, unknown>
-  const ok = o.ok === true || o.approved === true || o.pass === true
-  const issues = Array.isArray(o.issues)
-    ? o.issues.map((x) => String(x).trim()).filter(Boolean)
-    : []
-  const fix =
-    typeof o.fix === 'string'
-      ? o.fix.trim()
-      : typeof o.report === 'string'
-        ? o.report.trim()
-        : issues.join('; ')
-  return { ok, issues, fix }
-}
-
 export async function POST(request: NextRequest) {
   try {
     const { prompt, anim, bodyPlan, sceneBrief, apiKey, model, sheetImage, anchorImage, provider, profile } =
@@ -170,7 +134,7 @@ export async function POST(request: NextRequest) {
     })
     if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
-    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa', routeDefault: DEFAULT_MODEL })
+    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa' })
 
     const planKey =
       typeof bodyPlan === 'string' && ANIM_EXPECTATION_BY_PLAN[bodyPlan]
@@ -253,42 +217,19 @@ Review the attached sprite sheet${hasAnchor ? ' against the character anchor' : 
     }
     content.push({ type: 'text', text: userText })
 
-    const response = await fetch(target.url, {
-      method: 'POST',
-      headers: target.headers,
-      body: JSON.stringify({
-        model: modelId,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content },
-        ],
-        max_tokens: 600,
-        // Some gateways (APIMart) default to SSE, which is not JSON to parse.
-        stream: false,
-        temperature: 0.2,
-      }),
+    const reply = await chatCompletion({
+      target,
+      model: modelId,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content },
+      ],
+      maxTokens: 600,
+      temperature: 0.2,
     })
+    if (!reply.ok) return NextResponse.json({ error: reply.error }, { status: reply.status })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      return NextResponse.json(
-        { error: errorData.error?.message || 'Failed to review sprite sheet' },
-        { status: response.status }
-      )
-    }
-
-    const data = await response.json()
-    const raw = data.choices?.[0]?.message?.content
-    const text =
-      typeof raw === 'string'
-        ? raw
-        : Array.isArray(raw)
-          ? raw
-              .map((p: { text?: string }) => (typeof p?.text === 'string' ? p.text : ''))
-              .join('')
-          : ''
-
-    const review = parseReview(text)
+    const review = parseReviewJson(messageText(reply.message.content))
     if (!review) {
       // Don't block the user on a parse failure — treat as approved.
       return NextResponse.json({ ok: true, issues: [], fix: '' })

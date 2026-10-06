@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
+import { chatCompletion } from '@/app/lib/llmChat'
+import { messageText, parseReviewJson } from '@/app/lib/llmResponse'
 
 // QA ART DIRECTOR — the review half of the reverse two-call tile pipeline.
 //
@@ -12,44 +14,6 @@ import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
 // tiles? If it's clean it APPROVES; otherwise it returns a concise fix report
 // that the image model uses to repaint. This catches the cohesion problems a
 // single blind generation can't see.
-const DEFAULT_MODEL = 'google/gemini-2.0-flash-001'
-
-interface Review {
-  ok: boolean
-  issues: string[]
-  fix: string
-}
-
-function parseReview(raw: string): Review | null {
-  if (!raw) return null
-  let text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
-  const tryParse = (s: string): unknown => {
-    try {
-      return JSON.parse(s)
-    } catch {
-      return null
-    }
-  }
-  let data: unknown = tryParse(text)
-  if (!data) {
-    const s = text.indexOf('{')
-    const e = text.lastIndexOf('}')
-    if (s !== -1 && e > s) data = tryParse(text.slice(s, e + 1))
-  }
-  if (!data || typeof data !== 'object') return null
-  const o = data as Record<string, unknown>
-  const ok = o.ok === true || o.approved === true || o.pass === true
-  const issues = Array.isArray(o.issues)
-    ? o.issues.map((x) => String(x).trim()).filter(Boolean)
-    : []
-  const fix =
-    typeof o.fix === 'string'
-      ? o.fix.trim()
-      : typeof o.report === 'string'
-        ? o.report.trim()
-        : issues.join('; ')
-  return { ok, issues, fix }
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -75,7 +39,7 @@ export async function POST(request: NextRequest) {
     })
     if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
-    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa', routeDefault: DEFAULT_MODEL })
+    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa' })
 
     const systemPrompt = `You are a SENIOR ENVIRONMENT / TILESET ARTIST doing the final QA pass on a generated 2D-platformer tileset before it ships into the engine. You have the authority to REJECT work, and the experience to not nitpick natural hand-painted texture.
 
@@ -130,43 +94,20 @@ Review the attached platform preview${
     }
     content.push({ type: 'text', text: userText })
 
-    const response = await fetch(target.url, {
-      method: 'POST',
-      headers: target.headers,
-      body: JSON.stringify({
-        model: modelId,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content },
-        ],
-        max_tokens: 600,
-        // Some gateways (APIMart) default to SSE, which is not JSON to parse.
-        stream: false,
-        // Low temperature: this is a judgment call, we want consistency.
-        temperature: 0.2,
-      }),
+    const reply = await chatCompletion({
+      target,
+      model: modelId,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content },
+      ],
+      maxTokens: 600,
+      // Low temperature: this is a judgment call, we want consistency.
+      temperature: 0.2,
     })
+    if (!reply.ok) return NextResponse.json({ error: reply.error }, { status: reply.status })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      return NextResponse.json(
-        { error: errorData.error?.message || 'Failed to review tileset' },
-        { status: response.status }
-      )
-    }
-
-    const data = await response.json()
-    const raw = data.choices?.[0]?.message?.content
-    const text =
-      typeof raw === 'string'
-        ? raw
-        : Array.isArray(raw)
-          ? raw
-              .map((p: { text?: string }) => (typeof p?.text === 'string' ? p.text : ''))
-              .join('')
-          : ''
-
-    const review = parseReview(text)
+    const review = parseReviewJson(messageText(reply.message.content))
     if (!review) {
       // Don't block the user on a parse failure — treat as approved.
       return NextResponse.json({ ok: true, issues: [], fix: '' })

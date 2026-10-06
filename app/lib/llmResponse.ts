@@ -1,6 +1,7 @@
 // app/lib/llmResponse.ts
 /**
- * Getting the render out of a chat completion.
+ * Reading a chat completion: the render out of it, and the text the art-director
+ * passes are supposed to answer with.
  *
  * Gateways disagree about where an image lives, so we check every shape we have
  * actually seen rather than trusting one:
@@ -15,6 +16,60 @@
  * and the generate route did not, so the same model worked in one studio and
  * "responded without an image" in the other.
  */
+
+export interface Review {
+  ok: boolean
+  issues: string[]
+  fix: string
+}
+
+/** `content` as plain text: a string, or content parts with `text`, joined. */
+export function messageText(content: unknown, separator = ''): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((part) => {
+      if (typeof part === 'string') return part
+      if (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') return part.text
+      return ''
+    })
+    .join(separator)
+}
+
+/**
+ * Best-effort JSON from a model's text — strips ```json fences, grabs the first
+ * {...} block, and accepts ok/approved/pass plus issues/fix/report synonyms.
+ */
+export function parseReviewJson(raw: string): Review | null {
+  if (!raw) return null
+  const text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
+  const tryParse = (s: string): unknown => {
+    try {
+      return JSON.parse(s)
+    } catch {
+      return null
+    }
+  }
+  let data: unknown = tryParse(text)
+  if (!data) {
+    const s = text.indexOf('{')
+    const e = text.lastIndexOf('}')
+    if (s !== -1 && e > s) data = tryParse(text.slice(s, e + 1))
+  }
+  if (!data || typeof data !== 'object') return null
+  const o = data as Record<string, unknown>
+  const ok = o.ok === true || o.approved === true || o.pass === true
+  const issues = Array.isArray(o.issues)
+    ? o.issues.map((x) => String(x).trim()).filter(Boolean)
+    : []
+  const fix =
+    typeof o.fix === 'string'
+      ? o.fix.trim()
+      : typeof o.report === 'string'
+        ? o.report.trim()
+        : issues.join('; ')
+  return { ok, issues, fix }
+}
 
 /** Only accept a markdown link that actually points at an image. */
 const MARKDOWN_IMAGE = /!\[[^\]]*\]\(<?(data:image\/[^)\s]+|https?:\/\/[^)\s]+)>?\)/

@@ -251,18 +251,3 @@ export function profileKey(
   return (profile.apiKey || '').trim()
 }
 
-/**
- * Which model id a model route should call: the request wins, then the
- * profile's image/qa model, then the route's own default.
- */
-export function resolveConfigModel(
-  bodyModel: unknown,
-  profile: IeProfile | null,
-  kind: 'image' | 'qa',
-  routeDefault: string
-): string {
-  if (typeof bodyModel === 'string' && bodyModel.trim()) return bodyModel.trim()
-  const fromProfile = profile ? (kind === 'image' ? profile.imageModel : profile.qaModel) : undefined
-  if (fromProfile && fromProfile.trim()) return fromProfile.trim()
-  return routeDefault
-}

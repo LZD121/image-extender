@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractImageUrl } from '@/app/lib/llmResponse'
+import { extractImageUrl, messageText, parseReviewJson } from '@/app/lib/llmResponse'
 
 /** Only needs to clear the >100-char heuristic that guards the raw-base64 fallback. */
 const B64 = 'A'.repeat(120)
@@ -56,5 +56,32 @@ describe('extractImageUrl', () => {
 
   it('prefers images[] over the content string', () => {
     expect(extractImageUrl({ images: [{ image_url: { url: PNG } }], content: 'https://ignored.example/x.png' })).toBe(PNG)
+  })
+})
+
+describe('messageText', () => {
+  it('reads a string, content parts, or nothing at all', () => {
+    expect(messageText(null)).toBe('')
+    expect(messageText('a')).toBe('a')
+    expect(messageText([{ text: 'a' }, 'b', { text: 'c' }], ' ')).toBe('a b c')
+  })
+})
+
+describe('parseReviewJson', () => {
+  it('reads a fenced approval', () => {
+    expect(parseReviewJson('```json\n{"approved":true}\n```')).toEqual({ ok: true, issues: [], fix: '' })
+  })
+
+  it('accepts issues + report as the fix text, and joins issues when neither is named', () => {
+    expect(parseReviewJson('{"issues":["seam","hue"],"report":"retexture"}')).toEqual({
+      ok: false,
+      issues: ['seam', 'hue'],
+      fix: 'retexture',
+    })
+    expect(parseReviewJson('{"issues":["seam","hue"]}')?.fix).toBe('seam; hue')
+  })
+
+  it('gives null for text that is not JSON', () => {
+    expect(parseReviewJson('nonsense')).toBeNull()
   })
 })

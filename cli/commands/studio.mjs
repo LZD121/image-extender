@@ -22,6 +22,7 @@ const APP_MODULES = [
   'app/lib/models',
   'app/lib/bodyPlans',
   'app/lib/stylePrompt',
+  'app/lib/llmServer',
 ]
 
 const TOOL_VERSION = `ie@${JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version}`
@@ -48,7 +49,7 @@ function resolvedBackend(ctx, mods, kind) {
   const profile = id ? ctx.config.profiles[id] : null
   return {
     provider: profile ? profile.provider : 'openrouter',
-    model: ctx.model || (profile && (kind === 'qa' ? profile.qaModel : profile.imageModel)) || mods.DEFAULT_MODEL,
+    model: mods.modelOrDefault({ model: ctx.model, provider: undefined, profile: id || undefined, kind }),
     profile: id || null,
   }
 }

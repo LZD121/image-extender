@@ -3,10 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { extractImageUrl } from '@/app/lib/llmResponse'
 import { generateViaApimart } from '@/app/lib/apimartServer'
 import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
+import { chatCompletion } from '@/app/lib/llmChat'
 import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
-
-// Default model when the client doesn't specify one.
-const DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview'
 
 export async function POST(request: NextRequest) {
   try {
@@ -44,7 +42,7 @@ export async function POST(request: NextRequest) {
     })
     if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
-    const modelId = modelOrDefault({ model, provider, profile, kind: 'image', routeDefault: DEFAULT_MODEL })
+    const modelId = modelOrDefault({ model, provider, profile, kind: 'image' })
 
     // Create inpainting prompt
     const directionDescriptions = {
@@ -219,54 +217,30 @@ KEY INSTRUCTIONS:
       }
       return NextResponse.json({ imageUrl: result.dataUrl, chunkInfo, provider: target.provider.id })
     }
-    const response = await fetch(target.url, {
-      method: 'POST',
-      headers: target.headers,
-      body: JSON.stringify({
-        model: modelId,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: expandedCanvas } },
-              { type: 'text', text: prompt },
-            ],
-          },
-        ],
-        max_tokens: 2000,
-        // Some gateways (APIMart) default to SSE, which is not JSON to parse.
-        stream: false,
-        temperature: attempt === 0 ? 0.3 : attempt === 1 ? 0.5 : 0.7,
-      }),
+    const reply = await chatCompletion({
+      target,
+      model: modelId,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: expandedCanvas } },
+            { type: 'text', text: prompt },
+          ],
+        },
+      ],
+      maxTokens: 2000,
+      temperature: attempt === 0 ? 0.3 : attempt === 1 ? 0.5 : 0.7,
     })
+    if (!reply.ok) return NextResponse.json({ error: reply.error }, { status: reply.status })
 
-    if (!response.ok) {
-      const errBody = await response.text()
-      let errorMessage = 'Failed to extend image'
-      try {
-        errorMessage = JSON.parse(errBody)?.error?.message || errorMessage
-      } catch {
-        errorMessage = errBody.slice(0, 500) || errorMessage
-      }
-      console.error(`${target.provider.label} API error:`, response.status, errorMessage)
-      return NextResponse.json({ error: errorMessage }, { status: response.status })
-    }
-
-    const data = await response.json()
-    console.log('=== API Response Structure ===')
-    console.log(JSON.stringify(sanitizeForLogging(data), null, 2))
-
-    const message = data.choices?.[0]?.message
-    if (!message) {
-      console.error('No message in response')
-      return NextResponse.json({ error: 'No message in response' }, { status: 500 })
-    }
+    const message = reply.message
 
     const imageUrl = extractImageUrl(message)
 
     console.log('\n=== Message Content Structure ===')
     console.log('Content type:', message.content === null ? 'null' : Array.isArray(message.content) ? 'array' : typeof message.content)
-    console.log('Has images array:', !!(message.images?.length))
+    console.log('Has images array:', !!(message.images as unknown[] | undefined)?.length)
     console.log('Image extracted:', !!imageUrl)
     console.log('===============================\n')
 

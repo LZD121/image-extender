@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractCost } from '@/app/lib/generateCost'
-import { extractImageUrl } from '@/app/lib/llmResponse'
+import { extractImageUrl, messageText } from '@/app/lib/llmResponse'
+import { chatCompletion } from '@/app/lib/llmChat'
 import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
+import { generateKind, type GenerateBody } from '@/app/lib/generateRequest'
 import { styleDirective } from '@/app/lib/stylePrompt'
 import { generateViaApimart } from '@/app/lib/apimartServer'
-
-const DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview'
 
 const SUPPORTED_IMAGE_ASPECT_RATIOS = [
   '1:1',
@@ -38,6 +38,7 @@ function supportedAspectRatioForSize(width: number, height: number): string {
 
 export async function POST(request: NextRequest) {
   try {
+    const body = (await request.json()) as GenerateBody
     const {
       prompt,
       width,
@@ -72,10 +73,9 @@ export async function POST(request: NextRequest) {
       propRows,
       propCount,
       propRefImage,
-      propAvoidHint,
       provider,
       profile,
-    } = await request.json()
+    } = body
 
     if (!prompt || !width || !height) {
       return NextResponse.json(
@@ -93,7 +93,9 @@ export async function POST(request: NextRequest) {
     })
     if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
-    const modelId = modelOrDefault({ model, provider, profile, kind: 'image', routeDefault: DEFAULT_MODEL })
+    const modelId = modelOrDefault({ model, provider, profile, kind: 'image' })
+
+    const kind = generateKind(body)
 
     // Build the full prompt
     let fullPrompt = `${styleDirective(artStyle)}${prompt}`
@@ -209,7 +211,7 @@ export async function POST(request: NextRequest) {
     // platform map and ask only for restyling. The client slices the
     // restyled map at known cell coordinates to pull each of the 13 unique
     // tile roles out (outer corners, edges, inner corners, body).
-    if (tileSheet === true) {
+    if (kind === 'tileSheet') {
       fullPrompt = `${styleDirective(artStyle)}You are restyling a structural reference image for a side-view 2D platformer tile set. The reference is attached.
 
 THE REFERENCE — what it shows:
@@ -260,7 +262,7 @@ The user's material is: "${prompt.trim()}". Paint this material onto the gray re
           ? `\n\nQA FIX REPORT — a previous attempt was reviewed and had the following problems. This regeneration MUST correct them while keeping everything else that was already good:\n${tileFixNotes.trim()}`
           : ''
       }`
-    } else if (tileMode === true) {
+    } else if (kind === 'tileMode') {
       const role = typeof tileRole === 'string' ? tileRole : 'body'
       if (role === 'body' || !tileRoleInstructions[role]) {
         fullPrompt += `\n\nTILE TEXTURE — must tile seamlessly in BOTH directions:
@@ -273,7 +275,7 @@ The user's material is: "${prompt.trim()}". Paint this material onto the gray re
       } else {
         fullPrompt += tileBaseInstructions + tileRoleInstructions[role]
       }
-    } else if (spriteAnchor === true) {
+    } else if (kind === 'spriteAnchor') {
       // Sprite ANCHOR pass — generate a single high-quality reference image
       // of the character in a neutral standing pose. This anchor gets fed
       // back into the sprite-sheet pass as a visual reference, which is by
@@ -369,7 +371,7 @@ ART DIRECTION:
 THE CHARACTER IS: "${prompt.trim()}".
 
 Paint that creature in the neutral pose described above, with pure flat ${KEY_COLOR_HEX} magenta everywhere else. The output is ONE SINGLE CHARACTER, not a sheet, not a grid, not multiple poses — just one definitive reference at ${width}×${height} pixels.`
-    } else if (spriteSheet === true) {
+    } else if (kind === 'spriteSheet') {
       // Sprite-animation SHEET mode — single-call generation of an entire
       // N-frame keyframe sequence for a character animation.
       //
@@ -1017,7 +1019,7 @@ Output the sprite sheet: ${frames} cells in a ${cols}×${rows} grid, identical c
           ? `\n\nQA FIX REPORT — a previous attempt at this sheet was reviewed and had the following problems. This regeneration MUST correct them while keeping the character's identity (outfit, colors, proportions) IDENTICAL to the reference:\n${spriteFixNotes.trim()}`
           : ''
       }`
-    } else if (propSheet === true) {
+    } else if (kind === 'propSheet') {
       // PROPS / DECORATION ATLAS — call #2 of the two-call pipeline. The ART
       // DIRECTOR (a separate text-model call) has already decided WHAT to paint
       // and handed us `propList` — one explicit decoration brief per cell. The
@@ -1061,7 +1063,7 @@ ABSOLUTE RULES:
 5. NO text, NO labels, NO numbers, NO grid lines, NO borders, NO captions — only the props on magenta.
 
 ART DIRECTION — the props share ONE cohesive material/palette so they look like a matched set from the same world: "${(prompt || '').toString().trim()}". Hand-painted, clean readable silhouettes, rich but cohesive palette, crisp edges.`
-    } else if (propMode === true) {
+    } else if (kind === 'propMode') {
       // Single decoration prop — used when the user re-rolls one prop. Open
       // ended (the model picks a fitting NEW decoration) and, when a reference
       // is supplied, matched to the rest of the library's style.
@@ -1078,16 +1080,16 @@ ${
     ? '- STYLE REFERENCE: the attached image shows existing props from this world. Match their palette, lighting and rendering exactly, but make this a DIFFERENT decoration from the ones shown.\n'
     : ''
 }- NO pink / red-magenta inside the art (the client deletes pixels where R>200 AND G<80 AND B>200). Crisp edges, no pink fringe. No text, labels, or grid lines.`
-    } else if (typeof layerRole === 'string' && layerRoleInstructions[layerRole]) {
-      fullPrompt += layerRoleInstructions[layerRole]
+    } else if (kind === 'parallax') {
+      if (layerRole && layerRoleInstructions[layerRole]) fullPrompt += layerRoleInstructions[layerRole]
     }
 
     if (typeof sceneBrief === 'string' && sceneBrief.trim()) {
-      if (tileSheet === true || tileMode === true) {
+      if (kind === 'tileSheet' || kind === 'tileMode') {
         fullPrompt += `\n\nSHARED SCENE DIRECTION — match this art direction (palette, lighting, mood, style). Apply it to the tile texture so it feels like it belongs in the same world:\n${sceneBrief.trim()}`
-      } else if (spriteSheet === true) {
+      } else if (kind === 'spriteSheet') {
         fullPrompt += `\n\nSHARED SCENE DIRECTION — the character art must match this world's art direction (palette, lighting, mood, style). The character should look like it belongs in the same scene as the parallax / tile material you have already built:\n${sceneBrief.trim()}`
-      } else if (propSheet === true || propMode === true) {
+      } else if (kind === 'propSheet' || kind === 'propMode') {
         fullPrompt += `\n\nSHARED SCENE DIRECTION — these decoration props must match this world's art direction (palette, lighting, mood, style) so they belong on the same tile map and in the same scene as the rest of the project:\n${sceneBrief.trim()}`
       } else if (layerRole && layerRole !== 'near') {
         fullPrompt += `\n\nSHARED SCENE DIRECTION — every parallax layer in this project must match this art direction exactly (palette, lighting, mood, style). Do not introduce colors, lighting, or stylistic choices that contradict it:\n${sceneBrief.trim()}`
@@ -1098,7 +1100,7 @@ ${
 
     const messageContent: any[] = []
     if (
-      tileSheet === true &&
+      kind === 'tileSheet' &&
       typeof tileGuideImage === 'string' &&
       tileGuideImage.startsWith('data:image/')
     ) {
@@ -1110,7 +1112,7 @@ ${
     // Props style reference — the existing library, so new batches / re-rolls
     // match palette + lighting while painting different decorations.
     if (
-      (propSheet === true || propMode === true) &&
+      (kind === 'propSheet' || kind === 'propMode') &&
       typeof propRefImage === 'string' &&
       propRefImage.startsWith('data:image/')
     ) {
@@ -1130,7 +1132,7 @@ ${
     // inventing either. (Legacy non-pose mode falls back to a single
     // structural guide image.)
     if (
-      spriteSheet === true &&
+      kind === 'spriteSheet' &&
       spritePoseGuide === true &&
       typeof spriteIdentityImage === 'string' &&
       spriteIdentityImage.startsWith('data:image/')
@@ -1141,7 +1143,7 @@ ${
       })
     }
     if (
-      spriteSheet === true &&
+      kind === 'spriteSheet' &&
       typeof spriteGuideImage === 'string' &&
       spriteGuideImage.startsWith('data:image/')
     ) {
@@ -1185,17 +1187,19 @@ ${
     }
 
     // Call the provider gateway with the image generation model
-    const response = await fetch(target.url, {
-      method: 'POST',
-      headers: target.headers,
-      body: JSON.stringify({
-        model: modelId,
-        messages: [
-          {
-            role: 'user',
-            content: messageContent,
-          },
-        ],
+    const reply = await chatCompletion({
+      target,
+      model: modelId,
+      messages: [{ role: 'user', content: messageContent }],
+      // Low temperature on multi-cell sheet generation keeps the model
+      // disciplined about the grid layout + per-cell consistency.
+      // Sprite sheets need even lower temperature than tile sheets —
+      // 8 keyframes of the SAME character on one canvas amplifies any
+      // appearance drift between cells (flicker). 0.2 is the value
+      // most 2026 sprite-AI pipelines converged on.
+      maxTokens: 2000,
+      temperature: kind === 'spriteSheet' ? 0.2 : kind === 'tileSheet' ? 0.35 : kind === 'propSheet' ? 0.6 : 0.7,
+      extra: {
         modalities: ['image', 'text'],
         // GPT image models are especially literal about the requested canvas
         // aspect. If omitted, OpenRouter/model defaults can come back square;
@@ -1203,45 +1207,11 @@ ${
         // sheet, visually stretching every frame. Always send the intended
         // reduced aspect ratio (sprites are 2:1, square anchors are 1:1).
         image_config: { aspect_ratio: supportedAspectRatioForSize(width, height) },
-        max_tokens: 2000,
-        // Some gateways (APIMart) default to SSE, which is not JSON to parse.
-        stream: false,
-        // Low temperature on multi-cell sheet generation keeps the model
-        // disciplined about the grid layout + per-cell consistency.
-        // Sprite sheets need even lower temperature than tile sheets —
-        // 8 keyframes of the SAME character on one canvas amplifies any
-        // appearance drift between cells (flicker). 0.2 is the value
-        // most 2026 sprite-AI pipelines converged on.
-        temperature:
-          spriteSheet === true
-            ? 0.2
-            : tileSheet === true
-              ? 0.35
-              : propSheet === true
-                ? 0.6
-                : 0.7,
-      }),
+      },
     })
+    if (!reply.ok) return NextResponse.json({ error: reply.error }, { status: reply.status })
 
-    if (!response.ok) {
-      const errorData = await response.json()
-      console.error(`${target.provider.label} API error:`, errorData)
-      return NextResponse.json(
-        { error: errorData.error?.message || 'Failed to generate image' },
-        { status: response.status }
-      )
-    }
-
-    const data = await response.json()
-    const message = data.choices?.[0]?.message
-    
-    if (!message) {
-      return NextResponse.json(
-        { error: 'No message in response' },
-        { status: 500 }
-      )
-    }
-
+    const message = reply.message
     const imageUrl = extractImageUrl(message)
 
     if (!imageUrl) {
@@ -1255,22 +1225,8 @@ ${
     // ("ITEMS: a | b | c"). We parse it so the client can keep a cheap TEXT
     // de-dup list instead of shipping the whole library back as images.
     let names: string[] = []
-    if (propSheet === true || propMode === true) {
-      let text = ''
-      const content = message.content
-      if (typeof content === 'string') {
-        text = content
-      } else if (Array.isArray(content)) {
-        text = content
-          .map((part: any) =>
-            typeof part === 'string'
-              ? part
-              : part?.type === 'text' && typeof part.text === 'string'
-                ? part.text
-                : ''
-          )
-          .join(' ')
-      }
+    if (kind === 'propSheet' || kind === 'propMode') {
+      const text = messageText(message.content, ' ')
       const m = text.match(/ITEMS?\s*:\s*(.+)/i)
       const raw = m ? m[1] : text
       names = raw
@@ -1280,7 +1236,7 @@ ${
         .slice(0, 64)
     }
 
-    return NextResponse.json({ imageUrl, names, cost: extractCost(data) })
+    return NextResponse.json({ imageUrl, names, cost: extractCost(reply.data) })
   } catch (error) {
     console.error('Error in generate route:', error)
     return NextResponse.json(

@@ -121,22 +121,18 @@ export function llmTarget(opts: {
 
 /**
  * The image/QA model a route should call: the request wins, then the resolved
- * profile's model for that kind, then the route's own default. Uses the same
- * profile resolution as `llmTarget`, so the model and the endpoint can never
- * come from two different profiles.
+ * profile's model when it sets one, else the resolved provider's own default —
+ * the same resolution `llmTarget` used, so model and endpoint can never come
+ * from two different providers.
  */
 export function modelOrDefault(opts: {
   model: unknown
   provider: unknown
   profile?: unknown
   kind: 'image' | 'qa'
-  routeDefault: string
 }): string {
   if (typeof opts.model === 'string' && opts.model.trim()) return opts.model.trim()
   const resolved = requestProvider(opts)
-  if (!('error' in resolved) && resolved.profile) {
-    const fromProfile = opts.kind === 'image' ? resolved.profile.imageModel : resolved.profile.qaModel
-    if (fromProfile && fromProfile.trim()) return fromProfile.trim()
-  }
-  return opts.routeDefault
+  const provider = 'error' in resolved ? serverProvider(opts.provider) : resolved.provider
+  return (opts.kind === 'image' ? provider.imageModel : provider.qaModel).trim()
 }

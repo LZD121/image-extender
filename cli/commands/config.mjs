@@ -165,28 +165,13 @@ function pixelKeySource(pixel) {
  * profile that names its own baseUrl.
  */
 async function probeGateway(ctx, baseUrl, providerId, key) {
-  const { looksLikeImageModel } = await ctx.modules('config-test', ['app/lib/providers'])
-  const shape = { provider: providerId ?? null, baseUrl }
-  try {
-    const res = await fetch(`${baseUrl}/models`, {
-      headers: key ? { Authorization: `Bearer ${key}` } : {},
-      cache: 'no-store',
-      signal: AbortSignal.timeout(15000),
-    })
-    if (!res.ok) {
-      const text = (await res.text().catch(() => '')).slice(0, 400).trim()
-      return { ...shape, ok: false, status: res.status, error: text || `HTTP ${res.status}` }
-    }
-    const payload = await res.json().catch(() => null)
-    const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : []
-    const ids = list.map((m) => String(m?.id ?? '')).filter(Boolean)
-    return { ...shape, ok: true, count: ids.length, imageModelCount: ids.filter(looksLikeImageModel).length }
-  } catch (err) {
-    return {
-      ...shape,
-      ok: false,
-      error: err.name === 'TimeoutError' ? `no answer within 15s from ${baseUrl}` : err.message,
-    }
+  const { probeGatewayModels } = await ctx.modules('config-test', ['app/lib/gatewayProbe'])
+  const result = await probeGatewayModels({ providerId: providerId ?? null, baseUrl, key })
+  if (!result.ok) return result
+  return {
+    ...result,
+    count: result.models.length,
+    imageModelCount: result.models.filter((m) => m.imageCapable).length,
   }
 }
 

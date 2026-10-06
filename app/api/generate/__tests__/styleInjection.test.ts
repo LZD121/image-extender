@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { POST } from '@/app/api/generate/route'
+import { toWire } from '@/app/lib/generateRequest'
 
 const PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
@@ -54,12 +55,35 @@ async function capturePrompt(body: Record<string, unknown>): Promise<string> {
   }
 }
 
+/** Each body is what the studio sends: `toWire` names the kind, the route reads it back. */
 const MODES: { name: string; body: Record<string, unknown> }[] = [
-  { name: 'plain generate', body: { prompt: 'a mossy stone' } },
-  { name: 'sprite sheet', body: { prompt: 'a knight', spriteSheet: true, spriteAnim: 'walk', spriteBodyPlan: 'biped', width: 2048, height: 1024 } },
-  { name: 'tile sheet', body: { prompt: 'mossy stone', tileSheet: true, width: 4096, height: 4096 } },
-  { name: 'prop sheet', body: { prompt: 'rocks', propSheet: true, width: 2048, height: 1024 } },
-  { name: 'sprite anchor', body: { prompt: 'a knight', spriteAnchor: true, spriteBodyPlan: 'biped', width: 1024, height: 1024 } },
+  { name: 'plain generate', body: toWire({ prompt: 'a mossy stone', width: 512, height: 512, kind: 'plain' }) },
+  {
+    name: 'sprite sheet',
+    body: toWire({
+      prompt: 'a knight',
+      kind: 'spriteSheet',
+      spriteAnim: 'walk',
+      spriteBodyPlan: 'biped',
+      width: 2048,
+      height: 1024,
+    }),
+  },
+  { name: 'tile sheet', body: toWire({ prompt: 'mossy stone', kind: 'tileSheet', width: 4096, height: 4096 }) },
+  { name: 'prop sheet', body: toWire({ prompt: 'rocks', kind: 'propSheet', width: 2048, height: 1024 }) },
+  {
+    name: 'sprite anchor',
+    body: toWire({ prompt: 'a knight', kind: 'spriteAnchor', spriteBodyPlan: 'biped', width: 1024, height: 1024 }),
+  },
+  { name: 'tile mode', body: toWire({ prompt: 'moss', kind: 'tileMode', tileRole: 'body', width: 512, height: 512 }) },
+  {
+    name: 'prop mode',
+    body: toWire({ prompt: 'rocks', kind: 'propMode', propRole: 'lantern', width: 512, height: 512 }),
+  },
+  {
+    name: 'parallax',
+    body: toWire({ prompt: 'a knight', kind: 'parallax', layerRole: 'mid', width: 2048, height: 512 }),
+  },
 ]
 
 describe('artStyle reaches the model in every mode', () => {
@@ -73,6 +97,27 @@ describe('artStyle reaches the model in every mode', () => {
     it(`${name} stays style-free when no style is selected`, async () => {
       const prompt = await capturePrompt(body)
       expect(prompt).not.toContain('RENDER STYLE')
+    })
+  }
+})
+
+/** One distinctive phrase per kind, so a mode that silently falls through is caught. */
+const MARKERS: Record<string, string> = {
+  'plain generate': 'Create a high-quality, detailed image at exactly',
+  'sprite sheet': 'You are generating a single SPRITE-SHEET IMAGE',
+  'tile sheet': 'You are restyling a structural reference image',
+  'prop sheet': 'You are painting a DECORATION / PROP ATLAS',
+  'sprite anchor': 'You are generating a single CHARACTER REFERENCE IMAGE',
+  'tile mode': 'TILE TEXTURE',
+  'prop mode': 'DECORATION PROP',
+  parallax: 'PARALLAX LAYER — MID',
+}
+
+describe('every kind reaches its own prompt', () => {
+  for (const { name, body } of MODES) {
+    it(`${name} builds its own prompt`, async () => {
+      const prompt = await capturePrompt(body)
+      expect(prompt).toContain(MARKERS[name])
     })
   }
 })
