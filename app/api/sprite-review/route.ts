@@ -263,6 +263,8 @@ Review the attached sprite sheet${hasAnchor ? ' against the character anchor' : 
           { role: 'user', content },
         ],
         max_tokens: 600,
+        // Some gateways (APIMart) default to SSE, which is not JSON to parse.
+        stream: false,
         temperature: 0.2,
       }),
     })

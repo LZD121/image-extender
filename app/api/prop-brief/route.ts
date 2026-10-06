@@ -146,6 +146,8 @@ Propose ${n} brand-new decoration props as strict JSON.`
           { role: 'user', content: userPrompt },
         ],
         max_tokens: 900,
+        // Some gateways (APIMart) default to SSE, which is not JSON to parse.
+        stream: false,
         // High temperature: this is the CREATIVE step. We want it reaching for
         // novel kinds, not playing it safe.
         temperature: 1.0,

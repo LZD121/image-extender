@@ -22,7 +22,9 @@ export type ModelOption = {
  * best-of-N and the ETA shown — never whether a call is allowed.
  */
 function timingFor(id: string): Pick<ModelOption, 'maxAttempts' | 'approxSecondsPerCall'> {
-  if (/gpt-image/i.test(id)) return { maxAttempts: 1, approxSecondsPerCall: 240 }
+  // A gpt-image model on a task API (APIMart) lands in ~15s. The slow chat
+  // variant, GPT-5.4 Image 2, carries its own timings in the MODELS table.
+  if (/gpt-image/i.test(id)) return { maxAttempts: 1, approxSecondsPerCall: 30 }
   if (/gemini.*pro/i.test(id)) return { maxAttempts: 1, approxSecondsPerCall: 75 }
   return { maxAttempts: 3, approxSecondsPerCall: 20 }
 }
@@ -73,13 +75,15 @@ export const MODELS: ModelOption[] = [
 
 export const DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview'
 
+/**
+ * Timings for a model id. A gateway-discovered id is timed by its own heuristics
+ * rather than borrowing the default model's — borrowing it turned one APIMart
+ * extend into three sequential image tasks.
+ */
 export function getModelConfig(value: string, extra: ModelOption[] = []): ModelOption {
-  return (
-    MODELS.find((m) => m.value === value) ||
-    extra.find((m) => m.value === value) ||
-    MODELS.find((m) => m.value === DEFAULT_MODEL) ||
-    MODELS[0]
-  )
+  const known = MODELS.find((m) => m.value === value) || extra.find((m) => m.value === value)
+  if (known) return known
+  return { value, label: value, ...timingFor(value) }
 }
 
 export function skipsArtDirectorReview(value: string): boolean {

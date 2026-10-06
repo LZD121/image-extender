@@ -410,11 +410,26 @@ Optional custom prompt and art style live in the bottom command bar.
 Every generation and art-director call goes to one OpenAI-compatible gateway,
 chosen in **Settings → Gateway**:
 
-| Gateway | Base URL | Key |
-| --- | --- | --- |
-| **OpenRouter** (default) | `https://openrouter.ai/api/v1` | `sk-or-…`, required |
-| **Magpie gateway** | `IE_MAGPIE_BASE_URL`, default `http://127.0.0.1:3425/v1` | usually none |
+| Gateway | Base URL | Key | Image calls |
+| --- | --- | --- | --- |
+| **OpenRouter** (default) | `https://openrouter.ai/api/v1` | `sk-or-…`, required | chat completions |
+| **Magpie gateway** | `IE_MAGPIE_BASE_URL`, default `http://127.0.0.1:3425/v1` | usually none | chat completions |
+| **APIMart** | `https://api.apimart.ai/v1` | `sk-…`, required | async task API |
 
+**APIMart** is the odd one and has its own adapter (`app/lib/apimartServer.ts`):
+image models are not a chat completion but `POST /images/generations` →
+`GET /tasks/{id}`, so the server submits, polls (~10–20s), downloads the
+finished render and **inlines it as a data URL** — the result is an expiring
+cross-origin URL, and a canvas the client cannot read would break chroma
+keying, slicing and Poisson blending alike. Sizes are a ratio (`2:1` exists
+here and not on OpenRouter) or, on `gpt-image-2-official`, exact pixels snapped
+to a multiple of 16, which is what the vendor's own rejection demands. Reference
+images (tile guides, pose maps, anchors, the canvas being extended) ride along
+in `image_urls`. Chat still works, so the art-director passes run here too —
+with `stream: false`, because this vendor defaults to SSE.
+
+Keys are **scoped per model** on APIMart: a key that paints images can still be
+refused a text model (`403 does not have access to model …`), and the reverse.
 - Discovery is automatic: opening Settings paints the last model list this
   gateway reported, then asks it again behind that. Model ids come from the
   gateway, never from a list in this repo. The status line reads
@@ -422,15 +437,27 @@ chosen in **Settings → Gateway**:
   **vendor** — the gateway's own suppliers — to filter them.
   `Check connection` forces a fresh probe.
 - **Only models this project has verified are offered.** A gateway reporting a
-  model is not a promise that it answers: of the 8 image ids the local magpie
-  gateway lists, 1 works (below), 4 need upstream credentials it does not hold
-  (`google/*`, `antigravity/*`, `group/*`), and 3 refuse
-  `/v1/chat/completions` (`teamo-router/gpt-image-2*`). The verified set is
-  `VERIFIED_MODELS` in `app/lib/providers.ts` — measured, with the failures
-  named in the comment — and everything else the gateway reports sits behind
-  `Show N more (unverified)`, flagged `not verified here` if you pick it. The
-  art-director select is grouped the same way. OpenRouter has no verified entry
-  because its picker *is* the curated `MODELS` table, verified by construction.
+  model is not a promise that it answers, and the two gateways fail in
+  different ways, both measured:
+  - **magpie**: of the 8 image ids it lists, 1 works, 4 need upstream
+    credentials it does not hold (`google/*`, `antigravity/*`, `group/*`), and 3
+    refuse `/v1/chat/completions` (`teamo-router/gpt-image-2*`).
+  - **APIMart**: **every one of its 45 image ids was probed** by generating with
+    it. 34 answer and are what the picker offers — the `gemini-*` family, flux,
+    seedream, qwen, wan, z-image, grok, the gpt-image ladder. The 11 that do not:
+    `chatgpt-image-latest` and `ltx-2.3-image-video` are not served by
+    `/images/generations` at all, `dall-e-2`/`dall-e-3` are not enabled on the
+    account, `flux-3-video` wants `hd`/`fhd` instead of a tier,
+    `seedream-5-0-lite` and `ltx-2.3-text-image` are unsupported upstream,
+    `imagen-4.0-apimart` fails vendor-side, and `gpt-image-1` / `-1-mini` /
+    `-1.5` are rate limited. `seedream-4-5` only answers at 2K or 4K, which the
+    adapter's tier escalation handles.
+  The verified set is `VERIFIED_MODELS` in `app/lib/providers.ts` — measured,
+  with the failures named in the comment — and everything else a gateway
+  reports sits behind `Show N more (unverified)`, flagged `not verified here`
+  if you pick it. The art-director select is grouped the same way. OpenRouter
+  has no verified entry because its picker *is* the curated `MODELS` table,
+  verified by construction.
 - One fallback default per gateway is the only other hardcoded model id, and it
   is shown only before the first successful check.
 - An **image model** and an **art-director model** are separate settings: the
@@ -607,6 +634,7 @@ A few small values you might want to tune:
 | `iterations` | `app/utils/imageProcessor.ts` | `250` | Max Gauss-Seidel iterations |
 | `IE_MAGPIE_BASE_URL` | env | `http://127.0.0.1:3425/v1` | Base URL of the Magpie gateway (Settings → Gateway) |
 | `MAGPIE_API_KEY` | env | empty | Server-side key for that gateway (a browser key overrides it) |
+| `APIMART_API_KEY` | env | empty | Server-side key for the APIMart gateway (a browser key overrides it) |
 
 ## Privacy & security
 

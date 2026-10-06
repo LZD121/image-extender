@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { extractImageUrl } from '@/app/lib/llmResponse'
+import { generateViaApimart } from '@/app/lib/apimartServer'
 import { llmTarget } from '@/app/lib/llmServer'
 import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
 
@@ -186,6 +187,35 @@ KEY INSTRUCTIONS:
       prompt += `\n\nOUTPUT DIMENSIONS: Return the image at exactly ${chunkW}x${chunkH} pixels — the same dimensions as the input image. Fill every gray pixel in the blank area. Do NOT return a different size or aspect ratio.`
     }
 
+
+    // APIMart image models are an async task API. They also need the target
+    // canvas in pixels, which only the full-context path states: a chunked
+    // extend has no single output size to ask for, so say so instead of
+    // silently returning the wrong shape.
+    if (target.provider.id === 'apimart') {
+      const targetWidth = extensionInfo?.newWidth
+      const targetHeight = extensionInfo?.newHeight
+      if (!targetWidth || !targetHeight) {
+        return NextResponse.json(
+          { error: 'APIMart needs the full-context extend path — switch to a chat gateway for chunked extends.' },
+          { status: 400 },
+        )
+      }
+      const result = await generateViaApimart({
+        provider,
+        apiKey,
+        model: modelId,
+        prompt,
+        width: targetWidth,
+        height: targetHeight,
+        references: [expandedCanvas],
+      })
+      if ('error' in result) {
+        console.error('APIMart error:', result.error)
+        return NextResponse.json({ error: result.error }, { status: 502 })
+      }
+      return NextResponse.json({ imageUrl: result.dataUrl, chunkInfo, provider: target.provider.id })
+    }
     const response = await fetch(target.url, {
       method: 'POST',
       headers: target.headers,
@@ -201,6 +231,8 @@ KEY INSTRUCTIONS:
           },
         ],
         max_tokens: 2000,
+        // Some gateways (APIMart) default to SSE, which is not JSON to parse.
+        stream: false,
         temperature: attempt === 0 ? 0.3 : attempt === 1 ? 0.5 : 0.7,
       }),
     })

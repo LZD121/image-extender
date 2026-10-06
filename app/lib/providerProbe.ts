@@ -25,7 +25,9 @@ export type ProbeResult = {
 
 /** How long a cached model list may be shown before we go and ask again. */
 const CACHE_TTL_MS = 10 * 60 * 1000
-const CACHE_KEY = 'extender:providerModels'
+// Versioned: the cached payload carries the supplier attribution, so a change
+// to how a vendor is derived has to invalidate old entries.
+const CACHE_KEY = 'extender:providerModels:v2'
 
 /**
  * The last model list we actually got from this gateway, keyed per gateway.

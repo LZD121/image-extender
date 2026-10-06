@@ -36,14 +36,14 @@ function json(body: unknown, status = 200) {
 }
 
 describe('GET /api/providers', () => {
-  it('lists both gateways with their defaults, no network call', async () => {
+  it('lists every gateway with its defaults, no network call', async () => {
     const calls = stubGateway(() => json({}))
     const res = await GET()
     const body = await res.json()
 
     expect(res.status).toBe(200)
     expect(body.defaultProvider).toBe('openrouter')
-    expect(body.providers.map((p: { id: string }) => p.id)).toEqual(['openrouter', 'magpie'])
+    expect(body.providers.map((p: { id: string }) => p.id)).toEqual(['openrouter', 'magpie', 'apimart'])
     expect(calls).toEqual([])
 
     const openrouter = body.providers[0]
@@ -53,6 +53,10 @@ describe('GET /api/providers', () => {
     const magpie = body.providers[1]
     expect(magpie.baseUrl).toBe('http://127.0.0.1:3425/v1')
     expect(magpie.keyRequired).toBe(false)
+
+    const apimart = body.providers[2]
+    expect(apimart.baseUrl).toBe('https://api.apimart.ai/v1')
+    expect(apimart.keyRequired).toBe(true)
   })
 
   it('lets the deployment move the magpie gateway', async () => {

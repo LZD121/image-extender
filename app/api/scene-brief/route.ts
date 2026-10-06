@@ -56,6 +56,8 @@ Write the shared scene brief for all parallax layers.`
           { role: 'user', content: userPrompt },
         ],
         max_tokens: 400,
+        // Some gateways (APIMart) default to SSE, which is not JSON to parse.
+        stream: false,
         temperature: 0.4,
       }),
     })

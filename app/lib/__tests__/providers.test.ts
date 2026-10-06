@@ -90,6 +90,25 @@ describe('pickableModels', () => {
     expect(pick.verifiedImage).toEqual([])
     expect(pick.otherImage).toEqual([])
   })
+
+  it('offers only the APIMart models this project has actually called', () => {
+    // Ids as APIMart reports them: bare, no vendor prefix.
+    const reported: GatewayModel[] = [
+      ['gpt-image-2-official', true],
+      ['gpt-image-2', true],
+      ['flux-2-pro', true],
+      ['dall-e-3', true],
+      ['claude-sonnet-4-5-20250929', false],
+      ['gpt-4o', false],
+    ].map(([id, imageCapable]) => ({ id: id as string, vendor: 'apimart', imageCapable: imageCapable as boolean }))
+
+    const pick = pickableModels('apimart', reported)
+    expect(pick.curated).toBe(false)
+    expect(pick.verifiedImage.map((m) => m.id)).toEqual(['gpt-image-2-official', 'gpt-image-2', 'flux-2-pro'])
+    expect(pick.otherImage.map((m) => m.id)).toEqual(['dall-e-3'])
+    expect(pick.verifiedQa.map((m) => m.id)).toEqual(['claude-sonnet-4-5-20250929'])
+    expect(pick.otherQa.map((m) => m.id)).toEqual(['gpt-4o'])
+  })
 })
 
 describe('vendorOf', () => {

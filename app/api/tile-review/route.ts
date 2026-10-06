@@ -140,6 +140,8 @@ Review the attached platform preview${
           { role: 'user', content },
         ],
         max_tokens: 600,
+        // Some gateways (APIMart) default to SSE, which is not JSON to parse.
+        stream: false,
         // Low temperature: this is a judgment call, we want consistency.
         temperature: 0.2,
       }),

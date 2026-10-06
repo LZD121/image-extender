@@ -3,6 +3,7 @@ import { extractCost } from '@/app/lib/generateCost'
 import { extractImageUrl } from '@/app/lib/llmResponse'
 import { llmTarget } from '@/app/lib/llmServer'
 import { styleDirective } from '@/app/lib/stylePrompt'
+import { generateViaApimart } from '@/app/lib/apimartServer'
 
 const DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview'
 
@@ -1152,6 +1153,34 @@ ${
       text: fullPrompt,
     })
 
+    // APIMart's image models are an async task API, not a chat completion, so
+    // the same prompt and the same attached references go through their own
+    // adapter — the response shape stays { imageUrl } for every studio.
+    if (target.provider.id === 'apimart') {
+      const result = await generateViaApimart({
+        provider,
+        apiKey,
+        model: modelId,
+        prompt: fullPrompt,
+        width,
+        height,
+        references: messageContent
+          .filter((part) => part.type === 'image_url')
+          .map((part) => part.image_url.url as string),
+      })
+      if ('error' in result) {
+        console.error('APIMart error:', result.error)
+        return NextResponse.json({ error: result.error }, { status: 502 })
+      }
+      return NextResponse.json({
+        imageUrl: result.dataUrl,
+        cost: result.cost,
+        model: result.model,
+        provider: target.provider.id,
+        requestedSize: result.size,
+      })
+    }
+
     // Call the provider gateway with the image generation model
     const response = await fetch(target.url, {
       method: 'POST',
@@ -1172,6 +1201,8 @@ ${
         // reduced aspect ratio (sprites are 2:1, square anchors are 1:1).
         image_config: { aspect_ratio: supportedAspectRatioForSize(width, height) },
         max_tokens: 2000,
+        // Some gateways (APIMart) default to SSE, which is not JSON to parse.
+        stream: false,
         // Low temperature on multi-cell sheet generation keeps the model
         // disciplined about the grid layout + per-cell consistency.
         // Sprite sheets need even lower temperature than tile sheets —
