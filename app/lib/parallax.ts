@@ -1,5 +1,3 @@
-'use client'
-
 import { LAYER_ORDER, type LayerRole } from '@/app/lib/layerRoles'
 
 // The role list and its type live in a server-readable module; re-exported here

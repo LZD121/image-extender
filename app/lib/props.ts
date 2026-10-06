@@ -1,5 +1,3 @@
-'use client'
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Props / decoration — an OPEN-ENDED library of standalone transparent
 // decoration sprites. Instead of a fixed 12-cell sheet with dictated items, the

@@ -1,5 +1,3 @@
-'use client'
-
 import { Mode } from '@/app/lib/app'
 
 /**

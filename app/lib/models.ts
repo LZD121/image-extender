@@ -1,5 +1,3 @@
-'use client'
-
 import { PROVIDERS, type GatewayModel } from '@/app/lib/providers'
 
 export type ModelOption = {

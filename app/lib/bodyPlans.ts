@@ -1,5 +1,3 @@
-'use client'
-
 import { SPRITE_CHARACTER_PRESETS, SpriteAnimType, SpritePreset } from '@/app/lib/sprite'
 
 /**
