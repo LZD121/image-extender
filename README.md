@@ -407,6 +407,45 @@ include a client-provided one.
 
 Optional custom prompt and art style live in the bottom command bar.
 
+## Headless CLI & API for agents
+
+The same studios, driven from a shell. `ie` (in-repo, no browser) wraps the nine
+`/api/*` routes *and* the app's own pixel code — chroma keying, slicing,
+tileability, Poisson seam blending, corner reconciliation, pose rigs, frame
+alignment — by running `app/utils/*` in headless Chromium. Nothing is
+reimplemented, so the CLI cannot drift from what the UI does.
+
+```bash
+npm install
+node cli/ie.mjs doctor --json          # node, deps, Chromium, config, server, assets
+node cli/ie.mjs serve                  # starts `next dev` (other commands do this too)
+
+node cli/ie.mjs tiles "mossy grey dungeon stone" --out ./out/tiles --review \
+  --library demo/tiles/mossy --json
+node cli/ie.mjs extend in.png out.png --direction right --attempts 3 --json
+node cli/ie.mjs library list --json
+```
+
+Providers, keys and models come from a **config file**, so a CLI call carries no
+secrets and no URLs — only a profile id:
+
+```bash
+node cli/ie.mjs config                 # interactive TUI (add/edit/test profiles)
+node cli/ie.mjs config set profiles.local.provider magpie
+node cli/ie.mjs config set profiles.local.baseUrl http://127.0.0.1:3425/v1
+node cli/ie.mjs config set defaultProfile local
+node cli/ie.mjs config test --profile local --json
+```
+
+`--json` gives exactly one `{ok:true,…}` / `{ok:false,error:{code,message}}`
+object on stdout (progress goes to stderr), with exit `0` / `1` / `2` (usage).
+`ie call <route> --body '{…}'` posts any route raw; `ie help` and per-command
+`ie help <command>` document the rest.
+
+Full reference — route contracts, the config schema, the CLI command table and
+copy-paste recipes: **[docs/agent-api.md](docs/agent-api.md)**.
+
+
 ## Gateways
 
 Every generation and art-director call goes to one OpenAI-compatible gateway,
@@ -660,6 +699,21 @@ app/
 └── page.tsx                   App shell: state, generation pipelines, QA loops
 ```
 
+```
+cli/
+├── ie.mjs                     Headless CLI entry point (bin: ie)
+├── commands/                  One module per command group (core, prim, studio,
+│                              pixel, library, config)
+├── lib/                       args/envelope, server lifecycle, HTTP client,
+│                              bridge client, media helpers, command context
+└── native/
+    ├── bridge.mjs             Runs the app's own pixel modules in headless Chromium
+    ├── bundle.mjs             esbuild bundling (browser IIFE + Node ESM)
+    └── deps.mjs               Repo-relative deps, Chromium discovery
+docs/agent-api.md              Route + CLI reference for agents
+```
+
+
 ## Configuration knobs
 
 A few small values you might want to tune:
@@ -677,6 +731,10 @@ A few small values you might want to tune:
 | `IE_MAGPIE_BASE_URL` | env | `http://127.0.0.1:3425/v1` | Base URL of the Magpie gateway (Settings → Gateway) |
 | `MAGPIE_API_KEY` | env | empty | Server-side key for that gateway (a browser key overrides it) |
 | `APIMART_API_KEY` | env | empty | Server-side key for the APIMart gateway (a browser key overrides it) |
+| `IE_CONFIG` | env | unset | Path to the provider/model config file (`ie config`) |
+| `IE_BASE_URL` | env | unset | Use an already-running server instead of spawning `next dev` |
+| `IE_ASSETS_DIR` | env | `<repo>/assets` | Asset-library root |
+| `IE_CHROMIUM` | env | ms-playwright cache | Chromium binary for the headless pixel ops |
 
 ## Privacy & security
 

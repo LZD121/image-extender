@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { llmTarget } from '@/app/lib/llmServer'
+import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
 
 // QA ART DIRECTOR — the review half of the reverse two-call tile pipeline.
 //
@@ -53,7 +53,7 @@ function parseReview(raw: string): Review | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, sceneBrief, apiKey, model, previewImage, sheetImage, provider } =
+    const { prompt, sceneBrief, apiKey, model, previewImage, sheetImage, provider, profile } =
       await request.json()
 
     if (
@@ -68,14 +68,14 @@ export async function POST(request: NextRequest) {
 
     const target = llmTarget({
       provider,
+      profile,
       apiKey,
       referer: request.headers.get('referer'),
       title: 'AI Image Extender - Tile QA',
     })
     if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
-    const modelId =
-      typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL
+    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa', routeDefault: DEFAULT_MODEL })
 
     const systemPrompt = `You are a SENIOR ENVIRONMENT / TILESET ARTIST doing the final QA pass on a generated 2D-platformer tileset before it ships into the engine. You have the authority to REJECT work, and the experience to not nitpick natural hand-painted texture.
 

@@ -2,6 +2,9 @@
   "name": "image-extender",
   "version": "1.0.0",
   "private": true,
+  "bin": {
+    "ie": "cli/ie.mjs"
+  },
   "description": "A web app that extends images in any direction using AI (Gemini via OpenRouter), with Poisson-blended seamless outpainting and a best-of-N variant picker.",
   "keywords": [
     "ai",
@@ -25,6 +28,7 @@
     "url": "https://github.com/boona13/image-extender/issues"
   },
   "scripts": {
+    "ie": "node cli/ie.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -32,7 +36,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ai": "playwright test",
-    "test:ai:report": "playwright show-report"
+    "test:ai:report": "playwright show-report",
+    "test:cli": "node --test cli/native/__tests__/bridge.smoke.test.mjs"
   },
   "dependencies": {
     "jszip": "^3.10.1",
@@ -47,7 +52,10 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "autoprefixer": "^10.4.16",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.63.0",
     "postcss": "^8.4.31",
+    "sharp": "^0.35.5",
     "tailwindcss": "^3.3.5",
     "typescript": "^5.2.2",
     "vitest": "^2.1.9"

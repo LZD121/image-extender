@@ -54,6 +54,9 @@ assets/**/raw/
 .env.midscene
 playwright-report/
 test-results/
+
+# Headless CLI runtime state (server pid/port) + esbuild bundle cache
+.ie/
 midscene_run/
 
 # Local tool state (agent session/ownership files, LSP project config) — the

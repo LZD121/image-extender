@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractCost } from '@/app/lib/generateCost'
 import { extractImageUrl } from '@/app/lib/llmResponse'
-import { llmTarget } from '@/app/lib/llmServer'
+import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
 import { styleDirective } from '@/app/lib/stylePrompt'
 import { generateViaApimart } from '@/app/lib/apimartServer'
 
@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
       propRefImage,
       propAvoidHint,
       provider,
+      profile,
     } = await request.json()
 
     if (!prompt || !width || !height) {
@@ -85,13 +86,14 @@ export async function POST(request: NextRequest) {
 
     const target = llmTarget({
       provider,
+      profile,
       apiKey,
       referer: request.headers.get('referer'),
       title: 'AI Image Extender - Generator',
     })
     if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
-    const modelId = (typeof model === 'string' && model.trim()) ? model.trim() : DEFAULT_MODEL
+    const modelId = modelOrDefault({ model, provider, profile, kind: 'image', routeDefault: DEFAULT_MODEL })
 
     // Build the full prompt
     let fullPrompt = `${styleDirective(artStyle)}${prompt}`
@@ -1159,6 +1161,7 @@ ${
     if (target.provider.id === 'apimart') {
       const result = await generateViaApimart({
         provider,
+        profile,
         apiKey,
         model: modelId,
         prompt: fullPrompt,

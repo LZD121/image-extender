@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { llmTarget } from '@/app/lib/llmServer'
+import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
 import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
 
 // ART DIRECTOR — call #1 of the two-call props pipeline.
@@ -80,7 +80,7 @@ function parseIdeas(raw: string): PropIdea[] {
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, sceneBrief, artStyle, apiKey, model, count, existing, provider } =
+    const { prompt, sceneBrief, artStyle, apiKey, model, count, existing, provider, profile } =
       await request.json()
 
     if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
@@ -89,14 +89,14 @@ export async function POST(request: NextRequest) {
 
     const target = llmTarget({
       provider,
+      profile,
       apiKey,
       referer: request.headers.get('referer'),
       title: 'AI Image Extender - Prop Art Director',
     })
     if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
-    const modelId =
-      typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL
+    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa', routeDefault: DEFAULT_MODEL })
 
     const n = Math.max(1, Math.min(24, Math.round(Number(count) || 8)))
     const existingList: string[] = Array.isArray(existing)

@@ -169,7 +169,7 @@ export function collectStudioAsset(input: CollectorInput): CollectedAsset | null
  */
 export function buildAssetMeta(
   collected: CollectedAsset,
-  opts: { project: string; slug: string; now?: string }
+  opts: { project: string; slug: string; now?: string; toolVersion?: string }
 ): AssetMeta {
   const now = opts.now ?? new Date().toISOString()
   return {
@@ -190,7 +190,8 @@ export function buildAssetMeta(
         .filter((f) => f.startsWith('derived/'))
         .sort(),
     },
-    // The route re-stamps `backend` from the allow-list; `toolVersion` is ours.
-    provenance: { ...collected.provenance, toolVersion: 'web' },
+    // The route re-stamps `backend` from the allow-list; `toolVersion` is ours —
+    // the browser panel writes 'web', the headless CLI writes 'ie@<version>'.
+    provenance: { ...collected.provenance, toolVersion: opts.toolVersion ?? 'web' },
   }
 }

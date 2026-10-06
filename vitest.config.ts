@@ -8,6 +8,11 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['app/**/__tests__/**/*.test.ts'],
+    // App tests plus the CLI's pure/contract tests (the headless pixel path is
+    // exercised separately by `npm run test:cli`, which needs Chromium).
+    include: ['app/**/__tests__/**/*.test.ts', 'cli/**/__tests__/**/*.test.mjs'],
+    // The bridge smoke suite is a node:test file (it launches Chromium); it runs
+    // via `npm run test:cli`, not through vitest.
+    exclude: ['**/node_modules/**', 'cli/native/__tests__/**'],
   },
 })
