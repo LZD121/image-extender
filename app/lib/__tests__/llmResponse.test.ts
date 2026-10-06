@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractImageUrl, messageText, parseReviewJson } from '@/app/lib/llmResponse'
+import { extractImageUrl, messageText, parseReviewJson, salvageJson } from '@/app/lib/llmResponse'
 
 /** Only needs to clear the >100-char heuristic that guards the raw-base64 fallback. */
 const B64 = 'A'.repeat(120)
@@ -83,5 +83,22 @@ describe('parseReviewJson', () => {
 
   it('gives null for text that is not JSON', () => {
     expect(parseReviewJson('nonsense')).toBeNull()
+  })
+})
+
+describe('salvageJson', () => {
+  it('reads the whole text first', () => {
+    expect(salvageJson('{"a":1}', ['object'])).toEqual({ a: 1 })
+  })
+
+  it('finds a block inside prose, and only the kinds the caller asked for', () => {
+    expect(salvageJson('Sure! [1,2]', ['array'])).toEqual([1, 2])
+    expect(salvageJson('Sure! [1,2]', ['object'])).toBeNull()
+    expect(salvageJson('Sure! {"a":1}', ['object'])).toEqual({ a: 1 })
+  })
+
+  it('gives up on text with no JSON in it', () => {
+    expect(salvageJson('I would rather not.', ['object', 'array'])).toBeNull()
+    expect(salvageJson('', ['object'])).toBeNull()
   })
 })

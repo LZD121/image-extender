@@ -36,11 +36,18 @@ export function messageText(content: unknown, separator = ''): string {
     .join(separator)
 }
 
+/** A bracketed block to look for inside a model's prose. */
+export type JsonBlock = 'object' | 'array'
+
 /**
- * Best-effort JSON from a model's text — strips ```json fences, grabs the first
- * {...} block, and accepts ok/approved/pass plus issues/fix/report synonyms.
+ * Best-effort JSON from a model's text: strips ```json fences, then tries the
+ * whole text, then the first block of each requested kind — in the order given,
+ * so a reply carrying both is read as the kind the caller expects.
+ *
+ * Two callers used to carry their own copy of this salvage (the review parser
+ * and the prop art-director's), with different tolerances and no shared test.
  */
-export function parseReviewJson(raw: string): Review | null {
+export function salvageJson(raw: string, search: readonly JsonBlock[]): unknown {
   if (!raw) return null
   const text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
   const tryParse = (s: string): unknown => {
@@ -50,12 +57,26 @@ export function parseReviewJson(raw: string): Review | null {
       return null
     }
   }
-  let data: unknown = tryParse(text)
-  if (!data) {
-    const s = text.indexOf('{')
-    const e = text.lastIndexOf('}')
-    if (s !== -1 && e > s) data = tryParse(text.slice(s, e + 1))
+  const whole = tryParse(text)
+  if (whole) return whole
+  for (const kind of search) {
+    const open = kind === 'object' ? '{' : '['
+    const close = kind === 'object' ? '}' : ']'
+    const from = text.indexOf(open)
+    const to = text.lastIndexOf(close)
+    if (from === -1 || to <= from) continue
+    const block = tryParse(text.slice(from, to + 1))
+    if (block) return block
   }
+  return null
+}
+
+/**
+ * The art-director verdict, read tolerantly: `ok`/`approved`/`pass` all count as
+ * an approval, `issues` is the list, `fix`/`report` is the report to hand back.
+ */
+export function parseReviewJson(raw: string): Review | null {
+  const data = salvageJson(raw, ['object'])
   if (!data || typeof data !== 'object') return null
   const o = data as Record<string, unknown>
   const ok = o.ok === true || o.approved === true || o.pass === true
