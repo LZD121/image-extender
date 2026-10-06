@@ -3,35 +3,7 @@ import { modelOrDefault } from '@/app/lib/llmServer'
 import { generateKind, type GenerateBody } from '@/app/lib/generateRequest'
 import { generateImage } from '@/app/lib/imageGeneration'
 import { buildGeneratePrompt } from '@/app/lib/generatePrompt'
-
-const SUPPORTED_IMAGE_ASPECT_RATIOS = [
-  '1:1',
-  '2:3',
-  '3:2',
-  '3:4',
-  '4:3',
-  '4:5',
-  '5:4',
-  '9:16',
-  '16:9',
-  '21:9',
-] as const
-
-function aspectRatioValue(ratio: string): number {
-  const [w, h] = ratio.split(':').map(Number)
-  return w / h
-}
-
-function supportedAspectRatioForSize(width: number, height: number): string {
-  const target = width / height
-  return SUPPORTED_IMAGE_ASPECT_RATIOS
-    .map((ratio) => ({
-      ratio,
-      // Compare in log space so 2:1 and 1:2 errors are symmetric.
-      error: Math.abs(Math.log(aspectRatioValue(ratio) / target)),
-    }))
-    .sort((a, b) => a.error - b.error)[0].ratio
-}
+import { supportedAspectRatioForSize } from '@/app/lib/aspectRatio'
 
 export async function POST(request: NextRequest) {
   try {

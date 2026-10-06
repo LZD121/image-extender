@@ -4,6 +4,8 @@ import {
   isProviderId,
   looksLikeImageModel,
   pickableModels,
+  PROVIDERS,
+  PROVIDER_IDS,
   vendorOf,
   type GatewayModel,
 } from '@/app/lib/providers'
@@ -19,6 +21,24 @@ describe('isProviderId', () => {
 
   it('defaults to OpenRouter', () => {
     expect(DEFAULT_PROVIDER).toBe('openrouter')
+  })
+})
+
+/**
+ * TRAN-05: Teamo is reached as a magpie *profile*, never as a fourth provider.
+ * The order matters too — the provider picker renders `PROVIDER_IDS` in order.
+ */
+describe('PROVIDER_IDS', () => {
+  it('stays at the three gateways, in render order', () => {
+    expect(PROVIDER_IDS).toEqual(['openrouter', 'magpie', 'apimart'])
+  })
+
+  it('does not accept a profile-only channel as a provider', () => {
+    expect(isProviderId('teamo')).toBe(false)
+  })
+
+  it('lets a profile supply the key for magpie', () => {
+    expect(PROVIDERS.magpie.keyRequired).toBe(false)
   })
 })
 
