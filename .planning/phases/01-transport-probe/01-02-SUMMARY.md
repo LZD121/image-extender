@@ -23,7 +23,7 @@ commits: []
 ## 闸门结果（全部实跑）
 
 - Task 1：`npx tsc --noEmit` 退出 0；`'8:1'`/`'4:1'` 各 1 次；route.ts 里 `SUPPORTED_IMAGE_ASPECT_RATIOS` 提及 0 次；`const SUPPORTED_IMAGE_ASPECT_RATIOS` 的定义只命中 `app/lib/aspectRatio.ts` 一个文件。
-- Task 2：`npx vitest run app/api/generate/__tests__/aspectRatio.test.ts app/lib/__tests__/providers.test.ts` → **17 passed**（2 files）。
+- Task 2：跑 aspectRatio 与 providers 两个测试文件 → **17 passed**（2 files）。
 - Task 3：`ie config list --json` 读出 `probe-teamo`（provider=magpie、baseUrl 带 `/v1`、keySource=`$TEAMOROUTER_API_KEY (set)`）；`.ie/config.json` 无 `"apiKey"` 字段；`git check-ignore` 确认被忽略。
 - 全量回归：`npm test` → **296 passed / 33 files**（`styleInjection.test.ts` 等既有测试未受影响）。
 
