@@ -1,4 +1,4 @@
-import type { Namespace } from '@/app/i18n'
+import type { Namespace } from '@/app/i18n/types'
 
 /**
  * App chrome: the document title (applied on locale change by

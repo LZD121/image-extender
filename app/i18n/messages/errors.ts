@@ -1,4 +1,4 @@
-import type { Namespace } from '@/app/i18n'
+import type { Namespace } from '@/app/i18n/types'
 
 /**
  * Messages the *server* authors and the client displays verbatim (`{ error }`

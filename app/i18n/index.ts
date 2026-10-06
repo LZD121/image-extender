@@ -3,7 +3,8 @@
  *
  * Messages live in one module per area (`app/i18n/messages/<area>.ts`) so the
  * vocabulary is greppable and no two areas share a file. Each module exports
- * `{ en, zh }`; this file flattens them into `messages[locale][key]`.
+ * `{ en, zh }`; this file flattens them into `messages[locale][key]`. The shape
+ * every module shares (`Namespace`) lives in `./types`.
  *
  * Keys are flat dotted strings (`shell.topbar.newImage`). The Chinese map is
  * typed against the English key set, so a missing translation is a compile
@@ -27,12 +28,6 @@ import { tile } from './messages/tile'
 export type TranslateParams = Record<string, string | number>
 
 export type Locale = 'en' | 'zh'
-
-/** One message module: the same keys in every locale. */
-export type Namespace = {
-  en: Record<string, string>
-  zh: Record<string, string>
-}
 
 export const LOCALES: readonly Locale[] = ['en', 'zh']
 

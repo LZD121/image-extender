@@ -1,4 +1,4 @@
-import type { Namespace } from '@/app/i18n'
+import type { Namespace } from '@/app/i18n/types'
 
 /**
  * Strings rendered by the Parallax studio (`app/components/ParallaxStudio.tsx`).

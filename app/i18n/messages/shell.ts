@@ -1,4 +1,4 @@
-import type { Namespace } from '@/app/i18n'
+import type { Namespace } from '@/app/i18n/types'
 
 /** Strings rendered by the app shell (top bar, empty state, library panel…). */
 export const shell: Namespace = {

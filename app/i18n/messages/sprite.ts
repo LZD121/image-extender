@@ -1,4 +1,4 @@
-import type { Namespace } from '@/app/i18n'
+import type { Namespace } from '@/app/i18n/types'
 
 /** Strings rendered by the Sprite studio. */
 export const sprite: Namespace = {

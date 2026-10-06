@@ -1,4 +1,4 @@
-import type { Namespace } from '@/app/i18n'
+import type { Namespace } from '@/app/i18n/types'
 
 /**
  * Shared vocabulary — labels that more than one surface renders, keyed by the

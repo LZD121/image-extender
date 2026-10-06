@@ -1,4 +1,4 @@
-import type { Namespace } from '@/app/i18n'
+import type { Namespace } from '@/app/i18n/types'
 
 /** Strings owned by app/page.tsx (the Extender workspace and its handlers). */
 export const extender: Namespace = {
