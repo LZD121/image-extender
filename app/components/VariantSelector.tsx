@@ -1,6 +1,7 @@
 'use client'
 
 import { Icons } from '@/app/components/icons'
+import { useI18n } from '@/app/lib/i18n'
 
 export function VariantSelector({
   index,
@@ -19,6 +20,7 @@ export function VariantSelector({
   onPrev: () => void
   onNext: () => void
 }) {
+  const { t } = useI18n()
   return (
     <div
       className="inline-flex items-center gap-1 rounded-full border py-0.5 pl-1 pr-2 anim-fade"
@@ -27,13 +29,13 @@ export function VariantSelector({
         background: 'var(--bg-elev)',
       }}
       role="group"
-      aria-label="Cycle between extension variants"
+      aria-label={t('shell.variant.cycleAria')}
     >
       <button
         onClick={onPrev}
         className="icon-btn h-6 w-6"
-        aria-label="Previous variant (←)"
-        title="Previous variant (←)"
+        aria-label={t('shell.variant.prevAria')}
+        title={t('shell.variant.prevTitle')}
       >
         <Icons.ArrowLeft size={13} />
       </button>
@@ -41,7 +43,7 @@ export function VariantSelector({
         className="font-mono text-[11px] tabular-nums"
         style={{ color: 'var(--text-secondary)' }}
       >
-        Variant {index + 1}/{total}
+        {t('shell.variant.label', { index: index + 1, total })}
       </span>
       {isBest && (
         <span
@@ -51,16 +53,16 @@ export function VariantSelector({
             color: 'var(--accent)',
             border: '1px solid var(--accent-border)',
           }}
-          title="Algorithm's pick: lowest seam residual"
+          title={t('shell.variant.bestTitle')}
         >
-          BEST
+          {t('shell.variant.best')}
         </span>
       )}
       {typeof score === 'number' && (
         <span
           className="font-mono text-[10px]"
           style={{ color: 'var(--text-muted)' }}
-          title="Mean color difference at the seam — lower is better"
+          title={t('shell.variant.scoreTitle')}
         >
           {score.toFixed(1)}
         </span>
@@ -68,8 +70,8 @@ export function VariantSelector({
       <button
         onClick={onNext}
         className="icon-btn h-6 w-6"
-        aria-label="Next variant (→)"
-        title="Next variant (→)"
+        aria-label={t('shell.variant.nextAria')}
+        title={t('shell.variant.nextTitle')}
       >
         <Icons.ArrowRight size={13} />
       </button>
@@ -95,6 +97,7 @@ export function ResultActions({
   onDownload: () => void
   loading: boolean
 }) {
+  const { t } = useI18n()
   return (
     <div
       className="flex items-center gap-1.5 rounded-full border p-1"
@@ -108,28 +111,28 @@ export function ResultActions({
         onClick={onDiscard}
         disabled={loading}
         className="btn btn-ghost"
-        title="Discard this extension"
+        title={t('shell.result.discardTitle')}
       >
         <Icons.X size={14} />
-        Discard
+        {t('shell.result.discard')}
       </button>
       <button
         onClick={onRegenerate}
         disabled={loading}
         className="btn btn-ghost"
-        title="Generate a new variation"
+        title={t('shell.result.regenerateTitle')}
       >
         {loading ? <Icons.Spinner size={14} /> : <Icons.Refresh size={14} />}
-        Regenerate
+        {t('common.action.regenerate')}
       </button>
       <button
         onClick={onDownload}
         disabled={loading}
         className="btn btn-ghost"
-        title="Download as PNG"
+        title={t('shell.result.downloadTitle')}
       >
         <Icons.Download size={14} />
-        Download
+        {t('common.action.download')}
       </button>
       <div
         className="mx-1 h-5 w-px"
@@ -140,10 +143,10 @@ export function ResultActions({
         onClick={onAccept}
         disabled={loading}
         className="btn btn-primary"
-        title="Use this as the new base image"
+        title={t('shell.result.acceptTitle')}
       >
         <Icons.Check size={14} />
-        Accept
+        {t('shell.result.accept')}
       </button>
     </div>
   )

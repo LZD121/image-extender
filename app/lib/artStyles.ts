@@ -2,12 +2,23 @@
 
 import { Mode } from '@/app/lib/app'
 
-export const ART_STYLE_GROUPS: { label: string; options: { value: string; label: string }[] }[] = [
+/**
+ * `id` is the stable identity of a group: it keys the translated optgroup label
+ * (`common.artStyleGroup.<id>`) and it is what render sites compare against —
+ * never the English `label`, which changes with the UI language.
+ */
+export const ART_STYLE_GROUPS: {
+  id: string
+  label: string
+  options: { value: string; label: string }[]
+}[] = [
   {
+    id: 'match-original',
     label: 'Match original',
     options: [{ value: 'none', label: 'Match original style' }],
   },
   {
+    id: 'photography',
     label: 'Photography',
     options: [
       { value: 'cinematic', label: 'Cinematic' },
@@ -17,6 +28,7 @@ export const ART_STYLE_GROUPS: { label: string; options: { value: string; label:
     ],
   },
   {
+    id: 'painting',
     label: 'Painting',
     options: [
       { value: 'oil-painting', label: 'Oil painting' },
@@ -29,6 +41,7 @@ export const ART_STYLE_GROUPS: { label: string; options: { value: string; label:
     ],
   },
   {
+    id: 'digital',
     label: 'Digital',
     options: [
       { value: 'digital-art', label: 'Digital art' },
@@ -41,6 +54,7 @@ export const ART_STYLE_GROUPS: { label: string; options: { value: string; label:
     ],
   },
   {
+    id: 'illustration',
     label: 'Illustration',
     options: [
       { value: 'anime', label: 'Anime' },
@@ -51,6 +65,7 @@ export const ART_STYLE_GROUPS: { label: string; options: { value: string; label:
     ],
   },
   {
+    id: 'animation-studios',
     label: 'Animation studios',
     options: [
       { value: 'studio-ghibli', label: 'Studio Ghibli' },
@@ -66,6 +81,7 @@ export const ART_STYLE_GROUPS: { label: string; options: { value: string; label:
     ],
   },
   {
+    id: 'fantasy-and-retro',
     label: 'Fantasy & retro',
     options: [
       { value: 'fantasy', label: 'Fantasy' },

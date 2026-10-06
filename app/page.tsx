@@ -15,7 +15,7 @@ import { TopBar } from '@/app/components/TopBar'
 import { ResultActions, VariantSelector } from '@/app/components/VariantSelector'
 import { Workspace } from '@/app/components/Workspace'
 import { Candidate, Direction, EXTENSION_PERCENT, LIBRARY_PROJECT_STORAGE, Mode, STORAGE_MODE, STORAGE_MODEL, STORAGE_PROVIDER, STORAGE_QA_MODEL, apiKeyStorageKey } from '@/app/lib/app'
-import { findStyleLabel } from '@/app/lib/artStyles'
+import { useI18n } from '@/app/lib/i18n'
 import { DEFAULT_MODEL, getModelConfig, skipsArtDirectorReview } from '@/app/lib/models'
 import { DEFAULT_PROVIDER, PROVIDERS, isProviderId, type ProviderId } from '@/app/lib/providers'
 import { LAYER_ORDER, LAYER_ROLES, LayerRole, PARALLAX_MAX_AUTO_STEPS, ParallaxLayer, WORKFLOW_ORDER, createDefaultLayers, getRecommendedLayerIndex, getWorkflowPrerequisite } from '@/app/lib/parallax'
@@ -28,6 +28,8 @@ import { SubjectBounds, drawPoseGuideSheet, measureSubjectBounds } from '@/app/u
 import JSZip from 'jszip'
 
 export default function Home() {
+  const { t } = useI18n()
+
   // Image state
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [originalFileName, setOriginalFileName] = useState('extended')
@@ -539,30 +541,28 @@ export default function Home() {
             setOriginalFileName(file.name)
             setError(null)
           } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to load image')
+            setError(
+              err instanceof Error ? err.message : t('extender.error.loadImage')
+            )
           }
         } else if (mode === 'tile') {
           // Tile-set mode is generate-only — uploads aren't supported because
           // each tile has a strict role + magenta layout that an arbitrary
           // upload can't match. Surface a clear hint instead of silently
           // ignoring the dropped file.
-          setError(
-            'Tile-set mode generates from prompts only. Switch to Extender mode to outpaint an uploaded image.'
-          )
+          setError(t('extender.error.tilePromptOnly'))
         } else if (mode === 'sprite') {
           // Sprite mode is also generate-only — animation sheets need
           // strict 4×2 keyframe staging on a magenta key that an arbitrary
           // upload can't match.
-          setError(
-            'Sprite mode generates from prompts only. Switch to Extender mode to outpaint an uploaded image.'
-          )
+          setError(t('extender.error.spritePromptOnly'))
         } else {
           loadDataUrlAsImage(dataUrl, file.name)
         }
       }
       reader.readAsDataURL(file)
     },
-    [mode, applyImageToActiveLayer, loadDataUrlAsImage]
+    [mode, applyImageToActiveLayer, loadDataUrlAsImage, t]
   )
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -590,7 +590,7 @@ export default function Home() {
         })
         const data = await response.json()
         if (!response.ok) {
-          throw new Error(data.error || 'Failed to derive scene direction')
+          throw new Error(data.error || t('extender.error.sceneDirection'))
         }
         if (typeof data.sceneBrief === 'string' && data.sceneBrief.trim()) {
           setSceneBrief(data.sceneBrief.trim())
@@ -602,12 +602,12 @@ export default function Home() {
         setSceneBriefLoading(false)
       }
     },
-    [apiKey, artStyle, qaModel, provider]
+    [apiKey, artStyle, qaModel, provider, t]
   )
 
   const handleGenerateImage = async () => {
     if (!generatePrompt.trim()) {
-      setError('Please describe the image you want to generate.')
+      setError(t('extender.error.describeImage'))
       return
     }
     if (!ensureCanGenerate()) return
@@ -643,9 +643,9 @@ export default function Home() {
           setApiKeyRequired(true)
           setShowApiKeyModal(true)
         }
-        throw new Error(data.error || 'Failed to generate image')
+        throw new Error(data.error || t('extender.error.generateImage'))
       }
-      if (!data.imageUrl) throw new Error('No image returned from API')
+      if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
       const anchorPromptUsed = generatePrompt.trim()
       if (mode === 'parallax') {
         // Route into the active layer (with chroma-keying for non-sky roles).
@@ -660,7 +660,7 @@ export default function Home() {
       setShowGenerateModal(false)
       setGeneratePrompt('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate image')
+      setError(err instanceof Error ? err.message : t('extender.error.generateImage'))
     } finally {
       setGenerating(false)
     }
@@ -684,7 +684,7 @@ export default function Home() {
       layerRole?: LayerRole
     ) => {
       if (!currentImageDimensions) {
-        throw new Error('Image dimensions not available yet.')
+        throw new Error(t('extender.error.dimensions'))
       }
 
       const isKeyedLayer = !!layerRole && layerRole !== 'sky'
@@ -715,7 +715,7 @@ export default function Home() {
         })
         const data = await response.json()
         if (!response.ok) {
-          const err = new Error(data.error || 'Failed to extend image') as Error & { status?: number }
+          const err = new Error(data.error || t('extender.error.extendImage')) as Error & { status?: number }
           err.status = response.status
           throw err
         }
@@ -753,8 +753,12 @@ export default function Home() {
           const tickHandle = setInterval(() => {
             const elapsed = Math.floor((Date.now() - attemptStart) / 1000)
             const label = maxAttempts > 1
-              ? `Variant ${attempt + 1}/${maxAttempts} · ${elapsed}s`
-              : `Generating · ${elapsed}s`
+              ? t('extender.progress.variant', {
+                  step: attempt + 1,
+                  total: maxAttempts,
+                  seconds: elapsed,
+                })
+              : t('extender.progress.generating', { seconds: elapsed })
             setProgressMsg(label)
           }, 1000)
 
@@ -796,7 +800,9 @@ export default function Home() {
 
         if (candidates.length === 0) {
           throw new Error(
-            `AI failed to fill the extension area after ${maxAttempts} attempt${maxAttempts > 1 ? 's' : ''}. Try a different direction or model.`
+            maxAttempts > 1
+              ? t('extender.error.unfilledMany', { count: maxAttempts })
+              : t('extender.error.unfilledOne')
           )
         }
         // Sort best (lowest seam residual) first so the user lands on the
@@ -807,7 +813,7 @@ export default function Home() {
         const attemptStart = Date.now()
         const tickHandle = setInterval(() => {
           const elapsed = Math.floor((Date.now() - attemptStart) / 1000)
-          setProgressMsg(`Generating · ${elapsed}s`)
+          setProgressMsg(t('extender.progress.generating', { seconds: elapsed }))
         }, 1000)
         try {
           const result = await createChunkedExtension(
@@ -829,7 +835,7 @@ export default function Home() {
         }
       }
     },
-    [currentImageDimensions, debugMode, apiKey, provider, selectedModel, mode, sceneBrief]
+    [currentImageDimensions, debugMode, apiKey, provider, selectedModel, mode, sceneBrief, t]
   )
 
   /**
@@ -860,7 +866,11 @@ export default function Home() {
     if (!sourceImage) return
     setError(null)
     setLoading(true)
-    setProgressMsg(`Extending ${direction}…`)
+    setProgressMsg(
+      t('extender.progress.extending', {
+        direction: t(`common.direction.${direction}`),
+      })
+    )
     setActiveDirection(direction)
     setImageBeforeExtension(sourceImage)
     setLastExtensionParams({ direction, customPrompt, artStyle, layerRole })
@@ -876,7 +886,7 @@ export default function Home() {
       adoptCandidates(candidates)
     } catch (err) {
       const e = err as Error & { status?: number }
-      setError(e.message || 'An error occurred')
+      setError(e.message || t('extender.error.occurred'))
       setActiveDirection(null)
       if (e.status === 401) {
         setApiKeyRequired(true)
@@ -893,7 +903,11 @@ export default function Home() {
     if (!ensureCanGenerate()) return
     setError(null)
     setLoading(true)
-    setProgressMsg(`Regenerating ${lastExtensionParams.direction}…`)
+    setProgressMsg(
+      t('extender.progress.regenerating', {
+        direction: t(`common.direction.${lastExtensionParams.direction}`),
+      })
+    )
     try {
       const candidates = await runExtend(
         lastExtensionParams.direction,
@@ -905,7 +919,7 @@ export default function Home() {
       adoptCandidates(candidates)
     } catch (err) {
       const e = err as Error & { status?: number }
-      setError(e.message || 'An error occurred')
+      setError(e.message || t('extender.error.occurred'))
       if (e.status === 401) {
         setApiKeyRequired(true)
         setShowApiKeyModal(true)
@@ -1081,7 +1095,7 @@ export default function Home() {
         canvas.height = h
         const ctx = canvas.getContext('2d')
         if (!ctx) {
-          reject(new Error('Failed to get tile mask canvas context'))
+          reject(new Error(t('extender.error.tileMaskCanvas')))
           return
         }
 
@@ -1091,7 +1105,7 @@ export default function Home() {
         ctx.putImageData(imageData, 0, 0)
         resolve(canvas.toDataURL('image/png'))
       }
-      img.onerror = () => reject(new Error('Failed to load tile for mask enforcement'))
+      img.onerror = () => reject(new Error(t('extender.error.tileMaskLoad')))
       img.src = imageUrl
     })
   }
@@ -1144,9 +1158,13 @@ export default function Home() {
    * post-processed) so callers can chain or assign as needed. Throws on
    * failure so the caller can surface error state. */
   const generateOneTile = async (role: TileSetRole): Promise<string> => {
-    const slot = TILESET_BY_ROLE[role]
-    const labelLower = slot.label.toLowerCase()
-    setTileProgressMsg(`Generating ${labelLower}…`)
+    const spec = TILESET_BY_ROLE[role]
+    const roleLabel = (
+      t(`common.tileRole.${role}.label`, undefined, spec.label)
+    ).toLowerCase()
+    setTileProgressMsg(
+      t('extender.progress.generatingPhase', { label: roleLabel })
+    )
     patchTileSlot(role, { generating: true })
 
     try {
@@ -1173,11 +1191,15 @@ export default function Home() {
           setApiKeyRequired(true)
           setShowApiKeyModal(true)
         }
-        throw new Error(data.error || `Failed to generate ${labelLower} tile`)
+        throw new Error(
+          data.error || t('extender.error.tileRole', { label: roleLabel })
+        )
       }
-      if (!data.imageUrl) throw new Error('No image returned from API')
+      if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
 
-      setTileProgressMsg(`Processing ${labelLower}…`)
+      setTileProgressMsg(
+        t('extender.progress.processingPhase', { label: roleLabel })
+      )
       const processed = await postProcessTile(role, data.imageUrl)
 
       // Keep corners reconciled with their edge neighbors after a single
@@ -1378,7 +1400,7 @@ export default function Home() {
   const handleGenerateTileSet = async () => {
     if (tileSetGenerating) return
     if (!tilePrompt.trim()) {
-      setError('Describe the material you want — e.g. mossy stone floor.')
+      setError(t('extender.error.describeMaterial'))
       return
     }
     if (!ensureCanGenerate()) return
@@ -1396,10 +1418,10 @@ export default function Home() {
 
     // Tick a live elapsed-seconds counter so the user sees progress during
     // the long single call (sheet generation typically takes 30-90s).
-    let phase = 'Generating sheet'
+    let phase = t('extender.phase.generatingSheet')
     const tickHandle = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startedAt) / 1000)
-      setTileProgressMsg(`${phase} · ${elapsed}s`)
+      setTileProgressMsg(t('extender.progress.phase', { phase, seconds: elapsed }))
     }, 1000)
 
     // One full generate → align → slice → process → reconcile pass. Returns
@@ -1432,16 +1454,16 @@ export default function Home() {
           setApiKeyRequired(true)
           setShowApiKeyModal(true)
         }
-        throw new Error(data.error || 'Failed to generate tile sheet')
+        throw new Error(data.error || t('extender.error.tileSheet'))
       }
-      if (!data.imageUrl) throw new Error('No image returned from API')
+      if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
       if (tileStopRef.current) return null
 
-      phase = 'Aligning to template'
+      phase = t('extender.phase.aligning')
       const aligned = await alignAiOutputToTemplate(data.imageUrl)
       if (tileStopRef.current) return null
 
-      phase = 'Slicing template'
+      phase = t('extender.phase.slicing')
       const cells = await sliceImageGrid(aligned, {
         cols: TILE_TEMPLATE_COLS,
         rows: TILE_TEMPLATE_ROWS,
@@ -1449,7 +1471,7 @@ export default function Home() {
       })
       if (tileStopRef.current) return null
 
-      phase = 'Processing tiles'
+      phase = t('extender.phase.processingTiles')
       const processed = await Promise.all(
         TILESET_SLOTS.map(async (spec) => {
           const sample = TILE_TEMPLATE_SAMPLES[spec.role]
@@ -1467,7 +1489,7 @@ export default function Home() {
         })
       )
 
-      phase = 'Reconciling corners'
+      phase = t('extender.phase.reconciling')
       const byRoleUrl: Partial<Record<TileSetRole, string>> = {}
       processed.forEach((p) => {
         if (p.imageUrl) byRoleUrl[p.role] = p.imageUrl
@@ -1519,7 +1541,10 @@ export default function Home() {
       } | null = null
 
       for (let pass = 0; pass <= MAX_TILE_REVIEW_PASSES; pass++) {
-        phase = pass === 0 ? 'Generating sheet' : `Repainting (pass ${pass + 1})`
+        phase =
+          pass === 0
+            ? t('extender.phase.generatingSheet')
+            : t('extender.phase.repaintingSheet', { pass: pass + 1 })
         const reconciled = await renderSheetOnce(fixNotes)
         if (tileStopRef.current || !reconciled) return
 
@@ -1536,8 +1561,8 @@ export default function Home() {
           break
         }
 
-        phase = 'Art director reviewing'
-        setTileProgressMsg('Art director reviewing…')
+        phase = t('extender.progress.reviewing')
+        setTileProgressMsg(t('extender.progress.reviewing'))
         const [previewImage, sheetImage] = await Promise.all([
           buildTilePreviewCompositeDataUrl(reconciled),
           buildSheetFromMapDataUrl(reconciled),
@@ -1574,7 +1599,7 @@ export default function Home() {
           console.log('🧱 QA rejected, repainting with notes:', fixNotes)
         }
         // Leave the spinners on — they now signal the repaint in progress.
-        setTileProgressMsg('Issues found — repainting…')
+        setTileProgressMsg(t('extender.progress.repainting'))
       }
 
       // Commit the best candidate we saw (spinners off) — preferring the best,
@@ -1585,7 +1610,7 @@ export default function Home() {
       // Wipe the "generating" flags on failure so the UI stops spinning.
       setTileSet((prev) => prev.map((s) => ({ ...s, generating: false })))
       setError(
-        err instanceof Error ? err.message : 'Failed to generate tile sheet'
+        err instanceof Error ? err.message : t('extender.error.tileSheet')
       )
     } finally {
       clearInterval(tickHandle)
@@ -1605,7 +1630,7 @@ export default function Home() {
   const handleRegenerateTile = async (role: TileSetRole) => {
     if (tileSetGenerating) return
     if (!tilePrompt.trim()) {
-      setError('Describe the material you want before regenerating tiles.')
+      setError(t('extender.error.describeMaterialFirst'))
       return
     }
     if (!ensureCanGenerate()) return
@@ -1614,7 +1639,7 @@ export default function Home() {
     try {
       await generateOneTile(role)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to regenerate tile')
+      setError(err instanceof Error ? err.message : t('extender.error.regenerateTile'))
     } finally {
       setTileSetGenerating(false)
       setTileProgressMsg(null)
@@ -1662,7 +1687,7 @@ export default function Home() {
               )
               resolve()
             }
-            img.onerror = () => reject(new Error(`Failed to load ${spec.role}`))
+            img.onerror = () => reject(new Error(t('extender.error.loadTile', { role: spec.role })))
             img.src = slot.imageUrl
           })
       )
@@ -1716,7 +1741,7 @@ export default function Home() {
 
               resolve()
             }
-            img.onerror = () => reject(new Error(`Failed to load ${spec.role}`))
+            img.onerror = () => reject(new Error(t('extender.error.loadTile', { role: spec.role })))
             img.src = slot.imageUrl
           })
       )
@@ -1772,7 +1797,7 @@ export default function Home() {
     try {
       const sheet = await buildTileSheetDataUrl()
       if (!sheet) {
-        setError('Generate at least one tile before downloading the sheet.')
+        setError(t('extender.error.tileFirstSheet'))
         return
       }
       const baseName = (tilePrompt.trim().slice(0, 24) || 'tileset').replace(
@@ -1810,7 +1835,7 @@ export default function Home() {
       document.body.removeChild(linkJson)
       URL.revokeObjectURL(jsonUrl)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export sheet')
+      setError(err instanceof Error ? err.message : t('extender.error.exportSheet'))
     }
   }
 
@@ -1818,7 +1843,7 @@ export default function Home() {
     try {
       const populated = tileSet.filter((s) => s.imageUrl)
       if (populated.length === 0) {
-        setError('Generate at least one tile before exporting the ZIP.')
+        setError(t('extender.error.tileFirstZip'))
         return
       }
       const zip = new JSZip()
@@ -1866,7 +1891,7 @@ export default function Home() {
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export ZIP')
+      setError(err instanceof Error ? err.message : t('extender.error.exportZip'))
     }
   }
 
@@ -2115,7 +2140,7 @@ export default function Home() {
   const handleAddPropBatch = async () => {
     if (propSetGenerating) return
     if (!propPrompt.trim()) {
-      setError('Describe the biome / palette — e.g. lush forest decorations.')
+      setError(t('extender.error.describeBiome'))
       return
     }
     if (!ensureCanGenerate()) return
@@ -2134,11 +2159,18 @@ export default function Home() {
       ...batchIds.map((id) => ({ id, imageUrl: null, generating: true })),
     ])
 
+    const propBatchStart = (seconds: number) =>
+      t('extender.progress.batchProps', {
+        action: existing.length
+          ? t('extender.progress.adding')
+          : t('extender.progress.generatingAction'),
+        count: PROP_BATCH,
+        seconds,
+      })
+
     const tickHandle = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startedAt) / 1000)
-      setPropProgressMsg(
-        `${existing.length ? 'Adding' : 'Generating'} ${PROP_BATCH} props · ${elapsed}s`
-      )
+      setPropProgressMsg(propBatchStart(elapsed))
     }, 1000)
 
     const dropBatch = () =>
@@ -2152,16 +2184,14 @@ export default function Home() {
       // keeps the set from looping the same lanterns/nests/pots — a reasoning
       // model deliberately reaches for fresh kinds. Failure is non-fatal: we
       // fall back to letting the image model free-invent.
-      setPropProgressMsg('Art director planning…')
+      setPropProgressMsg(t('extender.progress.planningProps'))
       const ideas = await fetchPropIdeas(PROP_BATCH, existing)
       const briefs = ideas.map((i) => i.description)
       const cats = ideas.map((i) => i.category)
 
       // CALL #2 — RENDER. The image model paints exactly the art director's
       // list, matched to the style anchor.
-      setPropProgressMsg(
-        `${existing.length ? 'Adding' : 'Generating'} ${PROP_BATCH} props · 0s`
-      )
+      setPropProgressMsg(propBatchStart(0))
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2188,15 +2218,15 @@ export default function Home() {
           setApiKeyRequired(true)
           setShowApiKeyModal(true)
         }
-        throw new Error(data.error || 'Failed to generate props')
+        throw new Error(data.error || t('extender.error.generateProps'))
       }
-      if (!data.imageUrl) throw new Error('No image returned from API')
+      if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
       if (propStopRef.current) {
         dropBatch()
         return
       }
 
-      setPropProgressMsg('Slicing…')
+      setPropProgressMsg(t('extender.progress.slicing'))
       const cells = await sliceImageGrid(data.imageUrl, {
         cols: PROP_BATCH_COLS,
         rows: PROP_BATCH_ROWS,
@@ -2207,7 +2237,7 @@ export default function Home() {
         return
       }
 
-      setPropProgressMsg('Processing…')
+      setPropProgressMsg(t('extender.progress.processing'))
       const processed = await Promise.all(
         batchIds.map(async (_id, i) => {
           const raw = cells[i]
@@ -2252,7 +2282,7 @@ export default function Home() {
       )
     } catch (err) {
       dropBatch()
-      setError(err instanceof Error ? err.message : 'Failed to generate props')
+      setError(err instanceof Error ? err.message : t('extender.error.generateProps'))
     } finally {
       clearInterval(tickHandle)
       setPropSetGenerating(false)
@@ -2272,7 +2302,7 @@ export default function Home() {
   const handleRegenerateProp = async (id: string) => {
     if (propSetGenerating) return
     if (!propPrompt.trim()) {
-      setError('Describe the biome first, then re-roll an individual prop.')
+      setError(t('extender.error.describeBiomeFirst'))
       return
     }
     if (!ensureCanGenerate()) return
@@ -2280,7 +2310,7 @@ export default function Home() {
     setPropItems((prev) =>
       prev.map((p) => (p.id === id ? { ...p, generating: true } : p))
     )
-    setPropProgressMsg('Re-rolling prop…')
+    setPropProgressMsg(t('extender.progress.rerollProp'))
     try {
       const others = propItems.filter((p) => p.id !== id && p.imageUrl)
       const refImage = await buildPropStyleRefDataUrl(others)
@@ -2310,10 +2340,10 @@ export default function Home() {
           setApiKeyRequired(true)
           setShowApiKeyModal(true)
         }
-        throw new Error(data.error || 'Failed to re-roll prop')
+        throw new Error(data.error || t('extender.error.rerollProp'))
       }
-      if (!data.imageUrl) throw new Error('No image returned from API')
-      setPropProgressMsg('Processing…')
+      if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
+      setPropProgressMsg(t('extender.progress.processing'))
       const processed = await postProcessProp(data.imageUrl)
       setPropItems((prev) =>
         prev.map((p) =>
@@ -2326,7 +2356,7 @@ export default function Home() {
       setPropItems((prev) =>
         prev.map((p) => (p.id === id ? { ...p, generating: false } : p))
       )
-      setError(err instanceof Error ? err.message : 'Failed to re-roll prop')
+      setError(err instanceof Error ? err.message : t('extender.error.rerollProp'))
     } finally {
       setPropProgressMsg(null)
     }
@@ -2347,7 +2377,7 @@ export default function Home() {
     try {
       const sheet = await buildPropAtlasDataUrl()
       if (!sheet) {
-        setError('Generate at least one prop before downloading the atlas.')
+        setError(t('extender.error.propFirstAtlas'))
         return
       }
       const baseName = (propPrompt.trim().slice(0, 24) || 'props').replace(
@@ -2373,7 +2403,7 @@ export default function Home() {
       document.body.removeChild(linkJson)
       URL.revokeObjectURL(jsonUrl)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export atlas')
+      setError(err instanceof Error ? err.message : t('extender.error.exportAtlas'))
     }
   }
 
@@ -2381,7 +2411,7 @@ export default function Home() {
     try {
       const populated = propItems.filter((p) => p.imageUrl)
       if (populated.length === 0) {
-        setError('Generate at least one prop before exporting the ZIP.')
+        setError(t('extender.error.propFirstZip'))
         return
       }
       const zip = new JSZip()
@@ -2415,7 +2445,7 @@ export default function Home() {
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export ZIP')
+      setError(err instanceof Error ? err.message : t('extender.error.exportZip'))
     }
   }
 
@@ -2491,9 +2521,9 @@ export default function Home() {
         setApiKeyRequired(true)
         setShowApiKeyModal(true)
       }
-      throw new Error(data.error || 'Failed to generate character anchor')
+      throw new Error(data.error || t('extender.error.characterAnchor'))
     }
-    if (!data.imageUrl) throw new Error('No anchor image returned from API')
+    if (!data.imageUrl) throw new Error(t('extender.error.noAnchorImage'))
     const rawImageUrl: string = data.imageUrl
     const keyedImageUrl = await chromaKeyToAlpha(rawImageUrl)
     return { imageUrl: keyedImageUrl, rawImageUrl }
@@ -2566,9 +2596,9 @@ export default function Home() {
         setApiKeyRequired(true)
         setShowApiKeyModal(true)
       }
-      throw new Error(data.error || 'Failed to generate sprite sheet')
+      throw new Error(data.error || t('extender.error.spriteSheet'))
     }
-    if (!data.imageUrl) throw new Error('No image returned from API')
+    if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
     const rawSheetUrl: string = data.imageUrl
     const rawCells = await sliceImageGrid(rawSheetUrl, {
       cols: SPRITE_GRID_COLS,
@@ -2809,7 +2839,7 @@ export default function Home() {
     // optional in that case; otherwise we need a description to lock identity.
     const hasUploadedAnchor = !!spriteAnchor?.uploaded
     if (!spritePrompt.trim() && !hasUploadedAnchor) {
-      setError('Describe the character you want — e.g. armored pixel knight.')
+      setError(t('extender.error.describeCharacter'))
       return
     }
     if (!ensureCanGenerate()) return
@@ -2857,11 +2887,11 @@ export default function Home() {
     // by the QA art director's fix report.
     const MAX_SPRITE_REVIEW_PASSES = 2
     let phaseLabel = needsNewAnchor
-      ? 'Locking character (1/2)'
-      : 'Painting frames (2/2)'
+      ? t('extender.phase.lockingCharacter')
+      : t('extender.phase.paintingFrames')
     const tickHandle = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startedAt) / 1000)
-      setSpriteProgressMsg(`${phaseLabel} · ${elapsed}s`)
+      setSpriteProgressMsg(t('extender.progress.phase', { phase: phaseLabel, seconds: elapsed }))
     }, 1000)
 
     try {
@@ -2883,7 +2913,7 @@ export default function Home() {
       // identity is reused on every repaint so the character stays on-model.
       // The frames stay in their loading state through review/repaint so the
       // sheet visibly shows it's still working.
-      phaseLabel = 'Painting frames (2/2)'
+      phaseLabel = t('extender.phase.paintingFrames')
       let sheetResult = await runSpriteSheetPass(
         effectivePrompt,
         anchorRef?.rawImageUrl ?? null
@@ -2892,8 +2922,8 @@ export default function Home() {
 
       let fixNotes: string | undefined
       for (let pass = 0; pass < MAX_SPRITE_REVIEW_PASSES; pass++) {
-        phaseLabel = 'Checking frames'
-        setSpriteProgressMsg('Checking frames…')
+        phaseLabel = t('extender.progress.checkingFrames')
+        setSpriteProgressMsg(t('extender.progress.checkingFrames'))
 
         // The art-director vision review is intentionally DISABLED for all
         // sprite generations, on every AI model. We keep only the cheap,
@@ -2931,9 +2961,11 @@ export default function Home() {
           )
         }
 
-        phaseLabel = `Repainting frames (pass ${pass + 2})`
+        phaseLabel = t('extender.phase.repaintingFrames', { pass: pass + 2 })
         setSpriteProgressMsg(
-          twinCount > 0 ? 'Duplicate/spillover found — repainting…' : 'Issues found — repainting…'
+          twinCount > 0
+            ? t('extender.progress.duplicateRepainting')
+            : t('extender.progress.repainting')
         )
         sheetResult = await runSpriteSheetPass(
           effectivePrompt,
@@ -2961,7 +2993,7 @@ export default function Home() {
         frames: prev.frames.map((f) => ({ ...f, imageUrl: null })),
       }))
       setError(
-        err instanceof Error ? err.message : 'Failed to generate sprite sheet'
+        err instanceof Error ? err.message : t('extender.error.spriteSheet')
       )
     } finally {
       clearInterval(tickHandle)
@@ -3010,7 +3042,7 @@ export default function Home() {
           canvas.width = S
           canvas.height = S
           const ctx = canvas.getContext('2d')
-          if (!ctx) return reject(new Error('Canvas unavailable'))
+          if (!ctx) return reject(new Error(t('extender.error.sheetCanvas')))
           // Magenta backdrop — transparent areas of the upload become magenta,
           // exactly like a generated anchor.
           ctx.fillStyle = '#FF00FF'
@@ -3032,7 +3064,7 @@ export default function Home() {
           reject(err)
         }
       }
-      img.onerror = () => reject(new Error('Could not load the uploaded image'))
+      img.onerror = () => reject(new Error(t('extender.error.uploadedLoad')))
       img.src = dataUrl
     })
   }
@@ -3042,7 +3074,7 @@ export default function Home() {
   const handleUploadSpriteCharacter = async (file: File) => {
     if (spriteGenerating) return
     if (!file.type.startsWith('image/')) {
-      setError('Please choose an image file (PNG with transparency works best).')
+      setError(t('extender.error.chooseImageFile'))
       return
     }
     setError(null)
@@ -3050,7 +3082,7 @@ export default function Home() {
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result as string)
-        reader.onerror = () => reject(new Error('Failed to read the file'))
+        reader.onerror = () => reject(new Error(t('extender.error.readFile')))
         reader.readAsDataURL(file)
       })
       const { imageUrl, rawImageUrl } = await buildSpriteAnchorFromUpload(dataUrl)
@@ -3069,7 +3101,7 @@ export default function Home() {
       setError(
         err instanceof Error
           ? err.message
-          : 'Failed to process the uploaded character image'
+          : t('extender.error.uploadedProcess')
       )
     }
   }
@@ -3144,7 +3176,7 @@ export default function Home() {
     canvas.width = SPRITE_SHEET_W
     canvas.height = SPRITE_SHEET_H
     const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('Failed to create sprite-guide canvas')
+    if (!ctx) throw new Error(t('extender.error.spriteGuideCanvas'))
     ctx.imageSmoothingEnabled = true
     drawPoseGuideSheet(ctx, {
       anim: spriteAnim,
@@ -3232,7 +3264,7 @@ export default function Home() {
               )
               resolve()
             }
-            img.onerror = () => reject(new Error(`Failed to load sprite frame ${i}`))
+            img.onerror = () => reject(new Error(t('extender.error.loadFrame', { index: i })))
             img.src = url
           })
       )
@@ -3269,7 +3301,7 @@ export default function Home() {
               )
               resolve()
             }
-            img.onerror = () => reject(new Error(`Failed to load sprite frame ${i}`))
+            img.onerror = () => reject(new Error(t('extender.error.loadFrame', { index: i })))
             img.src = url
           })
       )
@@ -3338,8 +3370,8 @@ export default function Home() {
       if (populated.length === 0) {
         setError(
           spriteSheet.frames.some((f) => !!f.imageUrl)
-            ? 'All frames are excluded — click a frame to include it before downloading.'
-            : 'Generate the sheet before downloading.'
+            ? t('extender.error.framesExcludedDownload')
+            : t('extender.error.generateSheetFirstDownload')
         )
         return
       }
@@ -3382,7 +3414,7 @@ export default function Home() {
       URL.revokeObjectURL(jsonUrl)
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Failed to export sprite sheet'
+        err instanceof Error ? err.message : t('extender.error.exportSpriteSheet')
       )
     }
   }
@@ -3395,8 +3427,8 @@ export default function Home() {
       if (populated.length === 0) {
         setError(
           spriteSheet.frames.some((f) => !!f.imageUrl)
-            ? 'All frames are excluded — click a frame to include it before exporting.'
-            : 'Generate the sheet before exporting the ZIP.'
+            ? t('extender.error.framesExcludedExport')
+            : t('extender.error.generateSheetFirstExport')
         )
         return
       }
@@ -3442,7 +3474,7 @@ export default function Home() {
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export ZIP')
+      setError(err instanceof Error ? err.message : t('extender.error.exportZip'))
     }
   }
 
@@ -3493,7 +3525,11 @@ export default function Home() {
         stepCount++
         setLoading(true)
         setProgressMsg(
-          `Auto step ${stepCount} · ${currentDims.width} → ${parallaxTargetWidth}px`
+          t('extender.progress.step', {
+            step: stepCount,
+            from: currentDims.width,
+            to: parallaxTargetWidth,
+          })
         )
 
         const candidates = await runExtend(
@@ -3529,7 +3565,7 @@ export default function Home() {
       }
     } catch (err) {
       const e = err as Error & { status?: number }
-      setError(e.message || 'Auto-extend failed')
+      setError(e.message || t('extender.error.autoExtend'))
       if (e.status === 401) {
         setApiKeyRequired(true)
         setShowApiKeyModal(true)
@@ -3553,7 +3589,7 @@ export default function Home() {
     if (mode === 'parallax' && !parallaxAutoStopRef.current) {
       try {
         setLoading(true)
-        setProgressMsg('Closing the loop…')
+        setProgressMsg(t('extender.progress.closingLoop'))
         await makeLayerTileableByIdx(parallaxActiveIdx)
       } catch {
         // Non-fatal — leave the un-tiled result in place.
@@ -3566,7 +3602,7 @@ export default function Home() {
 
   const handleStopAutoExtend = () => {
     parallaxAutoStopRef.current = true
-    setProgressMsg('Stopping after this step…')
+    setProgressMsg(t('extender.progress.stopping'))
   }
 
   /**
@@ -3638,10 +3674,10 @@ export default function Home() {
   const handleExportZip = async () => {
     const populated = parallaxLayers.filter((l) => l.imageUrl)
     if (populated.length === 0) {
-      setError('No layers to export. Generate or upload at least one layer first.')
+      setError(t('extender.error.noLayers'))
       return
     }
-    setProgressMsg('Packaging ZIP…')
+    setProgressMsg(t('extender.progress.packaging'))
     try {
       const zip = new JSZip()
       const manifest: {
@@ -3689,7 +3725,7 @@ export default function Home() {
       // Revoke the blob URL on the next tick so the click has fired.
       setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to build ZIP')
+      setError(err instanceof Error ? err.message : t('extender.error.buildZip'))
     } finally {
       setProgressMsg(null)
     }
@@ -3752,11 +3788,11 @@ export default function Home() {
     if (!layer || !layer.imageUrl) return
     setError(null)
     setLoading(true)
-    setProgressMsg('Harmonizing seams…')
+    setProgressMsg(t('extender.progress.harmonizing'))
     try {
       await harmonizeLayerByIdx(parallaxActiveIdx)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to harmonize')
+      setError(err instanceof Error ? err.message : t('extender.error.harmonize'))
     } finally {
       setLoading(false)
       setProgressMsg(null)
@@ -3810,11 +3846,11 @@ export default function Home() {
     if (!layer || !layer.imageUrl) return
     setError(null)
     setLoading(true)
-    setProgressMsg('Making tileable…')
+    setProgressMsg(t('extender.progress.tileable'))
     try {
       await makeLayerTileableByIdx(parallaxActiveIdx)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to make tileable')
+      setError(err instanceof Error ? err.message : t('extender.error.tileable'))
     } finally {
       setLoading(false)
       setProgressMsg(null)
@@ -4049,8 +4085,8 @@ export default function Home() {
           resultMessage={
             isResult
               ? variantCount > 1
-                ? `Cycle variants with ← →, then accept`
-                : 'New extension ready — accept, regenerate, or discard'
+                ? t('extender.result.cycleVariants')
+                : t('extender.result.ready')
               : undefined
           }
           variantSelector={variantSelectorEl}
@@ -4089,8 +4125,8 @@ export default function Home() {
           resultMessage={
             isResult
               ? variantCount > 1
-                ? `Cycle variants with ← →, then accept`
-                : 'New extension ready — accept, regenerate, or discard'
+                ? t('extender.result.cycleVariants')
+                : t('extender.result.ready')
               : undefined
           }
           variantSelector={variantSelectorEl}
@@ -4110,7 +4146,7 @@ export default function Home() {
               // the global image, so loading into them would be a silent no-op
               // (their own upload buttons refuse the same way).
               if (mode === 'tile' || mode === 'sprite' || mode === 'props') {
-                setError('Switch to Extender or Parallax to open a library asset.')
+                setError(t('extender.error.switchToExtender'))
                 return
               }
               // Parallax loads into its active layer; Extender takes the global
@@ -4142,10 +4178,25 @@ export default function Home() {
             hint={
               isParallax
                 ? artStyle !== 'none'
-                  ? `Style: ${findStyleLabel(artStyle)} — describe what to extend in the ${LAYER_ROLES[activeLayer!.role].short.toLowerCase()} layer`
-                  : `Optional: describe what should appear further along the ${LAYER_ROLES[activeLayer!.role].short.toLowerCase()} layer…`
+                  ? t('extender.command.hintStyleParallax', {
+                      style: t(
+                        `common.artStyle.${artStyle}`,
+                        undefined,
+                        t('common.artStyle.fallback')
+                      ),
+                      layer: t(`common.layer.${activeLayer!.role}.short`),
+                    })
+                  : t('extender.command.hintParallax', {
+                      layer: t(`common.layer.${activeLayer!.role}.short`),
+                    })
                 : artStyle !== 'none'
-                  ? `Style: ${findStyleLabel(artStyle)} — describe what to add (optional)`
+                  ? t('extender.command.hintStyle', {
+                      style: t(
+                        `common.artStyle.${artStyle}`,
+                        undefined,
+                        t('common.artStyle.fallback')
+                      ),
+                    })
                   : undefined
             }
             sceneBrief={showSceneDirection ? sceneBrief : undefined}
@@ -4211,7 +4262,9 @@ export default function Home() {
                   activeLayer.role
                 )
                 if (!prereq) return null
-                return `Tip: ${LAYER_ROLES[prereq.role].label} isn't built yet. Layers work best when generated front-to-back (Near → Mid → Far → Sky) so palette and art direction stay consistent. You can still generate now if you're bringing your own matching assets.`
+                return t('extender.tip.layerPrerequisite', {
+                  layer: t(`common.layer.${prereq.role}.label`),
+                })
               })()
             : null
         }
@@ -4225,7 +4278,7 @@ export default function Home() {
         sceneBriefLoading={sceneBriefLoading}
         layerLabel={
           mode === 'parallax' && activeLayer
-            ? LAYER_ROLES[activeLayer.role].short
+            ? t(`common.layer.${activeLayer.role}.short`)
             : undefined
         }
       />

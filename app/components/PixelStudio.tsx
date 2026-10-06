@@ -34,6 +34,7 @@ import { Icons } from '@/app/components/icons'
 import LibraryPanel from '@/app/components/LibraryPanel'
 import type { CollectedAsset } from '@/app/lib/libraryCollect'
 import { LIBRARY_PROJECT_STORAGE } from '@/app/lib/app'
+import { useI18n, type Translate } from '@/app/lib/i18n'
 
 type SubMode = 'stills' | 'character'
 type StillKind = 'tiles' | 'props'
@@ -80,6 +81,9 @@ const SECTION_LABEL = 'text-[11px] font-medium uppercase tracking-wider'
 
 const EMPTY_CELL_BG =
   'repeating-linear-gradient(45deg, transparent 0 6px, rgba(255,255,255,0.025) 6px 12px)'
+
+/** Data id → message key segment: `low top-down` → `low-top-down`. */
+const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 
 /** A labelled number input — one shape for W/H, size, block, cell. */
 function NumberField({
@@ -133,6 +137,7 @@ function PixelCandidateCell({
   onToggleSource: () => void
   onRemove: () => void
 }) {
+  const { t } = useI18n()
   const showingProcessed = !showSource && !!candidate.processedUrl
   const src = showingProcessed ? (candidate.processedUrl as string) : candidate.sourceUrl
 
@@ -168,8 +173,13 @@ function PixelCandidateCell({
           }}
         >
           {candidate.analysis
-            ? `block ${candidate.analysis.block} · ${candidate.figure ? `${candidate.figure.width}×${candidate.figure.height}` : 'no figure'}`
-            : 'analysing…'}
+            ? t('pixel.cell.block', {
+                block: candidate.analysis.block,
+                figure: candidate.figure
+                  ? `${candidate.figure.width}×${candidate.figure.height}`
+                  : t('pixel.cell.noFigure'),
+              })
+            : t('pixel.cell.analysing')}
         </div>
         <div className="absolute right-1 top-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <button
@@ -180,7 +190,7 @@ function PixelCandidateCell({
               color: 'var(--accent)',
               backdropFilter: 'blur(4px)',
             }}
-            title="Download this asset as a PNG"
+            title={t('pixel.cell.download')}
           >
             <Icons.Download size={11} />
           </button>
@@ -192,7 +202,7 @@ function PixelCandidateCell({
               color: 'var(--danger, #ff6b6b)',
               backdropFilter: 'blur(4px)',
             }}
-            title="Drop this asset from the gallery"
+            title={t('pixel.cell.remove')}
           >
             <Icons.Trash size={11} />
           </button>
@@ -205,7 +215,7 @@ function PixelCandidateCell({
         </p>
         <div className="flex items-center justify-between gap-1">
           <span className="font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
-            {candidate.analysis ? `purity ${candidate.analysis.purity.toFixed(4)}` : '—'}
+            {candidate.analysis ? t('pixel.cell.purity', { value: candidate.analysis.purity.toFixed(4) }) : '—'}
           </span>
           <span className="font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
             {candidate.analysis ? `(${candidate.analysis.ox},${candidate.analysis.oy})` : ''}
@@ -224,13 +234,13 @@ function PixelCandidateCell({
             }}
             title={
               !candidate.processedUrl
-                ? 'No processed version for this asset'
+                ? t('pixel.cell.toggleNoProcessed')
                 : showingProcessed
-                  ? 'Show the raw vendor output'
-                  : 'Show the processed asset'
+                  ? t('pixel.cell.toggleShowSource')
+                  : t('pixel.cell.toggleShowProcessed')
             }
           >
-            {showingProcessed ? 'processed' : 'source'}
+            {showingProcessed ? t('pixel.cell.processed') : t('pixel.cell.source')}
           </button>
         </div>
         {candidate.warnings.map((w, i) => (
@@ -244,37 +254,38 @@ function PixelCandidateCell({
 }
 
 /** Browser-only glue: decode an image into a plain buffer. */
-async function loadPixels(url: string): Promise<PixelBuffer> {
+async function loadPixels(url: string, t: Translate): Promise<PixelBuffer> {
   const img = new Image()
   img.crossOrigin = 'anonymous'
   await new Promise<void>((resolve, reject) => {
     img.onload = () => resolve()
-    img.onerror = () => reject(new Error(`could not load ${url}`))
+    img.onerror = () => reject(new Error(t('pixel.error.imageLoad', { url })))
     img.src = url
   })
   const canvas = document.createElement('canvas')
   canvas.width = img.naturalWidth
   canvas.height = img.naturalHeight
   const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('2d context unavailable')
+  if (!ctx) throw new Error(t('pixel.error.noContext'))
   ctx.drawImage(img, 0, 0)
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height)
   return { data: data.data, width: data.width, height: data.height }
 }
 
 /** Browser-only glue: buffers back to a PNG data URL. */
-function pixelsToDataUrl(buf: PixelBuffer): string {
+function pixelsToDataUrl(buf: PixelBuffer, t: Translate): string {
   const canvas = document.createElement('canvas')
   canvas.width = buf.width
   canvas.height = buf.height
   const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('2d context unavailable')
+  if (!ctx) throw new Error(t('pixel.error.noContext'))
   const image = new ImageData(new Uint8ClampedArray(buf.data), buf.width, buf.height)
   ctx.putImageData(image, 0, 0)
   return canvas.toDataURL('image/png')
 }
 
 export function PixelStudio() {
+  const { t } = useI18n()
   const [sub, setSub] = useState<SubMode>('stills')
   const [stillKind, setStillKind] = useState<StillKind>('tiles')
   const [description, setDescription] = useState('')
@@ -333,9 +344,9 @@ export function PixelStudio() {
     try {
       setBalance(await fetchBalance(key))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'balance failed')
+      setError(err instanceof Error ? err.message : t('pixel.error.balanceFailed'))
     }
-  }, [key])
+  }, [key, t])
 
   const POLL_EVERY_MS = 5000
   const POLL_LIMIT_MS = 10 * 60 * 1000
@@ -343,20 +354,20 @@ export function PixelStudio() {
   const generateCharacter = async () => {
     setError(null)
     if (!key) {
-      setError('Paste your PixelLab key first.')
+      setError(t('pixel.error.keyMissing'))
       return
     }
     if (!description.trim()) {
-      setError('Describe the character first.')
+      setError(t('pixel.error.describeCharacter'))
       return
     }
-    setBusy('Submitting the character job (8 directions, ~2–5 min)…')
+    setBusy(t('pixel.status.submittingCharacter'))
     let characterId: string
     try {
       const created = await pixellab.createCharacter({ description, template, view, size, seed: null }, key)
       characterId = created.characterId
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'character submit failed')
+      setError(err instanceof Error ? err.message : t('pixel.error.characterSubmitFailed'))
       setBusy(null)
       return
     }
@@ -366,7 +377,7 @@ export function PixelStudio() {
       for (;;) {
         const job = await pixellab.pollCharacter(characterId, key)
         if (job.status === 'failed') {
-          setError(`The character job failed (character_id=${characterId}). It is not retried automatically.`)
+          setError(t('pixel.error.characterJobFailed', { id: characterId }))
           return
         }
         if (job.status === 'completed' && job.images.length > 0) {
@@ -385,7 +396,7 @@ export function PixelStudio() {
           return
         }
         if (Date.now() - startedAt > POLL_LIMIT_MS) {
-          setError(`Still polling after 10 minutes (character_id=${characterId}). Re-check the balance and poll again instead of resubmitting.`)
+          setError(t('pixel.error.characterPollTimeout', { id: characterId }))
           return
         }
         const { promise, resolve } = Promise.withResolvers<void>()
@@ -393,7 +404,7 @@ export function PixelStudio() {
         await promise
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'polling failed')
+      setError(err instanceof Error ? err.message : t('pixel.error.pollingFailed'))
     } finally {
       setBusy(null)
     }
@@ -452,37 +463,37 @@ export function PixelStudio() {
             minFigureHeight: DEFAULT_FIGURE_BAND.min,
             maxFigureHeight: DEFAULT_FIGURE_BAND.max,
           })
-          processedUrl = pixelsToDataUrl(cropped.image)
+          processedUrl = pixelsToDataUrl(cropped.image, t)
           figure = cropped.figure
           warnings = cropped.warnings
         } catch (err) {
-          warnings = [err instanceof Error ? err.message : 'crop failed']
+          warnings = [err instanceof Error ? err.message : t('pixel.error.cropFailed')]
         }
         setCandidates((prev) =>
           prev.map((x) => (x.id === candidate.id ? { ...x, analysis, processedUrl, figure, warnings } : x)),
         )
       }
       try {
-        const buf = await loadPixels(candidate.sourceUrl)
+        const buf = await loadPixels(candidate.sourceUrl, t)
         await apply(buf)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'could not read the image')
+        setError(err instanceof Error ? err.message : t('pixel.error.unreadableImage'))
       }
     },
-    [block, cell],
+    [block, cell, t],
   )
 
   const submit = async () => {
     setError(null)
     if (!key) {
-      setError('Paste your PixelLab key first.')
+      setError(t('pixel.error.keyMissing'))
       return
     }
     if (!description.trim()) {
-      setError('Describe what to draw.')
+      setError(t('pixel.error.describeAsset'))
       return
     }
-    setBusy('Submitting…')
+    setBusy(t('pixel.status.submitting'))
     try {
       const { dataUrl } = await pixellab.generateImage(
         { description, width, height, noBackground, seed: null },
@@ -501,7 +512,7 @@ export function PixelStudio() {
       await process(candidate)
       void refreshBalance()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'generation failed')
+      setError(err instanceof Error ? err.message : t('pixel.error.generationFailed'))
     } finally {
       setBusy(null)
     }
@@ -518,20 +529,16 @@ export function PixelStudio() {
   const generateLabel =
     sub === 'stills'
       ? stillKind === 'tiles'
-        ? 'Generate tile'
-        : 'Generate prop'
-      : 'Generate character (8 dirs)'
+        ? t('pixel.generate.tile')
+        : t('pixel.generate.prop')
+      : t('pixel.generate.character')
 
   return (
     <>
       <div className="flex flex-1 flex-col gap-3 px-4 pb-4 pt-3 sm:px-6">
         <div className="flex items-center justify-center gap-2 text-center text-[12px]">
           <Icons.Pixel size={14} className="text-[color:var(--accent)]" />
-          <span style={{ color: 'var(--text-secondary)' }}>
-            Pixel mode — PixelLab paints on a real pixel grid (its own key, billed
-            separately). Every result is re-imposed on the block lattice below so
-            it lands on the same grid as the rest of your corpus.
-          </span>
+          <span style={{ color: 'var(--text-secondary)' }}>{t('pixel.intro')}</span>
         </div>
 
         {/* Action bar */}
@@ -542,12 +549,12 @@ export function PixelStudio() {
             className="btn btn-primary"
             title={
               !key
-                ? 'Paste your PixelLab key first'
+                ? t('pixel.generate.titleNoKey')
                 : !description.trim()
-                  ? 'Describe what to draw first'
+                  ? t('pixel.generate.titleNoDescription')
                   : sub === 'stills'
-                    ? 'Paint one pixel-art asset with the pixflux model'
-                    : 'Paint a full 8-direction character (one job, ~2–5 minutes)'
+                    ? t('pixel.generate.titleStills')
+                    : t('pixel.generate.titleCharacter')
             }
           >
             {busy ? <Icons.Spinner size={14} /> : <Icons.Sparkle size={14} />}
@@ -557,10 +564,10 @@ export function PixelStudio() {
             onClick={() => setCandidates([])}
             disabled={!hasAny || busy !== null}
             className="btn btn-ghost"
-            title="Drop every asset from the gallery (nothing is saved until you save it to the library)"
+            title={t('pixel.clear.title')}
           >
             <Icons.Trash size={14} />
-            Clear
+            {t('pixel.clear')}
           </button>
           <div
             className="rounded-full border px-2.5 py-1 font-mono text-[11px]"
@@ -570,7 +577,7 @@ export function PixelStudio() {
               color: hasAny ? 'var(--text-secondary)' : 'var(--text-muted)',
             }}
           >
-            {readyCount}/{candidates.length} processed
+            {t('pixel.processed', { ready: readyCount, total: candidates.length })}
           </div>
         </div>
 
@@ -587,7 +594,7 @@ export function PixelStudio() {
         {/* Gallery */}
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
           <div className={SECTION_LABEL} style={{ color: 'var(--text-muted)' }}>
-            Asset gallery
+            {t('pixel.gallery.title')}
           </div>
           {candidates.length === 0 ? (
             <div
@@ -598,8 +605,7 @@ export function PixelStudio() {
                 background: EMPTY_CELL_BG,
               }}
             >
-              Nothing generated yet. Pick a quick start or describe an asset below,
-              then press “{generateLabel}”.
+              {t('pixel.gallery.empty', { action: generateLabel })}
             </div>
           ) : (
             <div
@@ -618,9 +624,7 @@ export function PixelStudio() {
             </div>
           )}
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            The card shows the asset on the imposed lattice; hover it to flip back
-            to the raw vendor output, download it, or drop it. The block badge is
-            the lattice and figure size it was fitted to.
+            {t('pixel.gallery.help')}
           </div>
         </div>
 
@@ -630,24 +634,24 @@ export function PixelStudio() {
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <label className={`${SECTION_LABEL} flex items-center gap-1.5`} style={{ color: 'var(--text-muted)' }}>
                 <Icons.Key size={12} />
-                PixelLab key
+                {t('pixel.key.label')}
               </label>
               <button
                 type="button"
                 onClick={() => void refreshBalance()}
                 disabled={!key}
                 className="btn btn-ghost h-auto px-2 py-1"
-                title="Ask PixelLab for the credit left on this key"
+                title={t('pixel.key.balanceTitle')}
               >
                 <Icons.Refresh size={12} />
-                Balance
+                {t('pixel.key.balance')}
               </button>
             </div>
             <input
               type="password"
               value={key}
               onChange={(e) => rememberKey(e.target.value)}
-              placeholder="PixelLab API key — stored in this browser, sent only to the proxy"
+              placeholder={t('pixel.key.placeholder')}
               className="field w-full font-mono text-[12px]"
             />
             {balance && (
@@ -660,7 +664,11 @@ export function PixelStudio() {
                     color: 'var(--text-secondary)',
                   }}
                 >
-                  {balance.plan ?? 'no plan'} · {balance.generations ?? '—'}/{balance.total ?? '—'} generations
+                  {t('pixel.key.generations', {
+                    plan: balance.plan ?? t('pixel.key.noPlan'),
+                    used: balance.generations ?? '—',
+                    total: balance.total ?? '—',
+                  })}
                 </span>
                 <span className="font-mono" style={{ color: 'var(--text-muted)' }}>
                   ${balance.usd}
@@ -672,7 +680,7 @@ export function PixelStudio() {
           <div className="rounded-[var(--radius-lg)] p-3" style={CARD}>
             <div className="mb-2 flex items-center justify-between gap-2">
               <label className={SECTION_LABEL} style={{ color: 'var(--text-muted)' }}>
-                Generator
+                {t('pixel.generator.label')}
               </label>
               <span className="font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
                 {sub === 'stills' ? `${width}×${height} px` : `${size}×${size} px`}
@@ -696,38 +704,38 @@ export function PixelStudio() {
                         color: stillKind === k ? '#1a1404' : 'var(--text-secondary)',
                         background: stillKind === k ? 'var(--accent)' : 'transparent',
                       }}
-                      title={k === 'tiles' ? 'A tileable material cell' : 'A standalone transparent prop'}
+                      title={k === 'tiles' ? t('pixel.stillKind.tiles.title') : t('pixel.stillKind.props.title')}
                     >
-                      {k === 'tiles' ? 'Tiles' : 'Props'}
+                      {k === 'tiles' ? t('common.mode.tile.label') : t('common.mode.props.label')}
                     </button>
                   ))}
                 </div>
-                <NumberField label="W" value={width} min={16} max={400} title="Requested canvas width in pixels (pixflux allows 16–400)" onChange={setWidth} />
-                <NumberField label="H" value={height} min={16} max={400} title="Requested canvas height in pixels (pixflux allows 16–400)" onChange={setHeight} />
-                <label className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-secondary)' }} title="Ask the vendor for alpha instead of a filled background">
+                <NumberField label={t('pixel.field.width')} value={width} min={16} max={400} title={t('pixel.field.width.title')} onChange={setWidth} />
+                <NumberField label={t('pixel.field.height')} value={height} min={16} max={400} title={t('pixel.field.height.title')} onChange={setHeight} />
+                <label className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-secondary)' }} title={t('pixel.noBackground.title')}>
                   <input type="checkbox" checked={noBackground} onChange={(e) => setNoBackground(e.target.checked)} />
-                  no background
+                  {t('pixel.noBackground')}
                 </label>
               </div>
             ) : (
               <div className="flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }} title="The skeleton the generator drives — the template outweighs the prompt">
-                  <span className="uppercase tracking-wider">Template</span>
+                <label className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }} title={t('pixel.template.title')}>
+                  <span className="uppercase tracking-wider">{t('pixel.template.label')}</span>
                   <select
                     value={template}
                     onChange={(e) => setTemplate(e.target.value as PixelTemplate)}
                     className="select-styled px-2 py-1 text-[12px]"
                     style={SELECT_FIELD}
                   >
-                    {PIXEL_TEMPLATES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
+                    {PIXEL_TEMPLATES.map((tpl) => (
+                      <option key={tpl} value={tpl}>
+                        {t(`pixel.template.${tpl}`, undefined, tpl)}
                       </option>
                     ))}
                   </select>
                 </label>
-                <label className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }} title="Camera angle the 8 rotations are drawn from">
-                  <span className="uppercase tracking-wider">View</span>
+                <label className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }} title={t('pixel.view.title')}>
+                  <span className="uppercase tracking-wider">{t('pixel.view.label')}</span>
                   <select
                     value={view}
                     onChange={(e) => setView(e.target.value as PixelView)}
@@ -736,37 +744,41 @@ export function PixelStudio() {
                   >
                     {PIXEL_VIEWS.map((v) => (
                       <option key={v} value={v}>
-                        {v}
+                        {t(`pixel.view.${slug(v)}`, undefined, v)}
                       </option>
                     ))}
                   </select>
                 </label>
-                <NumberField label="Size" value={size} min={32} max={256} title="Sprite canvas per direction (v3 allows 32–256)" onChange={setSize} />
+                <NumberField label={t('pixel.field.size')} value={size} min={32} max={256} title={t('pixel.field.size.title')} onChange={setSize} />
               </div>
             )}
 
             <div className="mt-3 pt-2.5" style={{ borderTop: '1px solid var(--border)' }}>
               <div className="mb-2 flex items-center justify-between gap-2">
                 <label className={SECTION_LABEL} style={{ color: 'var(--text-muted)' }}>
-                  Lattice
+                  {t('pixel.lattice.label')}
                 </label>
                 <span className="font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                  figure band {DEFAULT_FIGURE_BAND.min}–{DEFAULT_FIGURE_BAND.max}px on a {cell}px cell
+                  {t('pixel.lattice.band', {
+                    min: DEFAULT_FIGURE_BAND.min,
+                    max: DEFAULT_FIGURE_BAND.max,
+                    cell,
+                  })}
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <NumberField
-                  label="Block"
+                  label={t('pixel.field.block')}
                   value={block}
                   min={1}
-                  title="Block size of the corpus lattice (2 = the 2×2 convention). Imposed, not detected — the phase is what gets measured."
+                  title={t('pixel.field.block.title')}
                   onChange={(n) => setBlock(Math.max(1, n))}
                 />
                 <NumberField
-                  label="Cell"
+                  label={t('pixel.field.cell')}
                   value={cell}
                   min={8}
-                  title="Output cell the cropped figure is centred in"
+                  title={t('pixel.field.cell.title')}
                   onChange={(n) => setCell(Math.max(8, n))}
                 />
                 <button
@@ -774,10 +786,10 @@ export function PixelStudio() {
                   onClick={() => setBlock(DEFAULT_BLOCK)}
                   disabled={block === DEFAULT_BLOCK && cell === DEFAULT_CELL}
                   className="btn btn-ghost h-auto px-2 py-1"
-                  title="Back to the corpus defaults (block 2, cell 32)"
+                  title={t('pixel.lattice.defaults.title')}
                 >
                   <Icons.Refresh size={12} />
-                  Defaults
+                  {t('pixel.lattice.defaults')}
                 </button>
               </div>
             </div>
@@ -785,7 +797,7 @@ export function PixelStudio() {
 
           <div className="flex flex-col gap-1.5">
             <label className={SECTION_LABEL} style={{ color: 'var(--text-muted)' }}>
-              Quick start
+              {t('pixel.quickStart')}
             </label>
             <div className="flex flex-wrap gap-1.5">
               {presets.map((preset) => {
@@ -806,7 +818,7 @@ export function PixelStudio() {
                     }}
                     title={preset.prompt}
                   >
-                    {preset.label}
+                    {t(`pixel.preset.${preset.id}`, undefined, preset.label)}
                   </button>
                 )
               })}
@@ -832,9 +844,7 @@ export function PixelStudio() {
                 }
               }}
               placeholder={
-                sub === 'stills'
-                  ? 'Describe the asset — or pick a quick start above'
-                  : 'Describe the character — or pick a quick start above'
+                sub === 'stills' ? t('pixel.describe.stills') : t('pixel.describe.character')
               }
               className="flex-1 bg-transparent px-3 py-2.5 text-[14px] focus:outline-none"
               style={{ color: 'var(--text)' }}
@@ -846,10 +856,10 @@ export function PixelStudio() {
                 disabled={busy !== null}
                 className="select-styled cursor-pointer border-0 bg-transparent py-2 pl-3 pr-7 text-[13px] focus:outline-none"
                 style={{ color: 'var(--text-secondary)' }}
-                title="What kind of pixel-art asset to generate"
+                title={t('pixel.sub.title')}
               >
-                <option value="stills">Tiles &amp; props</option>
-                <option value="character">Character</option>
+                <option value="stills">{t('pixel.sub.stills')}</option>
+                <option value="character">{t('pixel.sub.character')}</option>
               </select>
             </div>
           </div>
@@ -869,7 +879,7 @@ export function PixelStudio() {
             setCandidates((prev) => [
               {
                 id: `lib-${Date.now()}`,
-                label: 'from library',
+                label: t('pixel.cell.fromLibrary'),
                 sourceUrl: url,
                 analysis: null,
                 processedUrl: null,

@@ -81,6 +81,8 @@ in the top bar:
   rising on the horizon"*.
 - **Custom art styles.** 40+ styles from cinematic and oil painting to
   Studio Ghibli, cyberpunk, vaporwave, etc.
+- **Bilingual UI (English / 中文).** Every surface, including API-route errors,
+  follows the language picked in the top bar; the choice persists locally.
 - **BYOK (Bring Your Own Key).** Your OpenRouter key is stored only in your
   browser's `localStorage`. The server proxies your requests to OpenRouter
   but never logs or persists the key.
@@ -585,6 +587,40 @@ anti-aliases.
   2026-10-05; `app/lib/stylePrompt.ts` is now the single source for every route
   that mentions a style.
 
+## Localization
+
+The UI ships in **English (default) and Chinese (中文)**. Pick a language with
+the switcher in the top bar — the choice persists in `localStorage`
+(`extender:locale`), drives `<html lang>`, and updates the document title.
+
+No routing and no extra dependency: one React context plus one message module
+per area.
+
+| Piece | What it does |
+| --- | --- |
+| `app/lib/i18n.tsx` | `I18nProvider` (locale state + persistence) and the `useI18n()` / `useT()` hooks; `t(key, params?, fallback?)` interpolates `{placeholders}`. |
+| `app/i18n/index.ts` | Locale list, the aggregated dictionary, and the key types. |
+| `app/i18n/messages/<area>.ts` | Flat dotted keys (`shell.topbar.newImage`) with an `en` and a `zh` map — one module per surface (`common`, `shell`, `modals`, `extender`, `parallax`, `sprite`, `tile`, `props`, `pixel`, `errors`). |
+| `app/i18n/messages/common.ts` | Shared vocabulary keyed by data id (`common.artStyle.<value>`, `common.layer.<role>.label`, `common.anim.<type>.hint`, `common.creature.<presetId>`, …) so a label rendered in two studios has one translation. |
+| `app/i18n/serverErrors.ts` | Maps the app's own server (`{ error }`) and canvas/loader messages onto keys; unknown text (provider passthrough) is shown as-is. |
+
+Conventions:
+
+- The Chinese map is typed against the English key set, so a **missing
+  translation fails `tsc`** instead of silently falling back.
+- Labels built from data ids resolve through `common.*` with the English string
+  as `fallback` — a gateway model the dictionary has never seen still renders.
+- **Prompt text stays English on purpose.** Preset prompts, body-plan
+  descriptions, sprite choreography and anything else sent to the model are not
+  translated; only what the user reads is.
+- Adding a language = add it to `LOCALES`/`LOCALE_LABELS` in `app/i18n/index.ts`
+  and to every message module; `app/i18n/__tests__/messages.test.ts` fails until
+  the key sets (and every data-driven key) match.
+
+```bash
+npx vitest run app/i18n/__tests__/messages.test.ts
+```
+
 ## Project structure
 
 ```
@@ -606,6 +642,10 @@ app/
 │   ├── app.ts / models.ts / artStyles.ts
 │   ├── parallax.ts / tileset.ts / sprite.ts / props.ts
 │   └── bodyPlans.ts           Sprite body-plan registry (anims, presets, rigs)
+├── i18n/                      Localization (en + zh)
+│   ├── messages/              One module per surface, flat dotted keys
+│   ├── serverErrors.ts        Server/canvas error text → message keys
+│   └── __tests__/             Dictionary parity + data-key coverage
 ├── utils/
 │   ├── imageProcessor.ts      Canvas: chunking, Poisson blend, chroma key,
 │   │                          tileability, seam scoring, sprite align/scale

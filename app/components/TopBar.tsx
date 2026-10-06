@@ -2,6 +2,8 @@
 
 import { IconProps, Icons } from '@/app/components/icons'
 import { Mode } from '@/app/lib/app'
+import { LOCALES } from '@/app/i18n'
+import { useI18n } from '@/app/lib/i18n'
 
 export function Logo() {
   return (
@@ -37,6 +39,7 @@ export function TopBar({
   onNewImage: () => void
   onShowSettings: () => void
 }) {
+  const { t } = useI18n()
   return (
     <header
       className="relative z-20 flex h-14 shrink-0 items-center justify-between border-b px-4 sm:px-6"
@@ -48,19 +51,54 @@ export function TopBar({
         {hasImage && (
           <button onClick={onNewImage} className="btn btn-ghost">
             <Icons.Plus size={15} />
-            New image
+            {t('shell.topbar.newImage')}
           </button>
         )}
+        <LanguageSwitcher />
         <button
           onClick={onShowSettings}
           className="icon-btn"
-          aria-label="Settings"
-          title="Settings"
+          aria-label={t('shell.topbar.settings')}
+          title={t('shell.topbar.settings')}
         >
           <Icons.Settings size={17} />
         </button>
       </div>
     </header>
+  )
+}
+
+/**
+ * Compact EN/中文 toggle. Always visible (unlike ModeToggle) so a user on a
+ * phone can still read the UI in their language.
+ */
+function LanguageSwitcher() {
+  const { locale, setLocale, t } = useI18n()
+  return (
+    <div
+      className="flex items-center rounded-full p-0.5"
+      style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)' }}
+      role="group"
+      aria-label={t('app.language.switch')}
+    >
+      {LOCALES.map((value) => {
+        const active = locale === value
+        return (
+          <button
+            key={value}
+            onClick={() => setLocale(value)}
+            aria-pressed={active}
+            className="rounded-full px-2 py-1 text-[11px] font-medium transition-colors"
+            style={{
+              color: active ? '#1a1404' : 'var(--text-secondary)',
+              background: active ? 'var(--accent)' : 'transparent',
+            }}
+          >
+            {value === 'en' ? t('app.language.en') : t('app.language.zh')}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
@@ -78,13 +116,14 @@ export function ModeToggle({
   mode: Mode
   setMode: (m: Mode) => void
 }) {
-  const tabs: { value: Mode; label: string; Icon: React.FC<IconProps>; hint: string }[] = [
-    { value: 'extender', label: 'Extender', Icon: Icons.CornerFrame, hint: 'Outpaint any image' },
-    { value: 'parallax', label: 'Parallax', Icon: Icons.Mountain, hint: 'Sidescroller backgrounds' },
-    { value: 'tile', label: 'Tiles', Icon: Icons.Layers, hint: 'Seamless tile textures' },
-    { value: 'props', label: 'Props', Icon: Icons.Sprout, hint: 'Scatter decorations' },
-    { value: 'sprite', label: 'Sprite', Icon: Icons.Play, hint: 'Character animations' },
-    { value: 'pixel', label: 'Pixel', Icon: Icons.Pixel, hint: 'True pixel-art grid' },
+  const { t } = useI18n()
+  const tabs: { value: Mode; Icon: React.FC<IconProps> }[] = [
+    { value: 'extender', Icon: Icons.CornerFrame },
+    { value: 'parallax', Icon: Icons.Mountain },
+    { value: 'tile', Icon: Icons.Layers },
+    { value: 'props', Icon: Icons.Sprout },
+    { value: 'sprite', Icon: Icons.Play },
+    { value: 'pixel', Icon: Icons.Pixel },
   ]
   return (
     <div
@@ -94,10 +133,11 @@ export function ModeToggle({
         border: '1px solid var(--border)',
       }}
       role="tablist"
-      aria-label="Workspace mode"
+      aria-label={t('shell.topbar.modeAria')}
     >
-      {tabs.map(({ value, label, Icon, hint }) => {
+      {tabs.map(({ value, Icon }) => {
         const active = mode === value
+        const hint = t(`common.mode.${value}.hint`)
         return (
           <button
             key={value}
@@ -118,7 +158,7 @@ export function ModeToggle({
             }}
           >
             <Icon size={13} />
-            {label}
+            {t(`common.mode.${value}.label`)}
           </button>
         )
       })}
