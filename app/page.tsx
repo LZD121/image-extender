@@ -2535,37 +2535,6 @@ export default function Home() {
     return { rawSheetUrl, keyedCells: alignedCells, keyedSheetUrl }
   }
 
-  /** Review half of the sprite pipeline — hand the composed sheet (+ the
-   * character anchor for identity matching) to the QA art director. Returns
-   * null (≈ approve) on any failure so a flaky critic never blocks the user. */
-  const fetchSpriteReview = async (
-    sheetImage: string | null,
-    anchorImage: string | null
-  ): Promise<{ ok: boolean; issues: string[]; fix: string } | null> => {
-    if (!sheetImage) return null
-    try {
-      const data = await studioRequest<{ ok?: boolean; issues?: string[]; fix?: string }>(
-        '/api/sprite-review',
-        {
-          prompt: spritePrompt.trim() || undefined,
-          anim: spriteAnim,
-          bodyPlan: spriteBodyPlan,
-          sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
-          apiKey: apiKey || undefined,
-          provider,
-          model: qaModel,
-          sheetImage,
-          anchorImage: anchorImage || undefined,
-        },
-        { on401: onNeedsKey }
-      )
-      if (typeof data?.ok !== 'boolean') return null
-      return { ok: data.ok, issues: data.issues ?? [], fix: data.fix ?? '' }
-    } catch {
-      return null
-    }
-  }
-
   /** Deterministic twin/spillover detector. A correct frame is ONE centered
    * figure → its alpha mass profile is a single hump on both axes. When the
    * model paints two characters side-by-side OR lets a creature spill from the
@@ -2709,9 +2678,10 @@ export default function Home() {
       spriteSheetCacheRef.current = {}
     }
 
-    // Up to this many extra repaint passes after the first sheet, each driven
-    // by the QA art director's fix report.
-    const MAX_SPRITE_REVIEW_PASSES = 2
+    // Up to this many extra repaint passes after the first sheet. Each one is
+    // driven by the deterministic duplicate/spillover check below — there is no
+    // model review that could ask for one.
+    const MAX_SPRITE_REPAINT_PASSES = 2
     let phaseLabel = needsNewAnchor
       ? t('extender.phase.lockingCharacter')
       : t('extender.phase.paintingFrames')
@@ -2733,12 +2703,14 @@ export default function Home() {
         setSpriteAnchor(anchorRef)
       }
 
-      // Pass 2 with a QA loop: paint the sheet, hand it (and the locked anchor)
-      // to the art director, and repaint with its fix report if it flags
-      // identity flicker / scale / anatomy / fringe problems. The anchor
-      // identity is reused on every repaint so the character stays on-model.
-      // The frames stay in their loading state through review/repaint so the
-      // sheet visibly shows it's still working.
+      // Pass 2: paint the sheet, then count cells whose alpha mass splits in
+      // two (a duplicate creature, or a spillover from the neighbouring row or
+      // column) and repaint with a fix instruction if any. That check is the
+      // whole critic: the vision art-director pass was removed deliberately
+      // (4a8d674, "fast and predictable"), and /api/sprite-review stays
+      // reachable for anyone who wants it. The anchor identity is reused on
+      // every repaint so the character stays on-model, and the frames stay in
+      // their loading state while the repaint runs.
       phaseLabel = t('extender.phase.paintingFrames')
       let sheetResult = await runSpriteSheetPass(
         effectivePrompt,
@@ -2746,53 +2718,28 @@ export default function Home() {
       )
       if (spriteStopRef.current) return
 
-      let fixNotes: string | undefined
-      for (let pass = 0; pass < MAX_SPRITE_REVIEW_PASSES; pass++) {
+      for (let pass = 0; pass < MAX_SPRITE_REPAINT_PASSES; pass++) {
         phaseLabel = t('extender.progress.checkingFrames')
         setSpriteProgressMsg(t('extender.progress.checkingFrames'))
 
-        // The art-director vision review is intentionally DISABLED for all
-        // sprite generations, on every AI model. We keep only the cheap,
-        // deterministic twin/spillover check (no extra model call) to catch
-        // duplicate creatures and trigger a repaint.
-        const [twinCount, review] = await Promise.all([
-          detectSpriteDuplicateCells(sheetResult.keyedCells),
-          Promise.resolve(null as Awaited<ReturnType<typeof fetchSpriteReview>>),
-        ])
+        const twinCount = await detectSpriteDuplicateCells(sheetResult.keyedCells)
         if (spriteStopRef.current) return
-
-        const visionBad = !!review && !review.ok
-        if (twinCount === 0 && !visionBad) {
-          if (debugMode && review) {
+        if (twinCount === 0) {
+          if (debugMode) {
             // eslint-disable-next-line no-console
-            console.log('🎭 QA approved the sprite sheet')
+            console.log('🎭 no duplicate or spillover cells — keeping this sheet')
           }
           break
         }
 
-        const dupNote =
-          twinCount > 0
-            ? `CRITICAL DEFECT: ${twinCount} cell(s) contain duplicate/spillover creatures: either two copies in one cell, or a full creature plus a cropped partial creature/body part from a neighbouring row/column. Paint EXACTLY ONE single character per ${SPRITE_FRAME_SIZE}×${SPRITE_FRAME_SIZE} cell, centered and scaled down with a clear magenta gutter; no head, tail, wing, leg, body, fur, shadow, or motion shape may cross a hidden cell boundary. This is the highest-priority fix. `
-            : ''
-        const visionNote = visionBad
-          ? review!.fix || review!.issues.join('; ')
-          : ''
-        fixNotes = (dupNote + visionNote).trim()
-        if (!fixNotes) break // nothing actionable — accept.
+        const fixNotes = `CRITICAL DEFECT: ${twinCount} cell(s) contain duplicate/spillover creatures: either two copies in one cell, or a full creature plus a cropped partial creature/body part from a neighbouring row/column. Paint EXACTLY ONE single character per ${SPRITE_FRAME_SIZE}×${SPRITE_FRAME_SIZE} cell, centered and scaled down with a clear magenta gutter; no head, tail, wing, leg, body, fur, shadow, or motion shape may cross a hidden cell boundary. This is the highest-priority fix. `
         if (debugMode) {
           // eslint-disable-next-line no-console
-          console.log(
-            `🎭 QA rejected (twins: ${twinCount}), repainting with notes:`,
-            fixNotes
-          )
+          console.log(`🎭 QA rejected (twins: ${twinCount}), repainting with notes:`, fixNotes)
         }
 
         phaseLabel = t('extender.phase.repaintingFrames', { pass: pass + 2 })
-        setSpriteProgressMsg(
-          twinCount > 0
-            ? t('extender.progress.duplicateRepainting')
-            : t('extender.progress.repainting')
-        )
+        setSpriteProgressMsg(t('extender.progress.duplicateRepainting'))
         sheetResult = await runSpriteSheetPass(
           effectivePrompt,
           anchorRef?.rawImageUrl ?? null,
