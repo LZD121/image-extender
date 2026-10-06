@@ -55,3 +55,8 @@ assets/**/raw/
 playwright-report/
 test-results/
 midscene_run/
+
+# Local tool state (agent session/ownership files, LSP project config) — the
+# tools recreate these, and they are not part of the app.
+.pi-glla/
+.serena/
