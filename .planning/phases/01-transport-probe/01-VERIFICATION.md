@@ -20,7 +20,7 @@ covered_files:
   - app/lib/__tests__/providers.test.ts
   - scripts/probe-measure.mjs
   - tests/fixtures/anim/chaser_idle_f1_8dir.png
-covered_digest: "v1:sha256:938fc52adbeaddb90ec1174a07abf8551be23d03aca82e6d1723cba46da5885c"
+covered_digest: Error: could not compute fingerprint — a covered file is missing, unreadable, or escapes the project root
 behavior_unverified: 1
 behavior_unverified_items:
   - truth: "`apiKeyEnv` 把 key 来源（而非 key 值）带到出网请求的鉴权头上"
