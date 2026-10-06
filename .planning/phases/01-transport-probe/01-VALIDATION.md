@@ -42,7 +42,7 @@ Task ID 由 PLAN.md 落定后回填；断言本体见下表（来自 `01-RESEARC
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
 | TBD | 01-01 | 1 | TRAN-03 | 证据（人工可查） | `grep -c '' .planning/phases/01-transport-probe/01-PROBE-RECORD.md` 且五项非空 | ❌ W0 | ⬜ pending |
-| TBD | 01-01 | 1 | TRAN-03 | 重算（离线） | `node scripts/probe-measure.mjs <fixture.png> 8` 与记录数字一致 | ❌ W0 | ⬜ pending |
+| TBD | 01-01 | 1 | TRAN-03 | 重算（离线，确定性） | `node scripts/probe-measure.mjs <fixture.png> 8` 两次输出在 `jq -S 'del(.seconds_measure)'` 规范化后逐字节相同，且与记录数字一致 | ❌ W0 | ⬜ pending |
 | TBD | 01-01 | 1 | TRAN-03 | 重算（离线） | `sharp().metadata()` 的宽高 == 记录里的 returned | ❌ W0 | ⬜ pending |
 | TBD | 01-02 | 1 | TRAN-04 | unit（CI） | `npx vitest run app/api/generate/__tests__/aspectRatio.test.ts` — 恰好 4 组变化且全为 `21:9→4:1`，其余 52 组不变 | ❌ W0 | ⬜ pending |
 | TBD | 01-02 | 1 | TRAN-04 | unit（CI） | 同一文件：六个 studio 尺寸档位逐字不变（4096×4096、2048×1024、1024×1024、512×512、以及两个 studio 的常用尺寸） | ❌ W0 | ⬜ pending |
@@ -57,7 +57,7 @@ Task ID 由 PLAN.md 落定后回填；断言本体见下表（来自 `01-RESEARC
 ## Wave 0 Requirements
 
 - [ ] `app/api/generate/__tests__/aspectRatio.test.ts` — 比例表 blast radius 的断言（V5/V6）
-- [ ] `tests/fixtures/anim/` — 一张下采样后的真实条带图（宽 ≤4096，约 0.5–1.5 MB）
+- [ ] `tests/fixtures/anim/` — 一张下采样后的真实条带图（**宽 2048，实测 2048×246，约 0.75–0.88 MB**；原始返回 11712×1408 ≈ 16.3 MB 只留在 `.ie/probe/`，不进库）
 - [ ] `scripts/probe-measure.mjs`（或等价的一次性测量脚本）— 从 PNG 重算尺寸/场色/拟合参数（V3）
 - [ ] `.planning/phases/01-transport-probe/01-PROBE-RECORD.md` — 探针五项记录（V1/V4）
 
