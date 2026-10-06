@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icons } from '@/app/components/icons'
 import { StatusPill } from '@/app/components/TopBar'
 import { Direction } from '@/app/lib/app'
+import { useI18n } from '@/app/lib/i18n'
 import { LAYER_ROLES, PARALLAX_TARGET_PRESETS, ParallaxLayer, getLayerIndexByRole, getRecommendedLayerIndex, getWorkflowPrerequisite, getWorkflowStep } from '@/app/lib/parallax'
 
 export function MultiLayerPreview({
@@ -14,6 +15,7 @@ export function MultiLayerPreview({
   /** Visible height of the preview strip in CSS pixels. */
   previewHeight?: number
 }) {
+  const { t } = useI18n()
   const [playing, setPlaying] = useState(true)
   /** Base px/sec of the fastest layer (1.0× speed reference). All other
    * layers scroll at `basePxPerSec * layer.scrollSpeed`. */
@@ -123,13 +125,15 @@ export function MultiLayerPreview({
         className="text-[10px] font-medium uppercase tracking-wider"
         style={{ color: 'var(--text-muted)' }}
       >
-        Composite
+        {t('parallax.preview.composite')}
       </span>
       <button
         onClick={() => setPlaying((p) => !p)}
         className="icon-btn h-7 w-7"
-        aria-label={playing ? 'Pause preview' : 'Play preview'}
-        title={playing ? 'Pause' : 'Play'}
+        aria-label={
+          playing ? t('parallax.preview.pauseAria') : t('parallax.preview.playAria')
+        }
+        title={playing ? t('parallax.preview.pause') : t('parallax.preview.play')}
       >
         {playing ? <Icons.Pause size={12} /> : <Icons.Play size={12} />}
       </button>
@@ -145,7 +149,7 @@ export function MultiLayerPreview({
         max={300}
         value={basePxPerSec}
         onChange={(e) => setBasePxPerSec(Number(e.target.value))}
-        aria-label="Camera scroll speed"
+        aria-label={t('parallax.preview.scrollSpeedAria')}
         className="parallax-slider"
       />
       {fullscreen && (
@@ -159,7 +163,7 @@ export function MultiLayerPreview({
             className="text-[10px] font-medium uppercase tracking-wider"
             style={{ color: 'var(--text-muted)' }}
           >
-            Camera
+            {t('parallax.preview.camera')}
           </span>
           <span
             className="font-mono text-[10px] tabular-nums"
@@ -173,8 +177,8 @@ export function MultiLayerPreview({
             max={100}
             value={Math.round(fullscreenZoom * 100)}
             onChange={(e) => setFullscreenZoom(Number(e.target.value) / 100)}
-            aria-label="Fullscreen camera zoom"
-            title="Pull the camera back to fit more horizontal scene on screen"
+            aria-label={t('parallax.preview.zoomAria')}
+            title={t('parallax.preview.zoomTitle')}
             className="parallax-slider"
           />
         </>
@@ -206,7 +210,7 @@ export function MultiLayerPreview({
           className="absolute inset-0 flex items-center justify-center text-[12px]"
           style={{ color: 'var(--text-muted)' }}
         >
-          Generate or upload at least one layer to preview the parallax
+          {t('parallax.preview.empty')}
         </div>
       )}
       {layers.map((layer) => {
@@ -240,8 +244,16 @@ export function MultiLayerPreview({
           border: '1px solid var(--border-strong)',
           backdropFilter: 'blur(8px)',
         }}
-        aria-label={fullscreen ? 'Exit fullscreen preview' : 'Fullscreen preview'}
-        title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen preview'}
+        aria-label={
+          fullscreen
+            ? t('parallax.preview.exitFullscreenAria')
+            : t('parallax.preview.fullscreenAria')
+        }
+        title={
+          fullscreen
+            ? t('parallax.preview.exitFullscreenTitle')
+            : t('parallax.preview.fullscreenTitle')
+        }
       >
         {fullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
       </button>
@@ -269,7 +281,7 @@ export function MultiLayerPreview({
         style={{ background: 'rgba(0, 0, 0, 0.92)' }}
         role="dialog"
         aria-modal="true"
-        aria-label="Parallax scene preview"
+        aria-label={t('parallax.preview.dialogAria')}
       >
         <div
           className="flex shrink-0 items-center justify-between px-4 py-3 sm:px-6"
@@ -277,10 +289,10 @@ export function MultiLayerPreview({
         >
           <div>
             <h2 className="text-[14px] font-semibold tracking-tight">
-              Scene preview
+              {t('parallax.preview.title')}
             </h2>
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              Live parallax composite · Esc to exit
+              {t('parallax.preview.subtitle')}
             </p>
           </div>
           <button
@@ -289,7 +301,7 @@ export function MultiLayerPreview({
             className="btn btn-ghost"
           >
             <Icons.X size={14} />
-            Close
+            {t('common.action.close')}
           </button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col p-3 sm:p-4">
@@ -340,6 +352,7 @@ export function LayerPanel({
   onClearLayer: (idx: number) => void
   onScrollSpeedChange: (idx: number, speed: number) => void
 }) {
+  const { t } = useI18n()
   const recommendedIdx = getRecommendedLayerIndex(layers)
   const completedCount = layers.filter((l) => l.imageUrl).length
 
@@ -351,20 +364,20 @@ export function LayerPanel({
         background: 'var(--bg-elev)',
         borderRight: '1px solid var(--border)',
       }}
-      aria-label="Parallax layers"
+      aria-label={t('parallax.layers.aria')}
     >
       <div className="mb-1 flex items-center justify-between">
         <span
           className="text-[10px] font-medium uppercase tracking-wider"
           style={{ color: 'var(--text-muted)' }}
         >
-          Layers
+          {t('parallax.layers.title')}
         </span>
         <span
           className="text-[10px]"
           style={{ color: 'var(--text-muted)' }}
         >
-          back → front
+          {t('parallax.layers.order')}
         </span>
       </div>
 
@@ -378,11 +391,17 @@ export function LayerPanel({
           }}
         >
           <span className="font-medium" style={{ color: 'var(--accent)' }}>
-            Step {getWorkflowStep(layers[recommendedIdx].role)} —{' '}
-            {LAYER_ROLES[layers[recommendedIdx].role].short}
+            {t('parallax.layers.step', {
+              step: getWorkflowStep(layers[recommendedIdx].role),
+              layer: t(
+                `common.layer.${layers[recommendedIdx].role}.short`,
+                undefined,
+                LAYER_ROLES[layers[recommendedIdx].role].short
+              ),
+            })}
           </span>
           <br />
-          Build layers front-to-back so each step matches the scene in front of it.
+          {t('parallax.layers.tip')}
         </div>
       )}
 
@@ -416,7 +435,7 @@ export function LayerPanel({
               onClick={() => onSelect(idx)}
               className="flex w-full items-center gap-2 text-left"
               aria-pressed={isActive}
-              title={spec.hint}
+              title={t(`common.layer.${layer.role}.hint`, undefined, spec.hint)}
             >
               <div className="relative shrink-0">
                 <div
@@ -438,7 +457,7 @@ export function LayerPanel({
                       className="text-[10px]"
                       style={{ color: 'var(--text-muted)' }}
                     >
-                      empty
+                      {t('parallax.layers.empty')}
                     </span>
                   )}
                 </div>
@@ -463,7 +482,7 @@ export function LayerPanel({
                     className="truncate text-[12px] font-medium"
                     style={{ color: 'var(--text)' }}
                   >
-                    {spec.label}
+                    {t(`common.layer.${layer.role}.label`, undefined, spec.label)}
                   </div>
                   {isRecommended && (
                     <span
@@ -474,7 +493,7 @@ export function LayerPanel({
                         border: '1px solid var(--accent-border)',
                       }}
                     >
-                      Next
+                      {t('parallax.layers.next')}
                     </span>
                   )}
                 </div>
@@ -484,8 +503,14 @@ export function LayerPanel({
                 >
                   {isEmpty
                     ? isWaiting
-                      ? `Needs ${LAYER_ROLES[prerequisite!.role].short} first`
-                      : spec.hint
+                      ? t('parallax.layers.needsFirst', {
+                          layer: t(
+                            `common.layer.${prerequisite!.role}.short`,
+                            undefined,
+                            LAYER_ROLES[prerequisite!.role].short
+                          ),
+                        })
+                      : t(`common.layer.${layer.role}.hint`, undefined, spec.hint)
                     : `${layer.width}×${layer.height}${spec.isOpaque ? '' : ' · α'}`}
                 </div>
               </div>
@@ -495,7 +520,7 @@ export function LayerPanel({
                 className="text-[10px]"
                 style={{ color: 'var(--text-muted)' }}
               >
-                Speed
+                {t('parallax.layers.speed')}
               </span>
               <input
                 type="range"
@@ -506,8 +531,12 @@ export function LayerPanel({
                   onScrollSpeedChange(idx, Number(e.target.value) / 100)
                 }
                 className="parallax-slider flex-1"
-                aria-label={`${spec.label} scroll speed`}
-                title={`${layer.scrollSpeed.toFixed(2)}× camera speed`}
+                aria-label={t('parallax.layers.speedAria', {
+                  layer: t(`common.layer.${layer.role}.label`, undefined, spec.label),
+                })}
+                title={t('parallax.layers.speedTitle', {
+                  speed: layer.scrollSpeed.toFixed(2),
+                })}
                 style={{ width: 'auto' }}
               />
               <span
@@ -521,8 +550,12 @@ export function LayerPanel({
               <button
                 onClick={() => onClearLayer(idx)}
                 className="absolute right-1 top-1 icon-btn h-6 w-6"
-                title={`Clear ${spec.short}`}
-                aria-label={`Clear ${spec.short} layer`}
+                title={t('parallax.layers.clearTitle', {
+                  layer: t(`common.layer.${layer.role}.short`, undefined, spec.short),
+                })}
+                aria-label={t('parallax.layers.clearAria', {
+                  layer: t(`common.layer.${layer.role}.short`, undefined, spec.short),
+                })}
               >
                 <Icons.Trash size={11} />
               </button>
@@ -534,8 +567,7 @@ export function LayerPanel({
         className="mt-1 text-[10px] leading-snug"
         style={{ color: 'var(--text-muted)' }}
       >
-        Build front → back: Near, then Mid, Far, Sky. Sky is opaque; the
-        others are alpha-keyed over it.
+        {t('parallax.layers.footer')}
       </p>
     </aside>
   )
@@ -563,6 +595,7 @@ export function LayerEmptyState({
   onDropFile: (file: File) => void
   onGoToPrerequisite: (idx: number) => void
 }) {
+  const { t } = useI18n()
   const [drag, setDrag] = useState(false)
   const spec = LAYER_ROLES[layer.role]
   const prerequisite = getWorkflowPrerequisite(layers, layer.role)
@@ -587,17 +620,28 @@ export function LayerEmptyState({
             }}
           >
             <p className="mb-2 font-medium" style={{ color: 'var(--text)' }}>
-              Step {step}: build {spec.short.toLowerCase()} after{' '}
-              {prerequisiteSpec.short.toLowerCase()}
+              {t('parallax.empty.stepTitle', {
+                step,
+                layer: t(
+                  `common.layer.${layer.role}.short`,
+                  undefined,
+                  spec.short
+                ).toLowerCase(),
+                prerequisite: t(
+                  `common.layer.${prerequisite.role}.short`,
+                  undefined,
+                  prerequisiteSpec.short
+                ).toLowerCase(),
+              })}
             </p>
             <p className="mb-3">
-              Parallax layers stack back-to-front in the game, but we build them
-              front-to-back. Finish{' '}
-              <strong style={{ color: 'var(--accent)' }}>
-                {prerequisiteSpec.label}
-              </strong>{' '}
-              first so this layer matches the same palette, lighting, and art
-              direction.
+              {t('parallax.empty.prereqBody', {
+                layer: t(
+                  `common.layer.${prerequisite.role}.label`,
+                  undefined,
+                  prerequisiteSpec.label
+                ),
+              })}
             </p>
             <button
               type="button"
@@ -608,8 +652,14 @@ export function LayerEmptyState({
                 color: '#1a1404',
               }}
             >
-              Go to {prerequisiteSpec.short} (step{' '}
-              {getWorkflowStep(prerequisite.role)})
+              {t('parallax.empty.goTo', {
+                layer: t(
+                  `common.layer.${prerequisite.role}.short`,
+                  undefined,
+                  prerequisiteSpec.short
+                ),
+                step: getWorkflowStep(prerequisite.role),
+              })}
             </button>
           </div>
         )}
@@ -623,9 +673,11 @@ export function LayerEmptyState({
               border: '1px solid var(--accent-border)',
             }}
           >
-            {spec.label}
+            {t(`common.layer.${layer.role}.label`, undefined, spec.label)}
           </span>
-          <span style={{ color: 'var(--text-muted)' }}>{spec.hint}</span>
+          <span style={{ color: 'var(--text-muted)' }}>
+            {t(`common.layer.${layer.role}.hint`, undefined, spec.hint)}
+          </span>
         </div>
         <div
           onClick={onPickFile}
@@ -662,26 +714,34 @@ export function LayerEmptyState({
             className="mb-1 text-[14px] font-medium"
             style={{ color: 'var(--text)' }}
           >
-            Drop a {spec.short.toLowerCase()} layer
+            {t('parallax.empty.dropTitle', {
+              layer: t(
+                `common.layer.${layer.role}.short`,
+                undefined,
+                spec.short
+              ).toLowerCase(),
+            })}
           </p>
           <p
             className="text-[12px]"
             style={{ color: 'var(--text-muted)' }}
           >
             {spec.isOpaque
-              ? 'PNG, JPG, or WEBP — opaque image at this game height'
-              : 'PNG with transparency works best — the magenta key will be applied if needed'}
+              ? t('parallax.empty.dropHintOpaque')
+              : t('parallax.empty.dropHintAlpha')}
           </p>
         </div>
         <div className="mt-3 flex items-center justify-center gap-2 text-[12px]">
-          <span style={{ color: 'var(--text-muted)' }}>or</span>
+          <span style={{ color: 'var(--text-muted)' }}>
+            {t('parallax.empty.or')}
+          </span>
           <button
             onClick={onGenerate}
             className="inline-flex items-center gap-1.5 font-medium transition-colors"
             style={{ color: 'var(--accent)' }}
           >
             <Icons.Sparkle size={13} />
-            generate this layer with AI
+            {t('parallax.empty.generate')}
           </button>
         </div>
       </div>
@@ -759,8 +819,10 @@ export function ParallaxStudio({
   onGenerate: () => void
   onDropFile: (f: File) => void
 }) {
+  const { t } = useI18n()
   const scrollRef = useRef<HTMLDivElement>(null)
   const activeLayer = layers[activeIdx]
+  const activeLayerSpec = LAYER_ROLES[activeLayer.role]
   const isEmpty = !activeImage
   const populatedCount = layers.filter((l) => l.imageUrl).length
 
@@ -881,7 +943,11 @@ export function ParallaxStudio({
                   color: 'var(--text-secondary)',
                 }}
               >
-                {LAYER_ROLES[activeLayer.role].short}
+                {t(
+                  `common.layer.${activeLayer.role}.short`,
+                  undefined,
+                  activeLayerSpec.short
+                )}
                 {activeDimensions
                   ? ` · ${activeDimensions.width} × ${activeDimensions.height}`
                   : ''}
@@ -895,7 +961,13 @@ export function ParallaxStudio({
                   className="text-[12px]"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  Click an edge to extend the {LAYER_ROLES[activeLayer.role].short.toLowerCase()} layer, or set a target and auto-extend
+                  {t('parallax.workspace.extendHint', {
+                    layer: t(
+                      `common.layer.${activeLayer.role}.short`,
+                      undefined,
+                      activeLayerSpec.short
+                    ).toLowerCase(),
+                  })}
                 </span>
               )}
               {(loading || autoExtending) && (
@@ -904,8 +976,14 @@ export function ParallaxStudio({
                   message={
                     progressMessage ||
                     (activeDirection
-                      ? `Extending ${activeDirection}…`
-                      : 'Working…')
+                      ? t('parallax.workspace.extending', {
+                          direction: t(
+                            `common.direction.${activeDirection}`,
+                            undefined,
+                            activeDirection
+                          ).toLowerCase(),
+                        })
+                      : t('common.action.working'))
                   }
                 />
               )}
@@ -937,7 +1015,10 @@ export function ParallaxStudio({
                 onDownloadSecondary={onExportZip}
                 secondaryLabel="ZIP"
                 secondaryIcon={<Icons.Layers size={14} />}
-                secondaryTitle={`Export project: ${populatedCount}/${layers.length} populated layers + manifest`}
+                secondaryTitle={t('parallax.workspace.exportTitle', {
+                  done: populatedCount,
+                  total: layers.length,
+                })}
                 secondaryDisabled={populatedCount === 0}
               />
             )}
@@ -965,6 +1046,7 @@ export function ParallaxEdgeHandle({
   active: boolean
   disabled: boolean
 }) {
+  const { t } = useI18n()
   const Icon = direction === 'left' ? Icons.ArrowLeft : Icons.ArrowRight
   const position: React.CSSProperties =
     direction === 'left'
@@ -974,8 +1056,20 @@ export function ParallaxEdgeHandle({
     <button
       onClick={onClick}
       disabled={disabled}
-      title={`Extend ${direction}`}
-      aria-label={`Extend ${direction}`}
+      title={t('parallax.edge.extend', {
+        direction: t(
+          `common.direction.${direction}`,
+          undefined,
+          direction
+        ).toLowerCase(),
+      })}
+      aria-label={t('parallax.edge.extend', {
+        direction: t(
+          `common.direction.${direction}`,
+          undefined,
+          direction
+        ).toLowerCase(),
+      })}
       className={`absolute z-20 flex h-12 w-12 items-center justify-center rounded-full transition-all duration-200 ${
         active ? 'anim-pulse' : ''
       }`}
@@ -1061,6 +1155,7 @@ export function ParallaxTargetBar({
   secondaryTitle?: string
   secondaryDisabled?: boolean
 }) {
+  const { t } = useI18n()
   const [showPresets, setShowPresets] = useState(false)
   return (
     <div
@@ -1078,7 +1173,7 @@ export function ParallaxTargetBar({
           className="text-[11px] font-medium uppercase tracking-wider"
           style={{ color: 'var(--text-muted)' }}
         >
-          Target
+          {t('parallax.target.label')}
         </span>
         <input
           type="number"
@@ -1090,7 +1185,7 @@ export function ParallaxTargetBar({
             const v = e.target.value
             setTargetWidth(v === '' ? null : Math.max(0, Number(v)))
           }}
-          placeholder="e.g. 7680"
+          placeholder={t('parallax.target.placeholder')}
           disabled={loading || autoExtending}
           className="w-24 rounded-[var(--radius-sm)] px-2 py-1 font-mono text-[12px]"
           style={{
@@ -1105,8 +1200,8 @@ export function ParallaxTargetBar({
         <button
           onClick={() => setShowPresets((s) => !s)}
           className="icon-btn h-7 w-7"
-          aria-label="Width presets"
-          title="Width presets"
+          aria-label={t('parallax.target.presetsAria')}
+          title={t('parallax.target.presetsTitle')}
         >
           <Icons.Layers size={13} />
         </button>
@@ -1136,12 +1231,22 @@ export function ParallaxTargetBar({
                   e.currentTarget.style.background = 'transparent'
                 }}
               >
-                <span className="font-mono">{p.label}</span>
+                <span className="font-mono">
+                  {t(
+                    `common.parallaxTarget.${p.value}.label`,
+                    undefined,
+                    p.label
+                  )}
+                </span>
                 <span
                   className="text-[11px]"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  {p.hint}
+                  {t(
+                    `common.parallaxTarget.${p.value}.hint`,
+                    undefined,
+                    p.hint
+                  )}
                 </span>
               </button>
             ))}
@@ -1170,9 +1275,9 @@ export function ParallaxTargetBar({
           style={{ color: 'var(--text-secondary)', minWidth: 64 }}
         >
           {targetReached
-            ? 'Reached'
+            ? t('parallax.target.reached')
             : remainingPx > 0
-              ? `${remainingPx}px left`
+              ? t('parallax.target.left', { px: remainingPx })
               : '—'}
         </span>
       </div>
@@ -1183,7 +1288,7 @@ export function ParallaxTargetBar({
           <button
             onClick={onStopAutoExtend}
             className="btn"
-            title="Stop auto-extend"
+            title={t('parallax.target.stopTitle')}
             style={{
               color: 'var(--danger)',
               background: 'rgba(255, 107, 107, 0.08)',
@@ -1191,7 +1296,7 @@ export function ParallaxTargetBar({
             }}
           >
             <Icons.Stop size={14} />
-            Stop
+            {t('parallax.target.stop')}
           </button>
         ) : (
           <button
@@ -1203,10 +1308,10 @@ export function ParallaxTargetBar({
               dimensions.width >= targetWidth
             }
             className="btn btn-primary"
-            title="Auto-extend right until target width is reached"
+            title={t('parallax.target.autoExtendTitle')}
           >
             <Icons.Sparkle size={14} />
-            Auto-extend
+            {t('parallax.target.autoExtend')}
           </button>
         )}
         <div
@@ -1219,10 +1324,10 @@ export function ParallaxTargetBar({
             onClick={onMakeTileable}
             disabled={loading || autoExtending || !!makeTileableDisabled}
             className="btn btn-ghost"
-            title="Make tileable — heals the loop-point seam so repeat-x scrolling has no visible joint"
+            title={t('parallax.target.tileableTitle')}
           >
             <Icons.Loop size={14} />
-            Tileable
+            {t('parallax.target.tileable')}
           </button>
         )}
         {onHarmonize && (
@@ -1230,17 +1335,17 @@ export function ParallaxTargetBar({
             onClick={onHarmonize}
             disabled={loading || autoExtending || !!harmonizeDisabled}
             className="btn btn-ghost"
-            title="Harmonize — flatten cumulative color/brightness drift across many extensions"
+            title={t('parallax.target.harmonizeTitle')}
           >
             <Icons.Smooth size={14} />
-            Harmonize
+            {t('parallax.target.harmonize')}
           </button>
         )}
         <button
           onClick={onDownloadFull}
           disabled={loading || autoExtending}
           className="btn btn-ghost"
-          title="Download as a single PNG"
+          title={t('parallax.target.downloadPngTitle')}
         >
           <Icons.Download size={14} />
           PNG
@@ -1255,10 +1360,14 @@ export function ParallaxTargetBar({
               !!secondaryDisabled
             }
             className="btn btn-ghost"
-            title={secondaryTitle || secondaryLabel || 'Secondary export'}
+            title={
+              secondaryTitle ||
+              secondaryLabel ||
+              t('parallax.target.secondaryFallback')
+            }
           >
             {secondaryIcon ?? <Icons.Layers size={14} />}
-            {secondaryLabel ?? 'Export'}
+            {secondaryLabel ?? t('parallax.target.export')}
           </button>
         )}
       </div>

@@ -2,6 +2,7 @@
 
 import { Icons } from '@/app/components/icons'
 import { ART_STYLE_GROUPS } from '@/app/lib/artStyles'
+import { useI18n } from '@/app/lib/i18n'
 
 export function CommandBar({
   prompt,
@@ -24,6 +25,7 @@ export function CommandBar({
   setSceneBrief?: (v: string) => void
   sceneBriefLoading?: boolean
 }) {
+  const { t } = useI18n()
   return (
     <div className="relative z-10 flex flex-col items-center gap-2 px-4 pb-6 pt-2">
       {setSceneBrief && (
@@ -40,7 +42,7 @@ export function CommandBar({
               className="text-[11px] font-medium uppercase tracking-wider"
               style={{ color: 'var(--text-muted)' }}
             >
-              Scene direction
+              {t('shell.command.sceneDirection')}
             </label>
             {sceneBriefLoading && (
               <span
@@ -48,7 +50,7 @@ export function CommandBar({
                 style={{ color: 'var(--accent)' }}
               >
                 <Icons.Spinner size={10} />
-                Updating…
+                {t('shell.command.updating')}
               </span>
             )}
           </div>
@@ -56,7 +58,7 @@ export function CommandBar({
             value={sceneBrief ?? ''}
             onChange={(e) => setSceneBrief(e.target.value)}
             disabled={loading || sceneBriefLoading}
-            placeholder="Shared art direction for all layers — generated from your Near layer prompt. Edit to steer Mid, Far, and Sky."
+            placeholder={t('shell.command.sceneBriefPlaceholder')}
             rows={2}
             className="field w-full resize-none text-[13px] leading-relaxed"
           />
@@ -76,7 +78,7 @@ export function CommandBar({
           onChange={(e) => setPrompt(e.target.value)}
           disabled={loading}
           placeholder={
-            hint ?? 'Optional: describe what should appear in the new area…'
+            hint ?? t('shell.command.promptPlaceholder')
           }
           className="flex-1 bg-transparent px-3 py-2.5 text-[14px] focus:outline-none"
           style={{ color: 'var(--text)' }}
@@ -92,18 +94,21 @@ export function CommandBar({
             disabled={loading}
             className="select-styled cursor-pointer border-0 bg-transparent py-2 pl-3 pr-7 text-[13px] focus:outline-none"
             style={{ color: 'var(--text-secondary)' }}
-            title="Art style for the extension"
+            title={t('shell.command.artStyleTitle')}
           >
             {ART_STYLE_GROUPS.map((group) =>
-              group.options.length === 1 && group.label === 'Match original' ? (
+              group.id === 'match-original' ? (
                 <option key={group.options[0].value} value={group.options[0].value}>
-                  {group.options[0].label}
+                  {t(`common.artStyle.${group.options[0].value}`, undefined, group.options[0].label)}
                 </option>
               ) : (
-                <optgroup key={group.label} label={group.label}>
+                <optgroup
+                  key={group.id}
+                  label={t(`common.artStyleGroup.${group.id}`, undefined, group.label)}
+                >
                   {group.options.map((o) => (
                     <option key={o.value} value={o.value}>
-                      {o.label}
+                      {t(`common.artStyle.${o.value}`, undefined, o.label)}
                     </option>
                   ))}
                 </optgroup>

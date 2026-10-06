@@ -3,6 +3,7 @@
 import { Icons } from '@/app/components/icons'
 import { ART_STYLE_GROUPS } from '@/app/lib/artStyles'
 import { PROP_PRESETS, PropItem } from '@/app/lib/props'
+import { useI18n } from '@/app/lib/i18n'
 
 export function PropItemCell({
   item,
@@ -17,6 +18,7 @@ export function PropItemCell({
   onDelete: () => void
   busy: boolean
 }) {
+  const { t } = useI18n()
   return (
     <div
       className="group relative checker overflow-hidden rounded-[var(--radius-md)] anim-fade"
@@ -25,7 +27,7 @@ export function PropItemCell({
       {item.imageUrl ? (
         <img
           src={item.imageUrl}
-          alt={`Prop ${index + 1}`}
+          alt={t('props.item.alt', { index: index + 1 })}
           draggable={false}
           className="block h-full w-full"
           style={{ objectFit: 'contain' }}
@@ -72,7 +74,7 @@ export function PropItemCell({
               color: 'var(--accent)',
               backdropFilter: 'blur(4px)',
             }}
-            title="Re-roll this prop — a new decoration matched to the rest of the set"
+            title={t('props.item.rerollTitle')}
           >
             <Icons.Sparkle size={11} />
           </button>
@@ -85,7 +87,7 @@ export function PropItemCell({
               color: 'var(--danger, #ff6b6b)',
               backdropFilter: 'blur(4px)',
             }}
-            title="Delete this prop from the library"
+            title={t('props.item.deleteTitle')}
           >
             <Icons.Trash size={11} />
           </button>
@@ -141,6 +143,7 @@ export function PropStudio({
   onDownloadSheet: () => void
   onDownloadZip: () => void
 }) {
+  const { t } = useI18n()
   const filledCount = items.filter((p) => p.imageUrl).length
   const hasAny = filledCount > 0
 
@@ -149,19 +152,20 @@ export function PropStudio({
       <div className="flex items-center justify-center gap-2 text-center text-[12px]">
         <Icons.Sprout size={14} className="text-[color:var(--accent)]" />
         <span style={{ color: 'var(--text-secondary)' }}>
-          Props mode — a growing library of transparent decorations to scatter
-          on top of your tile map (the way Hollow Knight layers detail over its
-          geometry). Each press paints {batchSize} new props the model invents
-          for your biome; keep adding for an endless set.
+          {t('props.intro', { count: batchSize })}
         </span>
       </div>
 
       {/* Action bar */}
       <div className="flex flex-wrap items-center justify-center gap-2">
         {generating ? (
-          <button onClick={onStop} className="btn btn-danger" title="Stop the current generation">
+          <button
+            onClick={onStop}
+            className="btn btn-danger"
+            title={t('props.action.stopTitle')}
+          >
             <Icons.Stop size={14} />
-            Stop
+            {t('props.action.stop')}
           </button>
         ) : (
           <button
@@ -170,40 +174,42 @@ export function PropStudio({
             className="btn btn-primary"
             title={
               hasAny
-                ? `Paint ${batchSize} more decorations and add them to the library`
-                : `Paint your first ${batchSize} decorations`
+                ? t('props.action.addMoreTitle', { count: batchSize })
+                : t('props.action.firstTitle', { count: batchSize })
             }
           >
             <Icons.Plus size={14} />
-            {hasAny ? `Add ${batchSize} more` : `Generate ${batchSize} props`}
+            {hasAny
+              ? t('props.action.addMore', { count: batchSize })
+              : t('props.action.generate', { count: batchSize })}
           </button>
         )}
         <button
           onClick={onDownloadSheet}
           disabled={!hasAny || generating}
           className="btn btn-secondary"
-          title="Export the packed transparent atlas PNG with a JSON manifest"
+          title={t('props.action.atlasTitle')}
         >
           <Icons.Download size={14} />
-          Atlas + manifest
+          {t('props.action.atlas')}
         </button>
         <button
           onClick={onDownloadZip}
           disabled={!hasAny || generating}
           className="btn btn-ghost"
-          title="Export individual transparent PNGs + atlas + manifest as a ZIP"
+          title={t('props.action.zipTitle')}
         >
           <Icons.Layers size={14} />
-          ZIP
+          {t('props.action.zip')}
         </button>
         <button
           onClick={onClearAll}
           disabled={!hasAny || generating}
           className="btn btn-ghost"
-          title="Clear the whole library and start over"
+          title={t('props.action.clearTitle')}
         >
           <Icons.Trash size={14} />
-          Clear
+          {t('props.action.clear')}
         </button>
         <div
           className="rounded-full border px-2.5 py-1 font-mono text-[11px]"
@@ -213,7 +219,9 @@ export function PropStudio({
             color: hasAny ? 'var(--text-secondary)' : 'var(--text-muted)',
           }}
         >
-          {filledCount} prop{filledCount === 1 ? '' : 's'}
+          {t(filledCount === 1 ? 'props.count.one' : 'props.count.other', {
+            count: filledCount,
+          })}
           {progressMessage ? ` · ${progressMessage}` : ''}
         </div>
       </div>
@@ -224,7 +232,7 @@ export function PropStudio({
           className="text-[11px] font-medium uppercase tracking-wider"
           style={{ color: 'var(--text-muted)' }}
         >
-          Decoration library
+          {t('props.library.title')}
         </div>
         {items.length === 0 ? (
           <div
@@ -236,8 +244,7 @@ export function PropStudio({
                 'repeating-linear-gradient(45deg, transparent 0 8px, rgba(255,255,255,0.015) 8px 16px)',
             }}
           >
-            Pick a biome below and press “Generate {batchSize} props” to start
-            your decoration library. Keep pressing “Add more” to grow it.
+            {t('props.library.empty', { count: batchSize })}
           </div>
         ) : (
           <div
@@ -260,9 +267,7 @@ export function PropStudio({
           </div>
         )}
         <div className="mx-auto max-w-4xl text-[11px]" style={{ color: 'var(--text-muted)' }}>
-          Every prop is exported on transparency. Hover a prop to re-roll or
-          delete it. New batches are style-matched to what you already have, so
-          the library stays cohesive as it grows.
+          {t('props.library.note')}
         </div>
       </div>
 
@@ -281,7 +286,7 @@ export function PropStudio({
               className="text-[11px] font-medium uppercase tracking-wider"
               style={{ color: 'var(--text-muted)' }}
             >
-              Scene direction
+              {t('props.sceneBrief.label')}
             </label>
             {sceneBriefLoading && (
               <span
@@ -289,7 +294,7 @@ export function PropStudio({
                 style={{ color: 'var(--accent)' }}
               >
                 <Icons.Spinner size={10} />
-                Updating…
+                {t('props.sceneBrief.updating')}
               </span>
             )}
           </div>
@@ -297,7 +302,7 @@ export function PropStudio({
             value={sceneBrief}
             onChange={(e) => setSceneBrief(e.target.value)}
             disabled={generating || sceneBriefLoading}
-            placeholder="Optional shared art direction. Reused from your parallax / tile work so the props match the same palette and lighting."
+            placeholder={t('props.sceneBrief.placeholder')}
             rows={2}
             className="field w-full resize-none text-[13px] leading-relaxed"
           />
@@ -308,7 +313,7 @@ export function PropStudio({
             className="text-[11px] font-medium uppercase tracking-wider"
             style={{ color: 'var(--text-muted)' }}
           >
-            Quick start
+            {t('props.preset.label')}
           </label>
           <div className="flex flex-wrap gap-1.5">
             {PROP_PRESETS.map((preset) => {
@@ -329,7 +334,7 @@ export function PropStudio({
                   }}
                   title={preset.prompt}
                 >
-                  {preset.label}
+                  {t(`props.preset.${preset.id}`, undefined, preset.label)}
                 </button>
               )
             })}
@@ -354,7 +359,7 @@ export function PropStudio({
                 onAddMore()
               }
             }}
-            placeholder="Describe the biome / palette — or pick a quick start above"
+            placeholder={t('props.prompt.placeholder')}
             className="flex-1 bg-transparent px-3 py-2.5 text-[14px] focus:outline-none"
             style={{ color: 'var(--text)' }}
           />
@@ -365,18 +370,21 @@ export function PropStudio({
               disabled={generating}
               className="select-styled cursor-pointer border-0 bg-transparent py-2 pl-3 pr-7 text-[13px] focus:outline-none"
               style={{ color: 'var(--text-secondary)' }}
-              title="Art style for the props"
+              title={t('props.artStyle.title')}
             >
               {ART_STYLE_GROUPS.map((group) =>
-                group.options.length === 1 && group.label === 'Match original' ? (
+                group.options.length === 1 && group.id === 'match-original' ? (
                   <option key={group.options[0].value} value={group.options[0].value}>
-                    {group.options[0].label}
+                    {t(`common.artStyle.${group.options[0].value}`, undefined, group.options[0].label)}
                   </option>
                 ) : (
-                  <optgroup key={group.label} label={group.label}>
+                  <optgroup
+                    key={group.id}
+                    label={t(`common.artStyleGroup.${group.id}`, undefined, group.label)}
+                  >
                     {group.options.map((o) => (
                       <option key={o.value} value={o.value}>
-                        {o.label}
+                        {t(`common.artStyle.${o.value}`, undefined, o.label)}
                       </option>
                     ))}
                   </optgroup>

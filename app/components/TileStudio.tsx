@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react'
 import { Icons } from '@/app/components/icons'
 import { ART_STYLE_GROUPS } from '@/app/lib/artStyles'
+import { useI18n } from '@/app/lib/i18n'
 import { TILESET_COLS, TILESET_PRESETS, TILESET_ROWS, TILESET_SLOTS, TILE_TEMPLATE_MASK, TileSetRole, TileSetSlot, TileSetSlotSpec } from '@/app/lib/tileset'
 
 export function TileSlotCell({
@@ -18,6 +19,8 @@ export function TileSlotCell({
   busy: boolean
   showActions: boolean
 }) {
+  const { t } = useI18n()
+  const hint = t(`common.tileRole.${spec.role}.hint`, undefined, spec.hint)
   return (
     <div
       className="group relative checker overflow-hidden rounded-[var(--radius-md)] anim-fade"
@@ -25,12 +28,12 @@ export function TileSlotCell({
         border: '1px solid var(--border)',
         aspectRatio: '1 / 1',
       }}
-      title={spec.hint}
+      title={hint}
     >
       {slot.imageUrl ? (
         <img
           src={slot.imageUrl}
-          alt={spec.hint}
+          alt={hint}
           draggable={false}
           className="block h-full w-full"
           style={{ objectFit: 'contain' }}
@@ -44,7 +47,7 @@ export function TileSlotCell({
               'repeating-linear-gradient(45deg, transparent 0 6px, rgba(255,255,255,0.025) 6px 12px)',
           }}
         >
-          {spec.label}
+          {t(`common.tileRole.${spec.role}.label`, undefined, spec.label)}
         </div>
       )}
 
@@ -65,7 +68,7 @@ export function TileSlotCell({
           backdropFilter: 'blur(4px)',
         }}
       >
-        {spec.label}
+        {t(`common.tileRole.${spec.role}.label`, undefined, spec.label)}
       </div>
 
       {showActions && slot.imageUrl && !slot.generating && (
@@ -78,7 +81,7 @@ export function TileSlotCell({
             color: 'var(--accent)',
             backdropFilter: 'blur(4px)',
           }}
-          title={`Replace this tile (separate call — may not match the rest). For best consistency, re-roll the whole sheet instead.`}
+          title={t('tile.slot.regenerate')}
         >
           <Icons.Sparkle size={11} />
         </button>
@@ -278,6 +281,7 @@ export function TileStudio({
   onDownloadSheet: () => void
   onDownloadZip: () => void
 }) {
+  const { t } = useI18n()
   const filledCount = tileSet.filter((s) => s.hasImage).length
   const total = tileSet.length
   const hasAny = filledCount > 0
@@ -306,9 +310,7 @@ export function TileStudio({
       <div className="flex items-center justify-center gap-2 text-[12px]">
         <Icons.Layers size={14} className="text-[color:var(--accent)]" />
         <span style={{ color: 'var(--text-secondary)' }}>
-          Tile-set mode — one AI call generates all 13 tiles as a single
-          sprite-sheet so palette and texture detail stay locked across
-          the set. Drop into Unity, Phaser, Godot, or Tiled.
+          {t('tile.intro.text')}
         </span>
       </div>
 
@@ -318,48 +320,48 @@ export function TileStudio({
           <button
             onClick={onStop}
             className="btn btn-danger"
-            title="Stop the current generation"
+            title={t('tile.action.stopTitle')}
           >
             <Icons.Stop size={14} />
-            Stop
+            {t('tile.action.stop')}
           </button>
         ) : (
           <button
             onClick={onGenerateAll}
             disabled={!prompt.trim()}
             className="btn btn-primary"
-            title="Generate the full 4×4 sprite sheet in one AI call"
+            title={t('tile.action.generateTitle')}
           >
             <Icons.Sparkle size={14} />
-            {hasAny ? 'Re-roll sheet' : 'Generate sheet (1 call)'}
+            {hasAny ? t('tile.action.reroll') : t('tile.action.generate')}
           </button>
         )}
         <button
           onClick={onDownloadSheet}
           disabled={!hasAny || generating}
           className="btn btn-secondary"
-          title="Export clean + padded sprite-sheet PNGs with a JSON manifest"
+          title={t('tile.action.sheetManifestTitle')}
         >
           <Icons.Download size={14} />
-          Sheets + manifest
+          {t('tile.action.sheetManifest')}
         </button>
         <button
           onClick={onDownloadZip}
           disabled={!hasAny || generating}
           className="btn btn-ghost"
-          title="Export individual PNGs + clean sheet + padded sheet + manifest as a ZIP"
+          title={t('tile.action.zipTitle')}
         >
           <Icons.Layers size={14} />
-          ZIP
+          {t('tile.action.zip')}
         </button>
         <button
           onClick={onClearAll}
           disabled={!hasAny || generating}
           className="btn btn-ghost"
-          title="Clear all tiles and start over"
+          title={t('tile.action.clearTitle')}
         >
           <Icons.Trash size={14} />
-          Clear
+          {t('tile.action.clear')}
         </button>
         <div
           className="rounded-full border px-2.5 py-1 font-mono text-[11px]"
@@ -371,7 +373,7 @@ export function TileStudio({
               : 'var(--text-muted)',
           }}
         >
-          {filledCount}/{total} tiles
+          {t('tile.progress.count', { filled: filledCount, total })}
           {progressMessage ? ` · ${progressMessage}` : ''}
         </div>
       </div>
@@ -383,7 +385,7 @@ export function TileStudio({
             className="text-[11px] font-medium uppercase tracking-wider"
             style={{ color: 'var(--text-muted)' }}
           >
-            Sprite sheet (4×4)
+            {t('tile.grid.header')}
           </div>
           <div
             className="grid w-full"
@@ -423,12 +425,12 @@ export function TileStudio({
             className="flex items-center justify-between text-[11px] font-medium uppercase tracking-wider"
             style={{ color: 'var(--text-muted)' }}
           >
-            <span>Platform preview</span>
+            <span>{t('tile.preview.title')}</span>
             <span
               className="font-mono normal-case tracking-normal"
               style={{ color: 'var(--text-muted)' }}
             >
-              How tiles fit together
+              {t('tile.preview.subtitle')}
             </span>
           </div>
           <PlatformPreview tileSet={tileSet} />
@@ -436,10 +438,7 @@ export function TileStudio({
             className="text-[11px]"
             style={{ color: 'var(--text-muted)' }}
           >
-            Hover a tile and click the spark to replace it (uses a separate
-            call, may drift). For best consistency, re-roll the whole sheet.
-            Body/edges are tile-locked along their loop axis; corners stand
-            alone.
+            {t('tile.preview.note')}
           </div>
         </div>
       </div>
@@ -459,7 +458,7 @@ export function TileStudio({
               className="text-[11px] font-medium uppercase tracking-wider"
               style={{ color: 'var(--text-muted)' }}
             >
-              Scene direction
+              {t('tile.scene.label')}
             </label>
             {sceneBriefLoading && (
               <span
@@ -467,7 +466,7 @@ export function TileStudio({
                 style={{ color: 'var(--accent)' }}
               >
                 <Icons.Spinner size={10} />
-                Updating…
+                {t('tile.scene.updating')}
               </span>
             )}
           </div>
@@ -475,7 +474,7 @@ export function TileStudio({
             value={sceneBrief}
             onChange={(e) => setSceneBrief(e.target.value)}
             disabled={generating || sceneBriefLoading}
-            placeholder="Optional shared art direction. If you built a parallax scene, the brief is reused here so tiles match palette and lighting."
+            placeholder={t('tile.scene.placeholder')}
             rows={2}
             className="field w-full resize-none text-[13px] leading-relaxed"
           />
@@ -491,7 +490,7 @@ export function TileStudio({
             className="text-[11px] font-medium uppercase tracking-wider"
             style={{ color: 'var(--text-muted)' }}
           >
-            Quick start
+            {t('tile.preset.label')}
           </label>
           <div className="flex flex-wrap gap-1.5">
             {TILESET_PRESETS.map((preset) => {
@@ -514,7 +513,7 @@ export function TileStudio({
                   }}
                   title={preset.prompt}
                 >
-                  {preset.label}
+                  {t(`common.tilePreset.${preset.id}`, undefined, preset.label)}
                 </button>
               )
             })}
@@ -544,7 +543,7 @@ export function TileStudio({
                 onGenerateAll()
               }
             }}
-            placeholder="Describe the material — or pick a quick start above"
+            placeholder={t('tile.prompt.placeholder')}
             className="flex-1 bg-transparent px-3 py-2.5 text-[14px] focus:outline-none"
             style={{ color: 'var(--text)' }}
           />
@@ -558,18 +557,21 @@ export function TileStudio({
               disabled={generating}
               className="select-styled cursor-pointer border-0 bg-transparent py-2 pl-3 pr-7 text-[13px] focus:outline-none"
               style={{ color: 'var(--text-secondary)' }}
-              title="Art style for the tile-set"
+              title={t('tile.style.title')}
             >
               {ART_STYLE_GROUPS.map((group) =>
-                group.options.length === 1 && group.label === 'Match original' ? (
+                group.options.length === 1 && group.id === 'match-original' ? (
                   <option key={group.options[0].value} value={group.options[0].value}>
-                    {group.options[0].label}
+                    {t(`common.artStyle.${group.options[0].value}`, undefined, group.options[0].label)}
                   </option>
                 ) : (
-                  <optgroup key={group.label} label={group.label}>
+                  <optgroup
+                    key={group.id}
+                    label={t(`common.artStyleGroup.${group.id}`, undefined, group.label)}
+                  >
                     {group.options.map((o) => (
                       <option key={o.value} value={o.value}>
-                        {o.label}
+                        {t(`common.artStyle.${o.value}`, undefined, o.label)}
                       </option>
                     ))}
                   </optgroup>

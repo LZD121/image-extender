@@ -1,4 +1,5 @@
 'use client'
+import { translateServerError } from '@/app/i18n/serverErrors'
 
 import { useCallback, useEffect, useState } from 'react'
 import {
@@ -10,6 +11,7 @@ import {
 } from '@/app/lib/libraryClient'
 import type { AssetKind, LibraryIndex } from '@/app/lib/libraryTypes'
 import { buildAssetMeta, slugify, type CollectedAsset } from '@/app/lib/libraryCollect'
+import { useI18n } from '@/app/lib/i18n'
 
 export type LibraryPanelProps = {
   /** What the current studio would save, or null when there is nothing. */
@@ -23,12 +25,12 @@ export type LibraryPanelProps = {
   onSaved?: (id: string) => void
 }
 
-const KIND_LABEL: Record<AssetKind, string> = {
-  tiles: 'Tiles',
-  sprites: 'Sprites',
-  props: 'Props',
-  parallax: 'Parallax',
-  extend: 'Extender',
+const KIND_KEY: Record<AssetKind, string> = {
+  tiles: 'shell.library.kind.tiles',
+  sprites: 'shell.library.kind.sprites',
+  props: 'shell.library.kind.props',
+  parallax: 'shell.library.kind.parallax',
+  extend: 'shell.library.kind.extend',
 }
 
 /**
@@ -42,6 +44,7 @@ export default function LibraryPanel({
   onLoad,
   onSaved,
 }: LibraryPanelProps) {
+  const { t } = useI18n()
   const [index, setIndex] = useState<LibraryIndex | null>(null)
   const [status, setStatus] = useState<string>('')
   const [error, setError] = useState<string>('')
@@ -55,9 +58,15 @@ export default function LibraryPanel({
       setError('')
     } catch (err) {
       setIndex(null)
-      setError(err instanceof LibraryRequestError ? err.message : 'asset library unavailable')
+      // Route errors are server-authored English; translateServerError maps the
+      // app's own ones onto the active locale (unknown text passes through).
+      setError(
+        err instanceof LibraryRequestError
+          ? translateServerError(err.message, t)
+          : t('shell.library.unavailable')
+      )
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     void refresh()
@@ -67,7 +76,7 @@ export default function LibraryPanel({
     setConflict(false)
     const collected = pending ? await pending() : null
     if (!collected) {
-      setStatus('Nothing to save yet — generate something first.')
+      setStatus(t('shell.library.nothingToSave'))
       return
     }
     setStaged(collected)
@@ -79,7 +88,7 @@ export default function LibraryPanel({
     const slug = slugOverride ?? dialog?.slug
     if (!dialog || !slug || !staged) return
     const meta = buildAssetMeta(staged, { project, slug })
-    setStatus('Saving…')
+    setStatus(t('shell.library.saving'))
     setError('')
     try {
       const res = await saveAsset({
@@ -91,7 +100,7 @@ export default function LibraryPanel({
         overwrite,
       })
       onSaved?.(res.path)
-      setStatus(`Saved ${res.path}`)
+      setStatus(t('shell.library.saved', { path: res.path }))
       setDialog(null)
       setConflict(false)
       setStaged(null)
@@ -99,10 +108,10 @@ export default function LibraryPanel({
     } catch (err) {
       if (err instanceof LibraryRequestError && err.status === 409) {
         setConflict(true)
-        setError(`“${slug}” already exists in ${project}.`)
+        setError(t('shell.library.exists', { slug, project }))
         return
       }
-      setError(err instanceof Error ? err.message : 'save failed')
+      setError(err instanceof Error ? translateServerError(err.message, t) : t('shell.library.saveFailed'))
     }
   }
 
@@ -112,16 +121,16 @@ export default function LibraryPanel({
       setStaged(null)
       await refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'delete failed')
+      setError(err instanceof Error ? translateServerError(err.message, t) : t('shell.library.deleteFailed'))
     }
   }
 
   return (
     <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-sm">
       <div className="mb-2 flex items-center gap-2">
-        <span className="font-medium">Asset library</span>
+        <span className="font-medium">{t('shell.library.title')}</span>
         <input
-          aria-label="project"
+          aria-label={t('shell.library.projectAria')}
           value={project}
           onChange={(e) => onProjectChange(slugify(e.target.value))}
           className="w-28 rounded bg-white/5 px-2 py-0.5 text-xs"
@@ -132,14 +141,14 @@ export default function LibraryPanel({
           disabled={!pending}
           className="rounded bg-white/10 px-2 py-0.5 text-xs disabled:opacity-40"
         >
-          Save to library
+          {t('shell.library.save')}
         </button>
         <button
           type="button"
           onClick={() => void refresh()}
           className="rounded bg-white/5 px-2 py-0.5 text-xs"
         >
-          Refresh
+          {t('shell.library.refresh')}
         </button>
       </div>
 
@@ -149,9 +158,9 @@ export default function LibraryPanel({
       {dialog && (
         <div className="my-2 rounded border border-white/10 p-2">
           <label className="text-xs">
-            Slug
+            {t('shell.library.slug')}
             <input
-              aria-label="slug"
+              aria-label={t('shell.library.slugAria')}
               value={dialog.slug}
               onChange={(e) => setDialog({ ...dialog, slug: slugify(e.target.value) })}
               className="ml-2 rounded bg-white/5 px-2 py-0.5"
@@ -165,14 +174,14 @@ export default function LibraryPanel({
                   className="rounded bg-amber-500/20 px-2 py-0.5 text-xs"
                   onClick={() => void commitSave(true)}
                 >
-                  Overwrite
+                  {t('shell.library.overwrite')}
                 </button>
                 <button
                   type="button"
                   className="rounded bg-white/5 px-2 py-0.5 text-xs"
                   onClick={() => void commitSave(false, slugify(`${dialog.slug}-v2`))}
                 >
-                  Save as {slugify(`${dialog.slug}-v2`)}
+                  {t('shell.library.saveAs', { slug: slugify(`${dialog.slug}-v2`) })}
                 </button>
               </>
             ) : (
@@ -181,7 +190,7 @@ export default function LibraryPanel({
                 className="rounded bg-white/10 px-2 py-0.5 text-xs"
                 onClick={() => void commitSave(false)}
               >
-                Save
+                {t('common.action.save')}
               </button>
             )}
             <button
@@ -193,7 +202,7 @@ export default function LibraryPanel({
                 setStaged(null)
               }}
             >
-              Cancel
+              {t('common.action.cancel')}
             </button>
           </div>
         </div>
@@ -204,7 +213,7 @@ export default function LibraryPanel({
           <div className="text-xs uppercase tracking-wide text-white/40">{p.name}</div>
           {p.kinds.map((k) => (
             <div key={k.name} className="mt-1">
-              <div className="text-xs text-white/60">{KIND_LABEL[k.name]}</div>
+              <div className="text-xs text-white/60">{t(KIND_KEY[k.name])}</div>
               <ul className="flex flex-wrap gap-2">
                 {k.assets.map((a) => (
                   <li key={a.slug} className="flex items-center gap-1 rounded bg-white/5 p-1">
@@ -229,7 +238,7 @@ export default function LibraryPanel({
                     </button>
                     <button
                       type="button"
-                      aria-label={`delete ${a.slug}`}
+                      aria-label={t('shell.library.deleteAria', { slug: a.slug })}
                       className="text-xs text-white/40 hover:text-red-400"
                       onClick={() => void remove(k.name, a.slug)}
                     >

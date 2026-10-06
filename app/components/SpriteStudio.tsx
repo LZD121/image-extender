@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Icons } from '@/app/components/icons'
+import { useI18n } from '@/app/lib/i18n'
 import { ART_STYLE_GROUPS } from '@/app/lib/artStyles'
 import { SPRITE_ANIMATIONS, SPRITE_FRAME_COUNT, SPRITE_FRAME_SIZE, SPRITE_SHEET_H, SPRITE_SHEET_W, SpriteAnimType, SpriteFrame, SpriteSheet } from '@/app/lib/sprite'
 import { BODY_PLANS, BODY_PLAN_ORDER, BodyPlan } from '@/app/lib/bodyPlans'
@@ -23,6 +24,7 @@ export function SpriteAnimationPlayer({
   anchorImageUrl?: string | null
   anchorUploaded?: boolean
 }) {
+  const { t } = useI18n()
   const [currentIdx, setCurrentIdx] = useState(0)
   // Excluded frames (user-disabled) never play back.
   const populated = frames.filter((f) => !!f.imageUrl && !f.disabled)
@@ -86,14 +88,18 @@ export function SpriteAnimationPlayer({
         className="flex items-center justify-between text-[11px] font-medium uppercase tracking-wider"
         style={{ color: 'var(--text-muted)' }}
       >
-        <span>Live playback</span>
+        <span>{t('sprite.playback.title')}</span>
         <span
           className="font-mono normal-case tracking-normal"
           style={{ color: 'var(--text-muted)' }}
         >
           {hasFrames
-            ? `Frame ${currentIdx + 1}/${populated.length} · ${fps} FPS`
-            : 'No frames yet'}
+            ? t('sprite.playback.frame', {
+                index: currentIdx + 1,
+                total: populated.length,
+                fps,
+              })
+            : t('sprite.playback.noFrames')}
         </span>
       </div>
 
@@ -112,7 +118,7 @@ export function SpriteAnimationPlayer({
         {activeFrame?.imageUrl ? (
           <img
             src={activeFrame.imageUrl}
-            alt={`Frame ${activeFrame.index + 1}`}
+            alt={t('sprite.frame.alt', { index: activeFrame.index + 1 })}
             draggable={false}
             style={{
               width: '100%',
@@ -127,7 +133,7 @@ export function SpriteAnimationPlayer({
           <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-6">
             <img
               src={anchorImageUrl}
-              alt="Locked character"
+              alt={t('sprite.playback.lockedCharacter')}
               draggable={false}
               style={{
                 maxWidth: '62%',
@@ -146,13 +152,15 @@ export function SpriteAnimationPlayer({
                   border: '1px solid var(--accent)',
                 }}
               >
-                {anchorUploaded ? 'Uploaded character' : 'Character ready'}
+                {anchorUploaded
+                  ? t('sprite.playback.uploadedCharacter')
+                  : t('sprite.playback.characterReady')}
               </span>
               <span
                 className="text-[12px]"
                 style={{ color: 'var(--text-muted)' }}
               >
-                Pick an animation and hit generate to bring it to life
+                {t('sprite.playback.characterHint')}
               </span>
             </div>
           </div>
@@ -161,7 +169,7 @@ export function SpriteAnimationPlayer({
             className="text-[13px]"
             style={{ color: 'var(--text-muted)' }}
           >
-            Generate a sheet to see the animation play
+            {t('sprite.playback.empty')}
           </div>
         )}
       </div>
@@ -172,8 +180,8 @@ export function SpriteAnimationPlayer({
           onClick={handleTogglePlay}
           disabled={!hasFrames}
           className="icon-btn"
-          aria-label={playing ? 'Pause' : 'Play'}
-          title={playing ? 'Pause' : 'Play'}
+          aria-label={playing ? t('sprite.playback.pause') : t('sprite.playback.play')}
+          title={playing ? t('sprite.playback.pause') : t('sprite.playback.play')}
           style={{ opacity: hasFrames ? 1 : 0.4 }}
         >
           {playing ? <Icons.Pause size={14} /> : <Icons.Play size={14} />}
@@ -189,7 +197,7 @@ export function SpriteAnimationPlayer({
           }}
           disabled={!hasFrames}
           className="parallax-slider flex-1"
-          aria-label="Scrub frame"
+          aria-label={t('sprite.playback.scrub')}
         />
       </div>
     </div>
@@ -210,6 +218,7 @@ export function SpriteFrameCell({
   loading?: boolean
   onToggle?: (index: number) => void
 }) {
+  const { t } = useI18n()
   const hasImage = !!frame.imageUrl
   const disabled = !!frame.disabled
   const interactive = hasImage && !!onToggle && !loading
@@ -243,15 +252,15 @@ export function SpriteFrameCell({
       title={
         interactive
           ? disabled
-            ? `Frame ${frame.index + 1} — excluded · click to include`
-            : `Frame ${frame.index + 1} — click to exclude from animation & exports`
-          : `Frame ${frame.index + 1}`
+            ? t('sprite.frame.includeHint', { index: frame.index + 1 })
+            : t('sprite.frame.excludeHint', { index: frame.index + 1 })
+          : t('sprite.frame.hint', { index: frame.index + 1 })
       }
     >
       {hasImage ? (
         <img
           src={frame.imageUrl as string}
-          alt={`Frame ${frame.index + 1}`}
+          alt={t('sprite.frame.alt', { index: frame.index + 1 })}
           draggable={false}
           className="block h-full w-full"
           style={{
@@ -303,7 +312,7 @@ export function SpriteFrameCell({
               boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
             }}
           >
-            Excluded
+            {t('sprite.frame.excluded')}
           </span>
         </div>
       )}
@@ -396,10 +405,17 @@ export function SpriteStudio({
   onDownloadZip: () => void
   onToggleFrame: (index: number) => void
 }) {
+  const { t } = useI18n()
   const [playing, setPlaying] = useState(true)
   const [dragOver, setDragOver] = useState(false)
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const spec = SPRITE_ANIMATIONS[selectedAnim]
+  // Lower-cased animation name for mid-sentence button copy ("Generate idle").
+  const animLabel = t(
+    `common.anim.${selectedAnim}.label`,
+    undefined,
+    spec.label
+  ).toLowerCase()
   const filledCount = sheet.frames.filter((f) => !!f.imageUrl).length
   const activeCount = sheet.frames.filter((f) => !!f.imageUrl && !f.disabled).length
   const excludedCount = filledCount - activeCount
@@ -418,9 +434,7 @@ export function SpriteStudio({
       <div className="flex items-center justify-center gap-2 text-[12px]">
         <Icons.Play size={12} className="text-[color:var(--accent)]" />
         <span style={{ color: 'var(--text-secondary)' }}>
-          Sprite mode — pick a body plan, then an animation. Pass 1 generates a
-          character anchor; Pass 2 paints all 8 keyframes onto a deterministic
-          pose map. Re-use the same character across multiple animations.
+          {t('sprite.intro')}
         </span>
       </div>
 
@@ -431,7 +445,7 @@ export function SpriteStudio({
           className="mr-1 text-[11px] font-medium uppercase tracking-wider"
           style={{ color: 'var(--text-muted)' }}
         >
-          Body plan
+          {t('sprite.bodyPlan.label')}
         </span>
         {BODY_PLAN_ORDER.map((planId) => {
           const plan = BODY_PLANS[planId]
@@ -450,9 +464,9 @@ export function SpriteStudio({
                 cursor: generating ? 'not-allowed' : 'pointer',
                 opacity: generating ? 0.5 : 1,
               }}
-              title={plan.hint}
+              title={t(`common.bodyPlan.${planId}.hint`, undefined, plan.hint)}
             >
-              {plan.label}
+              {t(`common.bodyPlan.${planId}.label`, undefined, plan.label)}
             </button>
           )
         })}
@@ -480,16 +494,25 @@ export function SpriteStudio({
               }}
               title={
                 hasSaved
-                  ? `${animSpec.hint} · saved animation — click to view`
-                  : animSpec.hint
+                  ? t(
+                      'sprite.anim.savedHint',
+                      {
+                        hint: t(
+                          `common.anim.${animType}.hint`,
+                          undefined,
+                          animSpec.hint
+                        ),
+                      }
+                    )
+                  : t(`common.anim.${animType}.hint`, undefined, animSpec.hint)
               }
             >
-              {animSpec.label}
+              {t(`common.anim.${animType}.label`, undefined, animSpec.label)}
               {hasSaved && (
                 <span
                   className="inline-block h-1.5 w-1.5 rounded-full"
                   style={{ background: 'var(--accent)' }}
-                  aria-label="has saved animation"
+                  aria-label={t('sprite.anim.savedBadge')}
                 />
               )}
             </button>
@@ -503,10 +526,10 @@ export function SpriteStudio({
           <button
             onClick={onStop}
             className="btn btn-danger"
-            title="Stop the current generation"
+            title={t('sprite.action.stopHint')}
           >
             <Icons.Stop size={14} />
-            Stop
+            {t('sprite.action.stop')}
           </button>
         ) : (
           <button
@@ -515,16 +538,28 @@ export function SpriteStudio({
             className="btn btn-primary"
             title={
               anchor
-                ? `Generate the ${spec.label.toLowerCase()} sheet for the existing character (skips the anchor pass — faster)`
-                : `Two-pass generation: lock character (Pass 1) + paint ${spec.label.toLowerCase()} sheet (Pass 2)`
+                ? t('sprite.action.generateTitle', {
+                    anim: t(
+                      `common.anim.${selectedAnim}.label`,
+                      undefined,
+                      spec.label
+                    ).toLowerCase(),
+                  })
+                : t('sprite.action.lockTitle', {
+                    anim: t(
+                      `common.anim.${selectedAnim}.label`,
+                      undefined,
+                      spec.label
+                    ).toLowerCase(),
+                  })
             }
           >
             <Icons.Sparkle size={14} />
             {anchor
               ? hasAny
-                ? `Re-roll ${spec.label.toLowerCase()}`
-                : `Generate ${spec.label.toLowerCase()}`
-              : `Lock character + ${spec.label.toLowerCase()}`}
+                ? t('sprite.action.reroll', { anim: animLabel })
+                : t('sprite.action.generate', { anim: animLabel })
+              : t('sprite.action.lock', { anim: animLabel })}
           </button>
         )}
         {anchor && !generating && (
@@ -532,38 +567,38 @@ export function SpriteStudio({
             onClick={onRerollCharacter}
             disabled={!prompt.trim()}
             className="btn btn-secondary"
-            title="Discard the current character and re-roll a fresh anchor + sheet"
+            title={t('sprite.action.rerollCharacterHint')}
           >
             <Icons.Refresh size={14} />
-            Re-roll character
+            {t('sprite.action.rerollCharacter')}
           </button>
         )}
         <button
           onClick={onDownloadSheet}
           disabled={!hasAny || generating}
           className="btn btn-secondary"
-          title="Export grid sheet + horizontal strip + JSON manifest"
+          title={t('sprite.action.downloadSheetHint')}
         >
           <Icons.Download size={14} />
-          Sheets + manifest
+          {t('sprite.action.downloadSheet')}
         </button>
         <button
           onClick={onDownloadZip}
           disabled={!hasAny || generating}
           className="btn btn-ghost"
-          title="Export individual frame PNGs + grid sheet + strip + manifest as a ZIP"
+          title={t('sprite.action.downloadZipHint')}
         >
           <Icons.Layers size={14} />
-          ZIP
+          {t('sprite.action.downloadZip')}
         </button>
         <button
           onClick={onClear}
           disabled={(!hasAny && !anchor) || generating}
           className="btn btn-ghost"
-          title="Clear frames, character anchor, and prompt"
+          title={t('sprite.action.clearHint')}
         >
           <Icons.Trash size={14} />
-          Clear
+          {t('sprite.action.clear')}
         </button>
         <div
           className="rounded-full border px-2.5 py-1 font-mono text-[11px]"
@@ -573,7 +608,10 @@ export function SpriteStudio({
             color: hasAny ? 'var(--text-secondary)' : 'var(--text-muted)',
           }}
         >
-          {filledCount}/{SPRITE_FRAME_COUNT} frames
+          {t('sprite.action.frameCount', {
+            filled: filledCount,
+            total: SPRITE_FRAME_COUNT,
+          })}
           {progressMessage ? ` · ${progressMessage}` : ''}
         </div>
       </div>
@@ -603,7 +641,7 @@ export function SpriteStudio({
               className="text-[11px] font-medium uppercase tracking-wider"
               style={{ color: 'var(--text-muted)' }}
             >
-              FPS
+              {t('sprite.fps.label')}
             </label>
             <input
               type="range"
@@ -612,7 +650,7 @@ export function SpriteStudio({
               value={fps}
               onChange={(e) => setFps(Number(e.target.value))}
               className="parallax-slider flex-1"
-              aria-label="Playback FPS"
+              aria-label={t('sprite.playback.fps')}
             />
             <span
               className="w-9 text-right font-mono text-[12px]"
@@ -628,12 +666,15 @@ export function SpriteStudio({
             className="flex items-center justify-between text-[11px] font-medium uppercase tracking-wider"
             style={{ color: 'var(--text-muted)' }}
           >
-            <span>Frame sheet (4×2)</span>
+            <span>{t('sprite.sheet.title')}</span>
             <span
               className="font-mono normal-case tracking-normal"
               style={{ color: 'var(--text-muted)' }}
             >
-              {SPRITE_SHEET_W}×{SPRITE_SHEET_H} export
+              {t('sprite.sheet.exportSize', {
+                width: SPRITE_SHEET_W,
+                height: SPRITE_SHEET_H,
+              })}
             </span>
           </div>
           <div
@@ -658,16 +699,17 @@ export function SpriteStudio({
             className="text-[11px]"
             style={{ color: 'var(--text-muted)' }}
           >
-            Click a frame to exclude it from the animation and all exports;
-            click again to bring it back.
+            {t('sprite.grid.hint')}
             {excludedCount > 0 && (
               <span style={{ color: 'var(--danger, #e5484d)' }}>
                 {' '}
-                {excludedCount} excluded · {activeCount} active.
+                {t('sprite.grid.excludedSummary', {
+                  excluded: excludedCount,
+                  active: activeCount,
+                })}
               </span>
             )}{' '}
-            Row-major reading order: top-left is frame 1, top-right is
-            frame 4, bottom-left is frame 5.
+            {t('sprite.grid.readingOrder')}
           </div>
 
           {/* Command rail — lives under the sheet column so the layout reads
@@ -682,7 +724,7 @@ export function SpriteStudio({
             className="text-[11px] font-medium uppercase tracking-wider"
             style={{ color: 'var(--text-muted)' }}
           >
-            Character
+            {t('sprite.character.label')}
           </label>
 
           {/* Upload drop-zone — drag & drop or click. Primary path for users
@@ -724,7 +766,7 @@ export function SpriteStudio({
               cursor: generating ? 'not-allowed' : 'pointer',
               opacity: generating ? 0.5 : 1,
             }}
-            title="Upload your own character image and animate it instead of generating one"
+            title={t('sprite.upload.buttonHint')}
           >
             <span
               className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors"
@@ -742,14 +784,14 @@ export function SpriteStudio({
                 style={{ color: 'var(--text)' }}
               >
                 {anchor?.uploaded
-                  ? 'Replace uploaded character'
-                  : 'Upload your own character'}
+                  ? t('sprite.upload.replace')
+                  : t('sprite.upload.title')}
               </span>
               <span
                 className="text-[11px]"
                 style={{ color: 'var(--text-muted)' }}
               >
-                Drag &amp; drop or click to browse · transparent PNG works best
+                {t('sprite.upload.hint')}
               </span>
             </span>
           </button>
@@ -769,10 +811,10 @@ export function SpriteStudio({
                 cursor: generating ? 'not-allowed' : 'pointer',
                 opacity: generating ? 0.5 : 1,
               }}
-              title="Remove the uploaded character and use a prompt instead"
+              title={t('sprite.upload.removeHint')}
             >
               <Icons.Trash size={12} />
-              Remove uploaded character
+              {t('sprite.upload.remove')}
             </button>
           )}
 
@@ -786,7 +828,7 @@ export function SpriteStudio({
               className="text-[10px] font-medium uppercase tracking-wider"
               style={{ color: 'var(--text-muted)' }}
             >
-              or pick a starter
+              {t('sprite.starters.divider')}
             </span>
             <span
               className="h-px flex-1"
@@ -815,7 +857,7 @@ export function SpriteStudio({
                   }}
                   title={preset.prompt}
                 >
-                  {preset.label}
+                  {t(`common.creature.${preset.id}`, undefined, preset.label)}
                 </button>
               )
             })}
@@ -847,8 +889,8 @@ export function SpriteStudio({
             }}
             placeholder={
               anchor?.uploaded
-                ? 'Optional: describe the character to refine results'
-                : 'Describe the character — or pick a starter above'
+                ? t('sprite.prompt.placeholderUploaded')
+                : t('sprite.prompt.placeholder')
             }
             className="flex-1 bg-transparent px-3 py-2.5 text-[14px] focus:outline-none"
             style={{ color: 'var(--text)' }}
@@ -863,18 +905,21 @@ export function SpriteStudio({
               disabled={generating}
               className="select-styled cursor-pointer border-0 bg-transparent py-2 pl-3 pr-7 text-[13px] focus:outline-none"
               style={{ color: 'var(--text-secondary)' }}
-              title="Art style for the sprite sheet"
+              title={t('sprite.artStyle.title')}
             >
               {ART_STYLE_GROUPS.map((group) =>
-                group.options.length === 1 && group.label === 'Match original' ? (
+                group.options.length === 1 && group.id === 'match-original' ? (
                   <option key={group.options[0].value} value={group.options[0].value}>
-                    {group.options[0].label}
+                    {t(`common.artStyle.${group.options[0].value}`, undefined, group.options[0].label)}
                   </option>
                 ) : (
-                  <optgroup key={group.label} label={group.label}>
+                  <optgroup
+                    key={group.id}
+                    label={t(`common.artStyleGroup.${group.id}`, undefined, group.label)}
+                  >
                     {group.options.map((o) => (
                       <option key={o.value} value={o.value}>
-                        {o.label}
+                        {t(`common.artStyle.${o.value}`, undefined, o.label)}
                       </option>
                     ))}
                   </optgroup>

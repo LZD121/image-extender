@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Icons } from '@/app/components/icons'
+import { translateServerError } from '@/app/i18n/serverErrors'
 import { ART_STYLE_GROUPS } from '@/app/lib/artStyles'
+import { useI18n } from '@/app/lib/i18n'
 import { MODELS, gatewayModelOption, getModelConfig, maskKey, type ModelOption } from '@/app/lib/models'
 import {
   PROVIDERS,
@@ -22,6 +24,29 @@ import { fetchProviderTable, probeProvider, readCachedModels, writeCachedModels 
  */
 function labelWithSupplier(model: GatewayModel): string {
   return model.vendor && model.vendor !== vendorOf(model.id) ? `${model.id} — ${model.vendor}` : model.id
+}
+
+/**
+ * Splices one inline element into a translated sentence: the whole sentence is
+ * a single message, and `node` replaces `match` wherever it occurs.
+ */
+function withInline(text: string, match: string, node: React.ReactNode): React.ReactNode {
+  const at = text.indexOf(match)
+  if (at === -1) return text
+  return (
+    <>
+      {text.slice(0, at)}
+      {node}
+      {text.slice(at + match.length)}
+    </>
+  )
+}
+
+const mono = (value: string) => <code className="font-mono">{value}</code>
+
+/** `withInline` for the common case: the spliced fragment is monospace code. */
+function withCode(text: string, code: string): React.ReactNode {
+  return withInline(text, code, mono(code))
 }
 
 /** Radio-style choice card — shared by the gateway list and the model list. */
@@ -99,6 +124,7 @@ export function SettingsDrawer({
   const [table, setTable] = useState<ProviderStatus[]>(() =>
     PROVIDER_IDS.map((id) => ({ ...PROVIDERS[id], hasEnvKey: false })),
   )
+  const { t } = useI18n()
   const [models, setModels] = useState<GatewayModel[]>([])
   const [status, setStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle')
   const [message, setMessage] = useState<string | null>(null)
@@ -214,14 +240,14 @@ export function SettingsDrawer({
           className="flex h-14 shrink-0 items-center justify-between border-b px-5"
           style={{ borderColor: 'var(--border)' }}
         >
-          <h2 className="text-[14px] font-semibold tracking-tight">Settings</h2>
-          <button onClick={onClose} className="icon-btn" aria-label="Close">
+          <h2 className="text-[14px] font-semibold tracking-tight">{t('modals.settings.title')}</h2>
+          <button onClick={onClose} className="icon-btn" aria-label={t('common.action.close')}>
             <Icons.X size={16} />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
-          <Section title="Gateway">
+          <Section title={t('modals.gateway.section')}>
             <div className="space-y-2">
               {table.map((p) => (
                 <ChoiceCard
@@ -229,81 +255,101 @@ export function SettingsDrawer({
                   title={p.label}
                   active={p.id === provider}
                   onClick={() => onSelectProvider(p.id)}
-                  detail={
-                    <>
-                      <code className="font-mono">{p.baseUrl}</code>
-                      {p.keyRequired ? ' · key required' : ' · no key needed'}
-                    </>
-                  }
+                  detail={withInline(
+                    t(
+                      p.keyRequired
+                        ? 'modals.gateway.cardKeyRequired'
+                        : 'modals.gateway.cardNoKey',
+                      { url: p.baseUrl }
+                    ),
+                    p.baseUrl,
+                    <code className="font-mono">{p.baseUrl}</code>
+                  )}
                 />
               ))}
             </div>
             <p className="mt-2 text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              {active.hint}
+              {t(`modals.provider.${active.id}.hint`, undefined, active.hint)}
             </p>
             <div className="mt-3 flex items-center gap-2">
               <button
                 onClick={() => setRecheck((r) => r + 1)}
                 disabled={status === 'testing'}
                 className="btn btn-secondary"
-                title="Ask the gateway for its model list again"
+                title={t('modals.gateway.checkTitle')}
               >
                 {status === 'testing' ? <Icons.Spinner size={14} /> : <Icons.Refresh size={14} />}
-                {status === 'testing' ? 'Checking…' : models.length > 0 ? 'Re-check' : 'Check connection'}
+                {status === 'testing'
+                  ? t('modals.gateway.checking')
+                  : models.length > 0
+                    ? t('modals.gateway.recheck')
+                    : t('modals.gateway.check')}
               </button>
               {status === 'error' && (
                 <span
                   className="inline-flex min-w-0 items-center gap-1 text-[11px]"
                   style={{ color: 'var(--danger)' }}
-                  title={message ?? 'unreachable'}
+                  title={
+                    message != null ? translateServerError(message, t) : t('modals.gateway.unreachable')
+                  }
                 >
                   <Icons.AlertTriangle size={12} className="shrink-0" />
-                  <span className="truncate">{message ?? 'unreachable'}</span>
+                  <span className="truncate">
+                    {message != null ? translateServerError(message, t) : t('modals.gateway.unreachable')}
+                  </span>
                 </span>
               )}
               {status !== 'error' && models.length > 0 && (
                 <span className="font-mono text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                  {models.length} models · {pick.verifiedImage.length + pick.otherImage.length} image (
-                  {pick.verifiedImage.length} verified) ·{' '}
-                  {new Set(models.map((m) => m.vendor)).size} vendors
+                  {t('modals.gateway.count', {
+                    count: models.length,
+                    image: pick.verifiedImage.length + pick.otherImage.length,
+                    verified: pick.verifiedImage.length,
+                    vendors: new Set(models.map((m) => m.vendor)).size,
+                  })}
                 </span>
               )}
             </div>
             {status === 'testing' && models.length === 0 && (
               <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                Asking {active.label} what it offers…
+                {t('modals.gateway.asking', { provider: active.label })}
               </p>
             )}
           </Section>
 
-          <Section title="Image model">
+          <Section title={t('modals.models.section')}>
             {status === 'error' && (
               <p className="mb-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                Could not list {active.label}&apos;s models, so the last known list is shown.
+                {t('modals.models.noneListed', { provider: active.label })}
               </p>
             )}
             {status === 'ok' && pick.verifiedImage.length + pick.otherImage.length === 0 && (
               <p className="mb-2 text-[12px]" style={{ color: 'var(--danger)' }}>
                 <Icons.AlertTriangle size={12} className="mr-1 inline align-[-2px]" />
-                {active.label} listed no image models — generation will fail until it does.
+                {t('modals.models.noImageModels', { provider: active.label })}
               </p>
             )}
             {models.length === 0 && status !== 'testing' && provider !== 'openrouter' && (
               <p className="mb-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                No model list from {active.label} yet, so its default is shown.
+                {t('modals.models.noList', { provider: active.label })}
               </p>
             )}
             {models.length > 0 && (
               <p className="mb-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                Only models this project has verified are listed
                 {pick.otherImage.length > 0
-                  ? ` — ${active.label} reports ${pick.otherImage.length} more that this project has not run.`
-                  : '.'}
+                  ? t('modals.models.verifiedMore', {
+                      provider: active.label,
+                      count: pick.otherImage.length,
+                    })
+                  : t('modals.models.verifiedOnly')}
                 {textOnlySuppliers.length > 0 && (
                   <>
                     {' '}
-                    Suppliers here that generate no images at all:{' '}
-                    <span className="font-mono">{textOnlySuppliers.join(', ')}</span>.
+                    {withInline(
+                      t('modals.models.textOnly', { vendors: textOnlySuppliers.join(', ') }),
+                      textOnlySuppliers.join(', '),
+                      <span className="font-mono">{textOnlySuppliers.join(', ')}</span>
+                    )}
                   </>
                 )}
               </p>
@@ -326,7 +372,7 @@ export function SettingsDrawer({
                         background: on ? 'var(--accent-bg)' : 'var(--bg-elev)',
                         color: on ? 'var(--accent)' : 'var(--text-secondary)',
                       }}
-                      title={`Only models served by ${option.id}`}
+                      title={t('modals.models.filterTitle', { vendor: option.id })}
                     >
                       {option.id} {option.count}
                     </button>
@@ -345,10 +391,10 @@ export function SettingsDrawer({
                     onClick={() => setSelectedModel(m.value)}
                     detail={
                       <>
-                        {m.hint ? `${m.hint} · ` : ''}
+                        {m.hint ? `${t(`common.model.${m.value}.hint`, undefined, m.hint)} · ` : ''}
                         <code className="font-mono">{m.value}</code>
                         {unverified && (
-                          <span style={{ color: 'var(--danger)' }}> · not verified here</span>
+                          <span style={{ color: 'var(--danger)' }}> · {t('modals.models.unverified')}</span>
                         )}
                       </>
                     }
@@ -365,19 +411,26 @@ export function SettingsDrawer({
               >
                 {showAll ? <Icons.EyeOff size={13} /> : <Icons.Eye size={13} />}
                 {showAll
-                  ? `Hide the ${pick.otherImage.length} unverified models`
-                  : `Show ${pick.otherImage.length} more that ${active.label} reports (unverified)`}
+                  ? t('modals.models.hideCount', { count: pick.otherImage.length })
+                  : t('modals.models.showCount', {
+                      count: pick.otherImage.length,
+                      provider: active.label,
+                    })}
               </button>
             )}
             <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-              Ids come from the gateway itself, filtered to the ones this project
-              has actually run — a gateway reporting a model is not a promise that
-              it answers. One call ≈ {activeConfig.approxSecondsPerCall}s
-              {activeConfig.maxAttempts > 1 ? ` · up to ${activeConfig.maxAttempts} seam variants per extension` : ' · single attempt'}.
+              {activeConfig.maxAttempts > 1
+                ? t('modals.models.footnote', {
+                    seconds: activeConfig.approxSecondsPerCall,
+                    attempts: activeConfig.maxAttempts,
+                  })
+                : t('modals.models.footnoteSingle', {
+                    seconds: activeConfig.approxSecondsPerCall,
+                  })}
             </p>
           </Section>
 
-          <Section title="Art-director model">
+          <Section title={t('modals.qa.section')}>
             <select
               value={qaModel}
               onChange={(e) => setQaModel(e.target.value)}
@@ -386,7 +439,7 @@ export function SettingsDrawer({
               {![...qaVerified, ...qaOther].some((m) => m.id === qaModel) && (
                 <option value={qaModel}>{qaModel}</option>
               )}
-              <optgroup label={pick.curated ? 'Models' : 'Verified here'}>
+              <optgroup label={pick.curated ? t('modals.qa.groupModels') : t('modals.qa.groupVerified')}>
                 {qaVerified.map((m) => (
                   <option key={m.id} value={m.id}>
                     {labelWithSupplier(m)}
@@ -394,7 +447,7 @@ export function SettingsDrawer({
                 ))}
               </optgroup>
               {qaOther.length > 0 && (
-                <optgroup label={`${active.label} also reports (unverified)`}>
+                <optgroup label={t('modals.qa.groupOther', { provider: active.label })}>
                   {qaOther.map((m) => (
                     <option key={m.id} value={m.id}>
                       {labelWithSupplier(m)}
@@ -404,19 +457,21 @@ export function SettingsDrawer({
               )}
             </select>
             <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-              Writes the shared scene brief and reviews generated tile sets and
-              sprite sheets, so it has to accept images. The verified group is what
-              this project has run; the other group is what the gateway reports.
+              {t('modals.qa.body')}
               {qaSuppliers.length > 0 && (
                 <>
                   {' '}
-                  Suppliers here: <span className="font-mono">{qaSuppliers.join(', ')}</span>.
+                  {withInline(
+                    t('modals.qa.suppliers', { vendors: qaSuppliers.join(', ') }),
+                    qaSuppliers.join(', '),
+                    <span className="font-mono">{qaSuppliers.join(', ')}</span>
+                  )}
                 </>
               )}
             </p>
           </Section>
 
-          <Section title={`${active.label} key`}>
+          <Section title={t('modals.key.section', { provider: active.label })}>
             {apiKey ? (
               <div
                 className="flex items-center gap-3 rounded-[var(--radius-sm)] p-3"
@@ -432,7 +487,7 @@ export function SettingsDrawer({
                   <Icons.Key size={14} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[12px] font-medium">Key saved locally</div>
+                  <div className="text-[12px] font-medium">{t('modals.key.saved')}</div>
                   <div
                     className="truncate font-mono text-[11px]"
                     style={{ color: 'var(--text-muted)' }}
@@ -443,16 +498,16 @@ export function SettingsDrawer({
                 <button
                   onClick={onEditApiKey}
                   className="icon-btn"
-                  aria-label="Edit key"
-                  title="Edit key"
+                  aria-label={t('modals.key.edit')}
+                  title={t('modals.key.edit')}
                 >
                   <Icons.Settings size={14} />
                 </button>
                 <button
                   onClick={onClearApiKey}
                   className="icon-btn"
-                  aria-label="Remove key"
-                  title="Remove key"
+                  aria-label={t('modals.key.remove')}
+                  title={t('modals.key.remove')}
                 >
                   <Icons.Trash size={14} />
                 </button>
@@ -463,36 +518,35 @@ export function SettingsDrawer({
                 className="btn btn-secondary w-full justify-start"
               >
                 <Icons.Key size={14} />
-                Add {active.label} key{active.keyRequired ? '' : ' (optional)'}
+                {active.keyRequired
+                  ? t('modals.key.add', { provider: active.label })
+                  : t('modals.key.addOptional', { provider: active.label })}
               </button>
             )}
             <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-              Stored only in this browser.{' '}
-              {active.keyDocs ? (
-                <>
-                  Get one at{' '}
-                  <a
-                    href={active.keyDocs}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: 'var(--accent)' }}
-                  >
-                    {active.keyDocs.replace(/^https?:\/\//, '')}
-                  </a>
-                  .
-                </>
-              ) : (
-                `${active.label} normally needs no key.`
-              )}
+              {active.keyDocs
+                ? withInline(
+                    t('modals.key.docs', { url: active.keyDocs.replace(/^https?:\/\//, '') }),
+                    active.keyDocs.replace(/^https?:\/\//, ''),
+                    <a
+                      href={active.keyDocs}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: 'var(--accent)' }}
+                    >
+                      {active.keyDocs.replace(/^https?:\/\//, '')}
+                    </a>
+                  )
+                : t('modals.key.noKey', { provider: active.label })}
             </p>
             {active.hasEnvKey && (
               <p className="mt-2 text-[12px] font-mono" style={{ color: 'var(--text-muted)' }}>
-                server {active.keyEnv} present — a key saved here overrides it
+                {t('modals.key.env', { env: active.keyEnv })}
               </p>
             )}
           </Section>
 
-          <Section title="Tools">
+          <Section title={t('modals.tools.section')}>
             <button
               onClick={() => {
                 onClose()
@@ -501,35 +555,34 @@ export function SettingsDrawer({
               className="btn btn-secondary w-full justify-start"
             >
               <Icons.Sparkle size={15} />
-              Generate image from scratch
+              {t('modals.tools.generate')}
             </button>
             <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-              Create a brand-new image from a text description, then extend it.
+              {t('modals.tools.generateHint')}
             </p>
           </Section>
 
-          <Section title="Developer">
+          <Section title={t('modals.dev.section')}>
             <Toggle
-              label="Debug overlay"
-              description="Draw seam guides and log Poisson scores to the console."
+              label={t('modals.dev.debugLabel')}
+              description={t('modals.dev.debugHint')}
               checked={debugMode}
               onChange={setDebugMode}
             />
           </Section>
 
-          <Section title="About">
+          <Section title={t('modals.about.section')}>
             <p
               className="text-[12px] leading-relaxed"
               style={{ color: 'var(--text-secondary)' }}
             >
-              Extensions are 38% of the current image dimension. For larger
-              extensions, click an edge again after accepting.
+              {t('modals.about.body')}
             </p>
             <p
               className="mt-3 text-[11px]"
               style={{ color: 'var(--text-muted)' }}
             >
-              Seamless blending via Poisson editing (Pérez et al. 2003).
+              {t('modals.about.credit')}
             </p>
           </Section>
         </div>
@@ -653,6 +706,8 @@ export function GenerateModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
+  const { t } = useI18n()
+
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 anim-fade">
@@ -678,10 +733,10 @@ export function GenerateModal({
               <Icons.Sparkle size={15} />
             </div>
             <h2 className="text-[15px] font-semibold tracking-tight">
-              Generate image
+              {t('modals.generate.title')}
             </h2>
           </div>
-          <button onClick={onClose} className="icon-btn" aria-label="Close">
+          <button onClick={onClose} className="icon-btn" aria-label={t('common.action.close')}>
             <Icons.X size={16} />
           </button>
         </div>
@@ -707,7 +762,7 @@ export function GenerateModal({
                   className="text-[12px] font-medium"
                   style={{ color: 'var(--text-secondary)' }}
                 >
-                  Scene direction
+                  {t('modals.generate.sceneDirection')}
                 </label>
                 {sceneBriefLoading ? (
                   <span
@@ -715,11 +770,11 @@ export function GenerateModal({
                     style={{ color: 'var(--accent)' }}
                   >
                     <Icons.Spinner size={10} />
-                    Deriving from Near…
+                    {t('modals.generate.deriving')}
                   </span>
                 ) : (
                   <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    Shared across all layers
+                    {t('modals.generate.shared')}
                   </span>
                 )}
               </div>
@@ -727,7 +782,7 @@ export function GenerateModal({
                 value={sceneBrief ?? ''}
                 onChange={(e) => setSceneBrief(e.target.value)}
                 disabled={generating || sceneBriefLoading}
-                placeholder="Generate the Near layer first — we'll derive palette, lighting, and mood from that prompt. You can edit this before generating Mid, Far, and Sky."
+                placeholder={t('modals.generate.scenePlaceholder')}
                 rows={3}
                 className="field resize-none text-[13px] leading-relaxed"
               />
@@ -736,12 +791,14 @@ export function GenerateModal({
 
           <div>
             <label className="mb-1.5 block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-              {layerLabel ? `${layerLabel} layer` : 'Description'}
+              {layerLabel
+                ? t('modals.generate.layerLabel', { layer: layerLabel })
+                : t('modals.generate.description')}
             </label>
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="e.g. A wide mountain valley at golden hour, with a winding river through pine forest"
+              placeholder={t('modals.generate.promptPlaceholder')}
               rows={3}
               className="field resize-none"
               autoFocus
@@ -751,7 +808,7 @@ export function GenerateModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1.5 block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-                Width
+                {t('modals.generate.width')}
               </label>
               <select
                 value={width}
@@ -768,7 +825,7 @@ export function GenerateModal({
             </div>
             <div>
               <label className="mb-1.5 block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-                Height
+                {t('modals.generate.height')}
               </label>
               <select
                 value={height}
@@ -787,7 +844,7 @@ export function GenerateModal({
 
           <div>
             <label className="mb-1.5 block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-              Style
+              {t('modals.generate.style')}
             </label>
             <select
               value={artStyle}
@@ -795,15 +852,15 @@ export function GenerateModal({
               className="field select-styled"
             >
               {ART_STYLE_GROUPS.map((group) =>
-                group.options.length === 1 && group.label === 'Match original' ? (
+                group.options.length === 1 && group.id === 'match-original' ? (
                   <option key={group.options[0].value} value={group.options[0].value}>
-                    Photorealistic
+                    {t('modals.generate.photorealistic')}
                   </option>
                 ) : (
-                  <optgroup key={group.label} label={group.label}>
+                  <optgroup key={group.id} label={t(`common.artStyleGroup.${group.id}`)}>
                     {group.options.map((o) => (
                       <option key={o.value} value={o.value}>
-                        {o.label}
+                        {t(`common.artStyle.${o.value}`, undefined, o.label)}
                       </option>
                     ))}
                   </optgroup>
@@ -815,7 +872,7 @@ export function GenerateModal({
 
         <div className="mt-6 flex items-center justify-end gap-2">
           <button onClick={onClose} disabled={generating} className="btn btn-ghost">
-            Cancel
+            {t('common.action.cancel')}
           </button>
           <button
             onClick={onGenerate}
@@ -823,7 +880,7 @@ export function GenerateModal({
             className="btn btn-primary"
           >
             {generating ? <Icons.Spinner size={14} /> : <Icons.Sparkle size={14} />}
-            {generating ? 'Generating…' : 'Generate'}
+            {generating ? t('modals.generate.generating') : t('modals.generate.generate')}
           </button>
         </div>
       </div>
@@ -873,6 +930,8 @@ export function ApiKeyModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, required, onClose])
 
+  const { t } = useI18n()
+
   if (!open) return null
 
   const trimmed = value.trim()
@@ -904,14 +963,16 @@ export function ApiKeyModal({
           </div>
           <div className="flex-1">
             <h2 className="text-[15px] font-semibold tracking-tight">
-              {required ? `Add your ${provider.label} key` : `${provider.label} API key`}
+              {required
+                ? t('modals.apikey.titleRequired', { provider: provider.label })
+                : t('modals.apikey.title', { provider: provider.label })}
             </h2>
             <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-              {provider.keyRequired ? 'Required to generate or extend images.' : 'Optional — the gateway usually needs none.'}
+              {provider.keyRequired ? t('modals.apikey.requiredBody') : t('modals.apikey.optionalBody')}
             </p>
           </div>
           {!required && (
-            <button onClick={onClose} className="icon-btn" aria-label="Close">
+            <button onClick={onClose} className="icon-btn" aria-label={t('common.action.close')}>
               <Icons.X size={16} />
             </button>
           )}
@@ -929,14 +990,14 @@ export function ApiKeyModal({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && looksValid) onSave(trimmed)
               }}
-              placeholder={provider.keyHint}
+              placeholder={t(`modals.provider.${provider.id}.keyHint`, undefined, provider.keyHint)}
               className="field pr-10 font-mono text-[13px]"
             />
             <button
               type="button"
               onClick={() => setReveal((r) => !r)}
               className="icon-btn absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
-              aria-label={reveal ? 'Hide key' : 'Show key'}
+              aria-label={reveal ? t('modals.apikey.hide') : t('modals.apikey.show')}
               tabIndex={-1}
             >
               {reveal ? <Icons.EyeOff size={14} /> : <Icons.Eye size={14} />}
@@ -948,7 +1009,9 @@ export function ApiKeyModal({
               style={{ color: 'var(--danger)' }}
             >
               <Icons.AlertTriangle size={13} className="mt-0.5 shrink-0" />
-              <span>{provider.label} keys start with <code className="font-mono">sk-or-</code>.</span>
+              <span>
+                {withCode(t('modals.apikey.invalid', { provider: provider.label }), 'sk-or-')}
+              </span>
             </div>
           )}
         </div>
@@ -961,8 +1024,10 @@ export function ApiKeyModal({
             color: 'var(--text-secondary)',
           }}
         >
-          Your key is stored only in this browser&apos;s <code className="font-mono">localStorage</code>.
-          It&apos;s sent with each request to your local server, which proxies it to {provider.label} — never logged, never persisted server-side.
+          {withCode(
+            t('modals.apikey.storage', { provider: provider.label }),
+            'localStorage'
+          )}
         </div>
 
         {provider.keyDocs && (
@@ -973,7 +1038,7 @@ export function ApiKeyModal({
             className="mb-5 inline-flex items-center gap-1.5 text-[12px] transition-colors"
             style={{ color: 'var(--accent)' }}
           >
-            Get a key at {provider.keyDocs.replace(/^https?:\/\//, '')}
+            {t('modals.apikey.getKey', { url: provider.keyDocs.replace(/^https?:\/\//, '') })}
             <Icons.External size={11} />
           </a>
         )}
@@ -981,7 +1046,7 @@ export function ApiKeyModal({
         <div className="flex items-center justify-between gap-2">
           {onSkip ? (
             <button onClick={onSkip} className="btn btn-ghost">
-              {required ? 'Skip — I only need the pixel studio' : 'Use server env'}
+              {required ? t('modals.apikey.skipRequired') : t('modals.apikey.useServerEnv')}
             </button>
           ) : (
             <span />
@@ -992,7 +1057,7 @@ export function ApiKeyModal({
             className="btn btn-primary"
           >
             <Icons.Check size={14} />
-            Save key
+            {t('modals.apikey.save')}
           </button>
         </div>
       </div>
@@ -1006,9 +1071,10 @@ export function ApiKeyModal({
 
 
 export function ErrorToast({ message, onClose }: { message: string; onClose: () => void }) {
+  const { t } = useI18n()
   useEffect(() => {
-    const t = setTimeout(onClose, 6000)
-    return () => clearTimeout(t)
+    const timer = setTimeout(onClose, 6000)
+    return () => clearTimeout(timer)
   }, [onClose])
   return (
     <div
@@ -1028,7 +1094,7 @@ export function ErrorToast({ message, onClose }: { message: string; onClose: () 
           <Icons.X size={16} />
         </div>
         <div className="flex-1 text-[13px]" style={{ color: 'var(--text)' }}>
-          {message}
+          {translateServerError(message, t)}
         </div>
         <button onClick={onClose} className="icon-btn -m-1.5 h-7 w-7">
           <Icons.X size={14} />

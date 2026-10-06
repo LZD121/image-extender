@@ -3,6 +3,7 @@
 import { Icons } from '@/app/components/icons'
 import { StatusPill } from '@/app/components/TopBar'
 import { Direction } from '@/app/lib/app'
+import { useI18n } from '@/app/lib/i18n'
 
 export function EdgeHandle({
   direction,
@@ -15,6 +16,7 @@ export function EdgeHandle({
   active: boolean
   disabled: boolean
 }) {
+  const { t } = useI18n()
   const Icon = {
     up: Icons.ArrowUp,
     down: Icons.ArrowDown,
@@ -29,12 +31,16 @@ export function EdgeHandle({
     right: { right: -22, top: '50%', transform: 'translateY(-50%)' },
   }[direction]
 
+  const extendLabel = t('shell.workspace.extend', {
+    direction: t(`common.direction.${direction}`, undefined, direction),
+  })
+
   return (
     <button
       onClick={() => onClick(direction)}
       disabled={disabled}
-      title={`Extend ${direction}`}
-      aria-label={`Extend ${direction}`}
+      title={extendLabel}
+      aria-label={extendLabel}
       className={`group absolute z-10 flex h-11 w-11 items-center justify-center rounded-full transition-all duration-200 ${
         active ? 'anim-pulse' : ''
       }`}
@@ -96,6 +102,7 @@ export function Workspace({
   variantSelector?: React.ReactNode
   resultActions?: React.ReactNode
 }) {
+  const { t } = useI18n()
   return (
     <div className="relative flex flex-1 flex-col items-center justify-center px-6 pb-6 pt-2">
       {/* Image frame */}
@@ -174,13 +181,20 @@ export function Workspace({
         )}
         {!isResult && !loading && (
           <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-            Click an edge to extend
+            {t('shell.workspace.clickEdge')}
           </span>
         )}
         {loading && (
           <StatusPill
             status="working"
-            message={progressMessage || (activeDirection ? `Extending ${activeDirection}…` : 'Working…')}
+            message={
+              progressMessage ||
+              (activeDirection
+                ? t('shell.workspace.extending', {
+                    direction: t(`common.direction.${activeDirection}`, undefined, activeDirection),
+                  })
+                : t('common.action.working'))
+            }
           />
         )}
       </div>
