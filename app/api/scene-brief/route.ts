@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { llmTarget } from '@/app/lib/llmServer'
+import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
 import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
 
 const DEFAULT_MODEL = 'google/gemini-2.0-flash-001'
 
 export async function POST(request: NextRequest) {
   try {
-    const { anchorPrompt, artStyle, apiKey, model, provider } = await request.json()
+    const { anchorPrompt, artStyle, apiKey, model, provider, profile } = await request.json()
 
     if (!anchorPrompt || typeof anchorPrompt !== 'string' || !anchorPrompt.trim()) {
       return NextResponse.json(
@@ -18,14 +18,14 @@ export async function POST(request: NextRequest) {
 
     const target = llmTarget({
       provider,
+      profile,
       apiKey,
       referer: request.headers.get('referer'),
       title: 'AI Image Extender - Scene Brief',
     })
     if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
-    const modelId =
-      typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL
+    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa', routeDefault: DEFAULT_MODEL })
 
     const styleLine =
       artStyle && ART_STYLE_PROMPTS[artStyle]

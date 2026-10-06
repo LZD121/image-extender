@@ -5,6 +5,11 @@
  * Every route that talks to a model provider goes through `llmTarget`, so the
  * base URL lives in exactly one place and a request body can never make the
  * server fetch an arbitrary URL.
+ *
+ * Two ways in: the browser sends `provider` + `apiKey` (BYOK, unchanged), the
+ * headless CLI sends a `profile` id that names an entry in the config file
+ * (`app/lib/ieConfig.ts`). A named provider always wins, so every existing
+ * client keeps its exact behavior.
  */
 
 import {
@@ -14,6 +19,13 @@ import {
   isProviderId,
   type Provider,
 } from '@/app/lib/providers'
+import {
+  effectiveProvider,
+  loadIeConfig,
+  profileKey,
+  resolveProfile,
+  type IeProfile,
+} from '@/app/lib/ieConfig'
 
 /** The provider as the server sees it: deployment env may move magpie's URL. */
 export function serverProvider(raw: unknown): Provider {
@@ -35,6 +47,30 @@ export type LlmTarget = {
   headers: Record<string, string>
 }
 
+/** What the request named, once resolved: a provider plus its profile (if any). */
+type RequestProvider = { provider: Provider; profile: IeProfile | null } | { error: string }
+
+/**
+ * Which gateway this request means. `provider` (the browser's field) wins, then
+ * `profile` (the CLI's config id), then the config's `defaultProfile`, then the
+ * deployment default — so an agent that names nothing still gets the operator's
+ * configured gateway, and a browser request is never rerouted by config.
+ */
+function requestProvider(opts: { provider: unknown; profile?: unknown }): RequestProvider {
+  if (isProviderId(opts.provider)) return { provider: serverProvider(opts.provider), profile: null }
+
+  const config = loadIeConfig()
+  const id =
+    typeof opts.profile === 'string' && opts.profile.trim() ? opts.profile.trim() : config.defaultProfile
+  if (!id) return { provider: serverProvider(opts.provider), profile: null }
+
+  const profile = resolveProfile(config, id)
+  if (!profile) {
+    return { error: `unknown profile "${id}". Define it with \`ie config\`, or drop the profile from the request.` }
+  }
+  return { provider: effectiveProvider(profile), profile }
+}
+
 /**
  * Where this call goes and what it carries. The `{ error }` branch is a
  * credential problem the caller should surface as 401, not a fetch failure.
@@ -42,11 +78,17 @@ export type LlmTarget = {
 export function llmTarget(opts: {
   provider: unknown
   apiKey: unknown
+  profile?: unknown
   title: string
   referer?: string | null
 }): LlmTarget | { error: string } {
-  const provider = serverProvider(opts.provider)
-  const key = providerKey(provider, opts.apiKey)
+  const resolved = requestProvider(opts)
+  if ('error' in resolved) return { error: resolved.error }
+  const { provider, profile } = resolved
+
+  // Body key → profile credential (env var, then inline) → provider env var.
+  const bodyKey = typeof opts.apiKey === 'string' ? opts.apiKey.trim() : ''
+  const key = bodyKey || (profile ? profileKey(profile) : '') || (process.env[provider.keyEnv] || '').trim()
 
   if (!key && provider.keyRequired) {
     return { error: `${provider.label} API key missing. Add one in Settings.` }
@@ -61,4 +103,26 @@ export function llmTarget(opts: {
   }
 
   return { provider, url: `${provider.baseUrl}/chat/completions`, headers }
+}
+
+/**
+ * The image/QA model a route should call: the request wins, then the resolved
+ * profile's model for that kind, then the route's own default. Uses the same
+ * profile resolution as `llmTarget`, so the model and the endpoint can never
+ * come from two different profiles.
+ */
+export function modelOrDefault(opts: {
+  model: unknown
+  provider: unknown
+  profile?: unknown
+  kind: 'image' | 'qa'
+  routeDefault: string
+}): string {
+  if (typeof opts.model === 'string' && opts.model.trim()) return opts.model.trim()
+  const resolved = requestProvider(opts)
+  if (!('error' in resolved) && resolved.profile) {
+    const fromProfile = opts.kind === 'image' ? resolved.profile.imageModel : resolved.profile.qaModel
+    if (fromProfile && fromProfile.trim()) return fromProfile.trim()
+  }
+  return opts.routeDefault
 }

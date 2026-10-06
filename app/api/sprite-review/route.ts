@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { llmTarget } from '@/app/lib/llmServer'
+import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
 
 // QA ART DIRECTOR for sprite sheets — the review half of the sprite pipeline.
 //
@@ -154,7 +154,7 @@ function parseReview(raw: string): Review | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, anim, bodyPlan, sceneBrief, apiKey, model, sheetImage, anchorImage, provider } =
+    const { prompt, anim, bodyPlan, sceneBrief, apiKey, model, sheetImage, anchorImage, provider, profile } =
       await request.json()
 
     if (typeof sheetImage !== 'string' || !sheetImage.startsWith('data:image/')) {
@@ -163,14 +163,14 @@ export async function POST(request: NextRequest) {
 
     const target = llmTarget({
       provider,
+      profile,
       apiKey,
       referer: request.headers.get('referer'),
       title: 'AI Image Extender - Sprite QA',
     })
     if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
-    const modelId =
-      typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL
+    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa', routeDefault: DEFAULT_MODEL })
 
     const planKey =
       typeof bodyPlan === 'string' && ANIM_EXPECTATION_BY_PLAN[bodyPlan]

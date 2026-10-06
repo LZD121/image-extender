@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { extractImageUrl } from '@/app/lib/llmResponse'
-import { llmTarget } from '@/app/lib/llmServer'
+import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
 import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
 
 // Default model when the client doesn't specify one.
@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
       layerRole,
       sceneBrief,
       provider,
+      profile,
     } = await request.json()
 
     if (!expandedCanvas || !direction || !extensionAmount) {
@@ -35,13 +36,14 @@ export async function POST(request: NextRequest) {
 
     const target = llmTarget({
       provider,
+      profile,
       apiKey,
       referer: request.headers.get('referer'),
       title: 'AI Image Extender',
     })
     if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
-    const modelId = (typeof model === 'string' && model.trim()) ? model.trim() : DEFAULT_MODEL
+    const modelId = modelOrDefault({ model, provider, profile, kind: 'image', routeDefault: DEFAULT_MODEL })
 
     // Create inpainting prompt
     const directionDescriptions = {
