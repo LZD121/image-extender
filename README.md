@@ -396,8 +396,60 @@ include a client-provided one.
 | **Add more props** | Press add again — another batch of 8, deduped against the existing library |
 | **Curate props** | Hover a prop to re-roll or delete it |
 | **Export props** | `Atlas + manifest` for the packed transparent atlas, or `ZIP` for individual PNGs + atlas + manifest |
+| **Paste the PixelLab key (Pixel mode)** | Fill `PixelLab key` in the bottom rail — BYOK, kept in this browser and sent only to the `/api/pixel` proxy |
+| **Generate a pixel asset (Pixel mode)** | Pick a quick start or describe it, then `Generate tile` / `Generate prop`; the `Tiles & props` ⇄ `Character` select in the prompt bar switches the generator |
+| **Generate a pixel character (Pixel mode)** | `Character` mode runs one 8-direction job (~2–5 min) and polls until it lands |
+| **Impose the pixel grid (Pixel mode)** | `Block` / `Cell` set the lattice every result is re-quantised onto; `Defaults` restores block 2 / cell 32 |
+| **Inspect a pixel asset (Pixel mode)** | Hover a card: flip `source` ⇄ `processed`, download the PNG, or drop it from the gallery |
+| **Save a pixel asset (Pixel mode)** | `Save to library` — only processed assets are stored; the raw vendor output goes under `raw/` |
 
 Optional custom prompt and art style live in the bottom command bar.
+
+## Gateways
+
+Every generation and art-director call goes to one OpenAI-compatible gateway,
+chosen in **Settings → Gateway**:
+
+| Gateway | Base URL | Key |
+| --- | --- | --- |
+| **OpenRouter** (default) | `https://openrouter.ai/api/v1` | `sk-or-…`, required |
+| **Magpie gateway** | `IE_MAGPIE_BASE_URL`, default `http://127.0.0.1:3425/v1` | usually none |
+
+- Discovery is automatic: opening Settings paints the last model list this
+  gateway reported, then asks it again behind that. Model ids come from the
+  gateway, never from a list in this repo. The status line reads
+  `N models · M image (V verified) · K vendors`, with a chip per upstream
+  **vendor** — the gateway's own suppliers — to filter them.
+  `Check connection` forces a fresh probe.
+- **Only models this project has verified are offered.** A gateway reporting a
+  model is not a promise that it answers: of the 8 image ids the local magpie
+  gateway lists, 1 works (below), 4 need upstream credentials it does not hold
+  (`google/*`, `antigravity/*`, `group/*`), and 3 refuse
+  `/v1/chat/completions` (`teamo-router/gpt-image-2*`). The verified set is
+  `VERIFIED_MODELS` in `app/lib/providers.ts` — measured, with the failures
+  named in the comment — and everything else the gateway reports sits behind
+  `Show N more (unverified)`, flagged `not verified here` if you pick it. The
+  art-director select is grouped the same way. OpenRouter has no verified entry
+  because its picker *is* the curated `MODELS` table, verified by construction.
+- One fallback default per gateway is the only other hardcoded model id, and it
+  is shown only before the first successful check.
+- An **image model** and an **art-director model** are separate settings: the
+  scene brief and the tile / sprite review passes need a model that accepts an
+  image as input, which the image models do not. Each gateway carries its own
+  defaults; switching gateways resets both to them, because a model id means
+  nothing on the other gateway.
+- The base URL never comes from the browser — a client-supplied URL would make
+  the server a fetch-anywhere proxy carrying your key. It is resolved from the
+  table above plus that env override.
+- Gateways differ in where they put the render in a chat response: OpenRouter
+  uses `message.images[]`, and a magpie → teamo-router response embeds a
+  markdown `![image](data:…)` link in the text. Both are read.
+
+The verified list is the *measured* answer to "which ids can this app actually
+call", so it is deliberately small: adding an id is a manual edit after running
+it, and the escape hatch keeps everything else one click away. If your gateway
+holds different upstream credentials, run the model once and add it to
+`VERIFIED_MODELS` — the picker then treats it as verified everywhere.
 
 ## Tech stack
 
@@ -406,13 +458,18 @@ Optional custom prompt and art style live in the bottom command bar.
 - **HTML Canvas** for all client-side image manipulation
   ([app/utils/imageProcessor.ts](app/utils/imageProcessor.ts))
 - **[JSZip](https://stuk.github.io/jszip/)** for in-browser project bundling
-- **[OpenRouter](https://openrouter.ai)** for model access
+- **An OpenAI-compatible gateway** for model access ([OpenRouter](https://openrouter.ai)
+  by default, or a local magpie gateway — see **Gateways**). The defaults:
   - Image: `google/gemini-3.1-flash-image-preview` (Nano Banana 2, default),
     `google/gemini-3-pro-image-preview` (Nano Banana Pro),
     `google/gemini-2.5-flash-image` (Nano Banana), and
     `openai/gpt-5.4-image-2` (GPT-5.4 Image 2 — high fidelity, slower)
   - Reasoning / vision QA (scene brief, prop art director, tile review):
     `google/gemini-2.0-flash-001`
+  - On magpie: `teamo-router/gemini-3.1-flash-image` for images and
+    `commandcode/Qwen/Qwen3.7-Plus` for the vision passes (both measured —
+    the `google/*` ids a gateway may list need a Google key it does not have,
+    and `teamo-router/gpt-image-2*` refuses `/v1/chat/completions`)
 
 ## Asset library
 
@@ -548,15 +605,18 @@ A few small values you might want to tune:
 | `PROP_BATCH` | `app/lib/props.ts` | `8` | Props painted per "add more" press |
 | `GROW_PX` | `app/utils/imageProcessor.ts` | `8` | Pixels to grow the Poisson mask into the original |
 | `iterations` | `app/utils/imageProcessor.ts` | `250` | Max Gauss-Seidel iterations |
+| `IE_MAGPIE_BASE_URL` | env | `http://127.0.0.1:3425/v1` | Base URL of the Magpie gateway (Settings → Gateway) |
+| `MAGPIE_API_KEY` | env | empty | Server-side key for that gateway (a browser key overrides it) |
 
 ## Privacy & security
 
-- The OpenRouter API key entered in the UI is stored **only** in your
+- The API key entered in the UI is stored **only** in your
   browser's `localStorage`. It is never written to the server's disk and
-  never logged. The server uses it once per request to proxy the call to
-  OpenRouter, then discards it.
-- The server-side `OPENROUTER_API_KEY` env var is **optional** and acts only
-  as a fallback for requests that don't include a client-provided key.
+  never logged. The server uses it once per request to proxy the call to the
+  selected gateway, then discards it.
+- The server-side `OPENROUTER_API_KEY` / `MAGPIE_API_KEY` env vars are
+  **optional** and act only as a fallback for requests that don't include a
+  client-provided key.
 - No analytics, no telemetry, no tracking.
 
 ## Acknowledgments

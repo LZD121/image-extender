@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { llmTarget } from '@/app/lib/llmServer'
+
 // QA ART DIRECTOR — the review half of the reverse two-call tile pipeline.
 //
 // The image model paints a tileset first; we composite it into a platform
@@ -51,7 +53,7 @@ function parseReview(raw: string): Review | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, sceneBrief, apiKey, model, previewImage, sheetImage } =
+    const { prompt, sceneBrief, apiKey, model, previewImage, sheetImage, provider } =
       await request.json()
 
     if (
@@ -64,17 +66,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const openRouterKey =
-      typeof apiKey === 'string' && apiKey.trim()
-        ? apiKey.trim()
-        : process.env.OPENROUTER_API_KEY
-
-    if (!openRouterKey) {
-      return NextResponse.json(
-        { error: 'OpenRouter API key missing. Add one in Settings.' },
-        { status: 401 }
-      )
-    }
+    const target = llmTarget({
+      provider,
+      apiKey,
+      referer: request.headers.get('referer'),
+      title: 'AI Image Extender - Tile QA',
+    })
+    if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
     const modelId =
       typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL
@@ -132,14 +130,9 @@ Review the attached platform preview${
     }
     content.push({ type: 'text', text: userText })
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch(target.url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openRouterKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': request.headers.get('referer') || 'http://localhost:3000',
-        'X-Title': 'AI Image Extender - Tile QA',
-      },
+      headers: target.headers,
       body: JSON.stringify({
         model: modelId,
         messages: [

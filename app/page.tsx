@@ -14,9 +14,10 @@ import { TileStudio } from '@/app/components/TileStudio'
 import { TopBar } from '@/app/components/TopBar'
 import { ResultActions, VariantSelector } from '@/app/components/VariantSelector'
 import { Workspace } from '@/app/components/Workspace'
-import { Candidate, Direction, EXTENSION_PERCENT, LIBRARY_PROJECT_STORAGE, Mode, STORAGE_KEY, STORAGE_MODE, STORAGE_MODEL } from '@/app/lib/app'
+import { Candidate, Direction, EXTENSION_PERCENT, LIBRARY_PROJECT_STORAGE, Mode, STORAGE_MODE, STORAGE_MODEL, STORAGE_PROVIDER, STORAGE_QA_MODEL, apiKeyStorageKey } from '@/app/lib/app'
 import { findStyleLabel } from '@/app/lib/artStyles'
-import { DEFAULT_MODEL, MODELS, getModelConfig, skipsArtDirectorReview } from '@/app/lib/models'
+import { DEFAULT_MODEL, getModelConfig, skipsArtDirectorReview } from '@/app/lib/models'
+import { DEFAULT_PROVIDER, PROVIDERS, isProviderId, type ProviderId } from '@/app/lib/providers'
 import { LAYER_ORDER, LAYER_ROLES, LayerRole, PARALLAX_MAX_AUTO_STEPS, ParallaxLayer, WORKFLOW_ORDER, createDefaultLayers, getRecommendedLayerIndex, getWorkflowPrerequisite } from '@/app/lib/parallax'
 import { PROP_BATCH, PROP_BATCH_COLS, PROP_BATCH_H, PROP_BATCH_ROWS, PROP_BATCH_W, PROP_TILE_SIZE, PropItem, nextPropId, propAtlasLayout, resolvePropNames } from '@/app/lib/props'
 import { SPRITE_ANIMATIONS, SPRITE_FRAME_COUNT, SPRITE_FRAME_SIZE, SPRITE_GRID_COLS, SPRITE_GRID_ROWS, SPRITE_SHEET_H, SPRITE_SHEET_W, SPRITE_STRIP_H, SPRITE_STRIP_W, SpriteAnimType, SpriteFrame, SpriteSheet, createEmptySpriteSheet } from '@/app/lib/sprite'
@@ -195,6 +196,9 @@ export default function Home() {
   // "hydrating" state so we don't flash the modal before reading storage.
   const [apiKey, setApiKey] = useState('')
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL)
+  const [provider, setProvider] = useState<ProviderId>(DEFAULT_PROVIDER)
+  /** Vision model for the QA routes — an image model cannot review a sheet. */
+  const [qaModel, setQaModel] = useState<string>(PROVIDERS[DEFAULT_PROVIDER].qaModel)
   const [libraryProject, setLibraryProject] = useState<string>('default')
   const skipArtDirectorReview = skipsArtDirectorReview(selectedModel)
   const [hydrated, setHydrated] = useState(false)
@@ -208,14 +212,17 @@ export default function Home() {
   // Hydrate from localStorage on mount, and decide whether to show the modal.
   useEffect(() => {
     try {
-      const k = localStorage.getItem(STORAGE_KEY) || ''
       const m = localStorage.getItem(STORAGE_MODEL) || ''
+      const savedProvider = localStorage.getItem(STORAGE_PROVIDER) || ''
+      const nextProvider: ProviderId = isProviderId(savedProvider) ? savedProvider : DEFAULT_PROVIDER
+      // A key belongs to one gateway: an OpenRouter key means nothing to magpie.
+      const k = localStorage.getItem(apiKeyStorageKey(nextProvider)) || ''
+      setProvider(nextProvider)
+      setQaModel(localStorage.getItem(STORAGE_QA_MODEL) || PROVIDERS[nextProvider].qaModel)
       const savedMode = localStorage.getItem(STORAGE_MODE) || ''
       setApiKey(k)
       setLibraryProject(localStorage.getItem(LIBRARY_PROJECT_STORAGE) || 'default')
-      if (m && MODELS.some((mm) => mm.value === m)) {
-        setSelectedModel(m)
-      }
+      if (m) setSelectedModel(m)
       if (
         savedMode === 'parallax' ||
         savedMode === 'extender' ||
@@ -226,7 +233,7 @@ export default function Home() {
       ) {
         setModeState(savedMode)
       }
-      if (!k) {
+      if (!k && PROVIDERS[nextProvider].keyRequired) {
         setApiKeyRequired(true)
         setShowApiKeyModal(true)
       }
@@ -247,14 +254,16 @@ export default function Home() {
     } catch {}
   }, [])
 
-  // Persist key + model changes.
+  // Persist key + model changes. A key belongs to the gateway it was entered
+  // for, so it is written to that gateway's slot.
   useEffect(() => {
     if (!hydrated) return
     try {
-      if (apiKey) localStorage.setItem(STORAGE_KEY, apiKey)
-      else localStorage.removeItem(STORAGE_KEY)
+      const slot = apiKeyStorageKey(provider)
+      if (apiKey) localStorage.setItem(slot, apiKey)
+      else localStorage.removeItem(slot)
     } catch {}
-  }, [apiKey, hydrated])
+  }, [apiKey, provider, hydrated])
 
   useEffect(() => {
     if (!hydrated) return
@@ -262,6 +271,20 @@ export default function Home() {
       localStorage.setItem(STORAGE_MODEL, selectedModel)
     } catch {}
   }, [selectedModel, hydrated])
+
+  useEffect(() => {
+    if (!hydrated) return
+    try {
+      localStorage.setItem(STORAGE_PROVIDER, provider)
+    } catch {}
+  }, [provider, hydrated])
+
+  useEffect(() => {
+    if (!hydrated) return
+    try {
+      localStorage.setItem(STORAGE_QA_MODEL, qaModel)
+    } catch {}
+  }, [qaModel, hydrated])
 
   // Persist the library project name so all six studios share one folder.
   useEffect(() => {
@@ -286,6 +309,22 @@ export default function Home() {
     setApiKey(key)
     setShowApiKeyModal(false)
     setApiKeyRequired(false)
+  }
+
+  /**
+   * Everything provider-scoped switches together: a model id and a key both
+   * mean nothing on the other gateway, so this loads that gateway's key and
+   * resets both model settings to its defaults.
+   */
+  const handleSelectProvider = (next: ProviderId) => {
+    setProvider(next)
+    setSelectedModel(PROVIDERS[next].imageModel)
+    setQaModel(PROVIDERS[next].qaModel)
+    try {
+      setApiKey(localStorage.getItem(apiKeyStorageKey(next)) || '')
+    } catch {
+      setApiKey('')
+    }
   }
 
   const handleSkipApiKey = () => {
@@ -545,7 +584,8 @@ export default function Home() {
             anchorPrompt: anchorPrompt.trim(),
             artStyle: artStyle !== 'none' ? artStyle : undefined,
             apiKey: apiKey || undefined,
-            model: selectedModel,
+            provider,
+            model: qaModel,
           }),
         })
         const data = await response.json()
@@ -562,7 +602,7 @@ export default function Home() {
         setSceneBriefLoading(false)
       }
     },
-    [apiKey, artStyle, selectedModel]
+    [apiKey, artStyle, qaModel, provider]
   )
 
   const handleGenerateImage = async () => {
@@ -585,6 +625,7 @@ export default function Home() {
           height: generateHeight,
           artStyle: artStyle !== 'none' ? artStyle : undefined,
           apiKey: apiKey || undefined,
+          provider,
           model: selectedModel,
           layerRole,
           sceneBrief:
@@ -662,6 +703,7 @@ export default function Home() {
             customPrompt: promptText.trim() || undefined,
             artStyle: style !== 'none' ? style : undefined,
             apiKey: apiKey || undefined,
+            provider,
             model: selectedModel,
             layerRole,
             sceneBrief:
@@ -787,7 +829,7 @@ export default function Home() {
         }
       }
     },
-    [currentImageDimensions, debugMode, apiKey, selectedModel, mode, sceneBrief]
+    [currentImageDimensions, debugMode, apiKey, provider, selectedModel, mode, sceneBrief]
   )
 
   /**
@@ -1118,6 +1160,7 @@ export default function Home() {
           height: TILESET_TILE_SIZE,
           artStyle: artStyle !== 'none' ? artStyle : undefined,
           apiKey: apiKey || undefined,
+          provider,
           model: selectedModel,
           tileMode: true,
           tileRole: role,
@@ -1317,6 +1360,8 @@ export default function Home() {
           prompt: tilePrompt,
           sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
           apiKey: apiKey || undefined,
+          provider,
+          model: qaModel,
           previewImage,
           sheetImage: sheetImage || undefined,
         }),
@@ -1373,6 +1418,7 @@ export default function Home() {
           height: TILE_TEMPLATE_H,
           artStyle: artStyle !== 'none' ? artStyle : undefined,
           apiKey: apiKey || undefined,
+          provider,
           model: selectedModel,
           tileSheet: true,
           tileGuideImage,
@@ -1936,6 +1982,8 @@ export default function Home() {
           sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
           artStyle: artStyle !== 'none' ? artStyle : undefined,
           apiKey: apiKey || undefined,
+          provider,
+          model: qaModel,
           count,
           existing: propCategoriesOf(items),
         }),
@@ -2123,6 +2171,7 @@ export default function Home() {
           height: PROP_BATCH_H,
           artStyle: artStyle !== 'none' ? artStyle : undefined,
           apiKey: apiKey || undefined,
+          provider,
           model: selectedModel,
           propSheet: true,
           propCols: PROP_BATCH_COLS,
@@ -2247,6 +2296,7 @@ export default function Home() {
           height: PROP_TILE_SIZE,
           artStyle: artStyle !== 'none' ? artStyle : undefined,
           apiKey: apiKey || undefined,
+          provider,
           model: selectedModel,
           propMode: true,
           propRole: idea?.description,
@@ -2428,6 +2478,7 @@ export default function Home() {
         height: SPRITE_FRAME_SIZE,
         artStyle: artStyle !== 'none' ? artStyle : undefined,
         apiKey: apiKey || undefined,
+        provider,
         model: selectedModel,
         spriteAnchor: true,
         spriteBodyPlan,
@@ -2489,6 +2540,7 @@ export default function Home() {
         height: SPRITE_SHEET_H,
         artStyle: artStyle !== 'none' ? artStyle : undefined,
         apiKey: apiKey || undefined,
+        provider,
         model: selectedModel,
         spriteSheet: true,
         spriteAnim,
@@ -2643,6 +2695,8 @@ export default function Home() {
           bodyPlan: spriteBodyPlan,
           sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
           apiKey: apiKey || undefined,
+          provider,
+          model: qaModel,
           sheetImage,
           anchorImage: anchorImage || undefined,
         }),
@@ -4120,6 +4174,10 @@ export default function Home() {
         onClearApiKey={handleClearApiKey}
         selectedModel={selectedModel}
         setSelectedModel={setSelectedModel}
+        provider={provider}
+        onSelectProvider={handleSelectProvider}
+        qaModel={qaModel}
+        setQaModel={setQaModel}
       />
 
       <ApiKeyModal
@@ -4129,6 +4187,7 @@ export default function Home() {
         onSave={handleSaveApiKey}
         onSkip={apiKeyRequired ? handleSkipApiKey : undefined}
         onClose={() => setShowApiKeyModal(false)}
+        provider={PROVIDERS[provider]}
       />
 
       <GenerateModal

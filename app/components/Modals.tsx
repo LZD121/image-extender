@@ -3,7 +3,67 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icons } from '@/app/components/icons'
 import { ART_STYLE_GROUPS } from '@/app/lib/artStyles'
-import { MODELS, maskKey } from '@/app/lib/models'
+import { MODELS, gatewayModelOption, getModelConfig, maskKey, type ModelOption } from '@/app/lib/models'
+import {
+  PROVIDERS,
+  PROVIDER_IDS,
+  pickableModels,
+  vendorOf,
+  type GatewayModel,
+  type Provider,
+  type ProviderId,
+  type ProviderStatus,
+} from '@/app/lib/providers'
+import { fetchProviderTable, probeProvider, readCachedModels, writeCachedModels } from '@/app/lib/providerProbe'
+
+/**
+ * `apimart/claude-opus-4-6`, or `group/auto-claude-4-5 — apimart` when the
+ * supplier the gateway names is not the id's own prefix.
+ */
+function labelWithSupplier(model: GatewayModel): string {
+  return model.vendor && model.vendor !== vendorOf(model.id) ? `${model.id} — ${model.vendor}` : model.id
+}
+
+/** Radio-style choice card — shared by the gateway list and the model list. */
+function ChoiceCard({
+  title,
+  detail,
+  active,
+  onClick,
+}: {
+  title: string
+  detail: React.ReactNode
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-start gap-3 rounded-[var(--radius-sm)] p-3 text-left transition-colors"
+      style={{
+        background: active ? 'var(--accent-bg)' : 'var(--surface)',
+        border: `1px solid ${active ? 'var(--accent-border)' : 'var(--border)'}`,
+      }}
+    >
+      <div
+        className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
+        style={{
+          border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border-strong)'}`,
+          background: active ? 'var(--accent)' : 'transparent',
+        }}
+      >
+        {active && <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#1a1404' }} />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-medium">{title}</div>
+        <div className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          {detail}
+        </div>
+      </div>
+    </button>
+  )
+}
+
 
 export function SettingsDrawer({
   open,
@@ -16,6 +76,10 @@ export function SettingsDrawer({
   onClearApiKey,
   selectedModel,
   setSelectedModel,
+  provider,
+  onSelectProvider,
+  qaModel,
+  setQaModel,
 }: {
   open: boolean
   onClose: () => void
@@ -27,7 +91,22 @@ export function SettingsDrawer({
   onClearApiKey: () => void
   selectedModel: string
   setSelectedModel: (v: string) => void
+  provider: ProviderId
+  onSelectProvider: (id: ProviderId) => void
+  qaModel: string
+  setQaModel: (v: string) => void
 }) {
+  const [table, setTable] = useState<ProviderStatus[]>(() =>
+    PROVIDER_IDS.map((id) => ({ ...PROVIDERS[id], hasEnvKey: false })),
+  )
+  const [models, setModels] = useState<GatewayModel[]>([])
+  const [status, setStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle')
+  const [message, setMessage] = useState<string | null>(null)
+  const [vendor, setVendor] = useState('all')
+  const [recheck, setRecheck] = useState(0)
+  const [showAll, setShowAll] = useState(false)
+  const active = table.find((p) => p.id === provider) ?? { ...PROVIDERS[provider], hasEnvKey: false }
+
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -36,6 +115,85 @@ export function SettingsDrawer({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
+
+  // magpie's base URL and the server-side key are deployment facts; the drawer
+  // is the only place they are shown, so re-read them whenever it opens.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void fetchProviderTable().then((next) => {
+      if (!cancelled) setTable(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
+  /**
+   * Discovery runs by itself. Opening the drawer paints the last list we got
+   * from this gateway (so the picker is never empty) and asks again behind it —
+   * only the gateway decides which model ids exist, and only right now decides
+   * whether they answer.
+   */
+  useEffect(() => {
+    if (!open) return
+    setVendor('all')
+    setShowAll(false)
+    const cached = readCachedModels(provider)
+    if (cached) {
+      setModels(cached.models)
+      setStatus('ok')
+    }
+    let cancelled = false
+    setStatus('testing')
+    void probeProvider(provider, apiKey).then((result) => {
+      if (cancelled) return
+      if (result.ok) {
+        setModels(result.models)
+        writeCachedModels(provider, result.models)
+        setStatus('ok')
+        setMessage(null)
+      } else {
+        // Keep whatever we already know: a failed probe does not un-discover
+        // the models, it only means we could not confirm them.
+        setStatus('error')
+        setMessage(result.error)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [open, provider, apiKey, recheck])
+
+  const pick = pickableModels(provider, models)
+  // Only what this project has verified is offered; the rest of the gateway's
+  // list is one explicit toggle away, never silently mixed in.
+  const pool = showAll ? [...pick.verifiedImage, ...pick.otherImage] : pick.verifiedImage
+  const vendors = Array.from(new Set(pool.map((m) => m.vendor))).sort()
+  const visibleImages = vendor === 'all' ? pool : pool.filter((m) => m.vendor === vendor)
+  const discovered: ModelOption[] = visibleImages.map(gatewayModelOption)
+  // A supplier with no image model can never appear in this section, so name it
+  // instead of leaving its absence to be guessed at.
+  const imageSuppliers = new Set([...pick.verifiedImage, ...pick.otherImage].map((m) => m.vendor))
+  const textOnlySuppliers = Array.from(new Set(models.map((m) => m.vendor)))
+    .filter((v) => !imageSuppliers.has(v))
+    .sort()
+  // Nothing offered here yet → fall back to the ids this app is curated around,
+  // or to this gateway's default, and let the copy say so.
+  const imageOptions: ModelOption[] =
+    discovered.length > 0
+      ? discovered
+      : models.length === 0 && provider === 'openrouter'
+        ? MODELS
+        : [gatewayModelOption({ id: active.imageModel, vendor: active.label, imageCapable: true })]
+  // A filter must never hide the model that is actually selected.
+  const imageChoices = imageOptions.some((m) => m.value === selectedModel)
+    ? imageOptions
+    : [gatewayModelOption({ id: selectedModel, vendor: vendorOf(selectedModel), imageCapable: true }), ...imageOptions]
+  const qaVerified = pick.verifiedQa
+  const qaOther = pick.otherQa
+  const qaSuppliers = Array.from(new Set([...qaVerified, ...qaOther].map((m) => m.vendor))).sort()
+  const activeConfig = getModelConfig(selectedModel, imageChoices)
 
   if (!open) return null
   return (
@@ -63,51 +221,202 @@ export function SettingsDrawer({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
-          <Section title="Model">
+          <Section title="Gateway">
             <div className="space-y-2">
-              {MODELS.map((m) => {
-                const active = m.value === selectedModel
-                return (
-                  <button
-                    key={m.value}
-                    onClick={() => setSelectedModel(m.value)}
-                    className="flex w-full items-start gap-3 rounded-[var(--radius-sm)] p-3 text-left transition-colors"
-                    style={{
-                      background: active ? 'var(--accent-bg)' : 'var(--surface)',
-                      border: `1px solid ${active ? 'var(--accent-border)' : 'var(--border)'}`,
-                    }}
-                  >
-                    <div
-                      className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
+              {table.map((p) => (
+                <ChoiceCard
+                  key={p.id}
+                  title={p.label}
+                  active={p.id === provider}
+                  onClick={() => onSelectProvider(p.id)}
+                  detail={
+                    <>
+                      <code className="font-mono">{p.baseUrl}</code>
+                      {p.keyRequired ? ' · key required' : ' · no key needed'}
+                    </>
+                  }
+                />
+              ))}
+            </div>
+            <p className="mt-2 text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              {active.hint}
+            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                onClick={() => setRecheck((r) => r + 1)}
+                disabled={status === 'testing'}
+                className="btn btn-secondary"
+                title="Ask the gateway for its model list again"
+              >
+                {status === 'testing' ? <Icons.Spinner size={14} /> : <Icons.Refresh size={14} />}
+                {status === 'testing' ? 'Checking…' : models.length > 0 ? 'Re-check' : 'Check connection'}
+              </button>
+              {status === 'error' && (
+                <span
+                  className="inline-flex min-w-0 items-center gap-1 text-[11px]"
+                  style={{ color: 'var(--danger)' }}
+                  title={message ?? 'unreachable'}
+                >
+                  <Icons.AlertTriangle size={12} className="shrink-0" />
+                  <span className="truncate">{message ?? 'unreachable'}</span>
+                </span>
+              )}
+              {status !== 'error' && models.length > 0 && (
+                <span className="font-mono text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                  {models.length} models · {pick.verifiedImage.length + pick.otherImage.length} image (
+                  {pick.verifiedImage.length} verified) ·{' '}
+                  {new Set(models.map((m) => m.vendor)).size} vendors
+                </span>
+              )}
+            </div>
+            {status === 'testing' && models.length === 0 && (
+              <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                Asking {active.label} what it offers…
+              </p>
+            )}
+          </Section>
+
+          <Section title="Image model">
+            {status === 'error' && (
+              <p className="mb-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                Could not list {active.label}&apos;s models, so the last known list is shown.
+              </p>
+            )}
+            {status === 'ok' && pick.verifiedImage.length + pick.otherImage.length === 0 && (
+              <p className="mb-2 text-[12px]" style={{ color: 'var(--danger)' }}>
+                <Icons.AlertTriangle size={12} className="mr-1 inline align-[-2px]" />
+                {active.label} listed no image models — generation will fail until it does.
+              </p>
+            )}
+            {models.length === 0 && status !== 'testing' && provider !== 'openrouter' && (
+              <p className="mb-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                No model list from {active.label} yet, so its default is shown.
+              </p>
+            )}
+            {models.length > 0 && (
+              <p className="mb-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                Only models this project has verified are listed
+                {pick.otherImage.length > 0
+                  ? ` — ${active.label} reports ${pick.otherImage.length} more that this project has not run.`
+                  : '.'}
+                {textOnlySuppliers.length > 0 && (
+                  <>
+                    {' '}
+                    Suppliers here that generate no images at all:{' '}
+                    <span className="font-mono">{textOnlySuppliers.join(', ')}</span>.
+                  </>
+                )}
+              </p>
+            )}
+            {vendors.length > 1 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {[
+                  { id: 'all', count: pool.length },
+                  ...vendors.map((v) => ({ id: v, count: pool.filter((m) => m.vendor === v).length })),
+                ].map((option) => {
+                  const on = vendor === option.id
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setVendor(option.id)}
+                      className="rounded-full px-2 py-0.5 font-mono text-[10px] transition-colors"
                       style={{
-                        border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border-strong)'}`,
-                        background: active ? 'var(--accent)' : 'transparent',
+                        border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                        background: on ? 'var(--accent-bg)' : 'var(--bg-elev)',
+                        color: on ? 'var(--accent)' : 'var(--text-secondary)',
                       }}
+                      title={`Only models served by ${option.id}`}
                     >
-                      {active && (
-                        <span
-                          className="h-1.5 w-1.5 rounded-full"
-                          style={{ background: '#1a1404' }}
-                        />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[13px] font-medium">{m.label}</div>
-                      <div
-                        className="mt-0.5 truncate text-[11px]"
-                        style={{ color: 'var(--text-muted)' }}
-                      >
+                      {option.id} {option.count}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            <div className="space-y-2">
+              {imageChoices.map((m) => {
+                const unverified = !pick.curated && pick.otherImage.some((x) => x.id === m.value)
+                return (
+                  <ChoiceCard
+                    key={m.value}
+                    title={m.label}
+                    active={m.value === selectedModel}
+                    onClick={() => setSelectedModel(m.value)}
+                    detail={
+                      <>
                         {m.hint ? `${m.hint} · ` : ''}
                         <code className="font-mono">{m.value}</code>
-                      </div>
-                    </div>
-                  </button>
+                        {unverified && (
+                          <span style={{ color: 'var(--danger)' }}> · not verified here</span>
+                        )}
+                      </>
+                    }
+                  />
                 )
               })}
             </div>
+            {pick.otherImage.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAll((v) => !v)}
+                className="mt-2 inline-flex items-center gap-1.5 text-[12px] transition-colors"
+                style={{ color: 'var(--accent)' }}
+              >
+                {showAll ? <Icons.EyeOff size={13} /> : <Icons.Eye size={13} />}
+                {showAll
+                  ? `Hide the ${pick.otherImage.length} unverified models`
+                  : `Show ${pick.otherImage.length} more that ${active.label} reports (unverified)`}
+              </button>
+            )}
+            <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+              Ids come from the gateway itself, filtered to the ones this project
+              has actually run — a gateway reporting a model is not a promise that
+              it answers. One call ≈ {activeConfig.approxSecondsPerCall}s
+              {activeConfig.maxAttempts > 1 ? ` · up to ${activeConfig.maxAttempts} seam variants per extension` : ' · single attempt'}.
+            </p>
           </Section>
 
-          <Section title="OpenRouter key">
+          <Section title="Art-director model">
+            <select
+              value={qaModel}
+              onChange={(e) => setQaModel(e.target.value)}
+              className="field select-styled font-mono text-[12px]"
+            >
+              {![...qaVerified, ...qaOther].some((m) => m.id === qaModel) && (
+                <option value={qaModel}>{qaModel}</option>
+              )}
+              <optgroup label={pick.curated ? 'Models' : 'Verified here'}>
+                {qaVerified.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {labelWithSupplier(m)}
+                  </option>
+                ))}
+              </optgroup>
+              {qaOther.length > 0 && (
+                <optgroup label={`${active.label} also reports (unverified)`}>
+                  {qaOther.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {labelWithSupplier(m)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+              Writes the shared scene brief and reviews generated tile sets and
+              sprite sheets, so it has to accept images. The verified group is what
+              this project has run; the other group is what the gateway reports.
+              {qaSuppliers.length > 0 && (
+                <>
+                  {' '}
+                  Suppliers here: <span className="font-mono">{qaSuppliers.join(', ')}</span>.
+                </>
+              )}
+            </p>
+          </Section>
+
+          <Section title={`${active.label} key`}>
             {apiKey ? (
               <div
                 className="flex items-center gap-3 rounded-[var(--radius-sm)] p-3"
@@ -154,21 +463,33 @@ export function SettingsDrawer({
                 className="btn btn-secondary w-full justify-start"
               >
                 <Icons.Key size={14} />
-                Add OpenRouter key
+                Add {active.label} key{active.keyRequired ? '' : ' (optional)'}
               </button>
             )}
             <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-              Stored only in this browser. Get one at{' '}
-              <a
-                href="https://openrouter.ai/keys"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: 'var(--accent)' }}
-              >
-                openrouter.ai/keys
-              </a>
-              .
+              Stored only in this browser.{' '}
+              {active.keyDocs ? (
+                <>
+                  Get one at{' '}
+                  <a
+                    href={active.keyDocs}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    {active.keyDocs.replace(/^https?:\/\//, '')}
+                  </a>
+                  .
+                </>
+              ) : (
+                `${active.label} normally needs no key.`
+              )}
             </p>
+            {active.hasEnvKey && (
+              <p className="mt-2 text-[12px] font-mono" style={{ color: 'var(--text-muted)' }}>
+                server {active.keyEnv} present — a key saved here overrides it
+              </p>
+            )}
           </Section>
 
           <Section title="Tools">
@@ -519,6 +840,7 @@ export function ApiKeyModal({
   open,
   initialValue,
   required,
+  provider,
   onSave,
   onSkip,
   onClose,
@@ -527,6 +849,7 @@ export function ApiKeyModal({
   initialValue: string
   /** If true, the user can't dismiss without entering a key (no Skip / Esc). */
   required: boolean
+  provider: Provider
   onSave: (key: string) => void
   onSkip?: () => void
   onClose: () => void
@@ -553,7 +876,7 @@ export function ApiKeyModal({
   if (!open) return null
 
   const trimmed = value.trim()
-  const looksValid = trimmed.startsWith('sk-or-') && trimmed.length > 20
+  const looksValid = provider.keyDocs === null ? trimmed.length > 0 : trimmed.startsWith('sk-or-') && trimmed.length > 20
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 anim-fade">
@@ -581,10 +904,10 @@ export function ApiKeyModal({
           </div>
           <div className="flex-1">
             <h2 className="text-[15px] font-semibold tracking-tight">
-              {required ? 'Add your OpenRouter key' : 'OpenRouter API key'}
+              {required ? `Add your ${provider.label} key` : `${provider.label} API key`}
             </h2>
             <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-              Required to generate or extend images.
+              {provider.keyRequired ? 'Required to generate or extend images.' : 'Optional — the gateway usually needs none.'}
             </p>
           </div>
           {!required && (
@@ -606,7 +929,7 @@ export function ApiKeyModal({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && looksValid) onSave(trimmed)
               }}
-              placeholder="sk-or-..."
+              placeholder={provider.keyHint}
               className="field pr-10 font-mono text-[13px]"
             />
             <button
@@ -625,7 +948,7 @@ export function ApiKeyModal({
               style={{ color: 'var(--danger)' }}
             >
               <Icons.AlertTriangle size={13} className="mt-0.5 shrink-0" />
-              <span>OpenRouter keys start with <code className="font-mono">sk-or-</code>.</span>
+              <span>{provider.label} keys start with <code className="font-mono">sk-or-</code>.</span>
             </div>
           )}
         </div>
@@ -639,19 +962,21 @@ export function ApiKeyModal({
           }}
         >
           Your key is stored only in this browser&apos;s <code className="font-mono">localStorage</code>.
-          It&apos;s sent with each request to your local server, which proxies it to OpenRouter — never logged, never persisted server-side.
+          It&apos;s sent with each request to your local server, which proxies it to {provider.label} — never logged, never persisted server-side.
         </div>
 
-        <a
-          href="https://openrouter.ai/keys"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mb-5 inline-flex items-center gap-1.5 text-[12px] transition-colors"
-          style={{ color: 'var(--accent)' }}
-        >
-          Get a key at openrouter.ai/keys
-          <Icons.External size={11} />
-        </a>
+        {provider.keyDocs && (
+          <a
+            href={provider.keyDocs}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mb-5 inline-flex items-center gap-1.5 text-[12px] transition-colors"
+            style={{ color: 'var(--accent)' }}
+          >
+            Get a key at {provider.keyDocs.replace(/^https?:\/\//, '')}
+            <Icons.External size={11} />
+          </a>
+        )}
 
         <div className="flex items-center justify-between gap-2">
           {onSkip ? (

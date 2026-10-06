@@ -28,6 +28,21 @@ export type PixelTemplate = (typeof PIXEL_TEMPLATES)[number]
 export const PIXEL_VIEWS = ['low top-down', 'high top-down', 'side'] as const
 export type PixelView = (typeof PIXEL_VIEWS)[number]
 
+/** Quick-start descriptions. Kept in the lib so the studio stays presentational. */
+export const PIXEL_STILL_PRESETS = [
+  { id: 'cobble', label: 'Mossy cobble', prompt: 'mossy grey cobblestone, top-down, 16 colours, crisp pixel clusters' },
+  { id: 'grass', label: 'Grass tuft', prompt: 'small grass tuft prop, transparent background, 12 colours, crisp pixel clusters' },
+  { id: 'crystal', label: 'Crystal', prompt: 'glowing blue crystal cluster prop, transparent background, 16 colours, readable silhouette' },
+  { id: 'chest', label: 'Wooden chest', prompt: 'wooden treasure chest, side view, 20 colours, readable silhouette' },
+] as const
+
+export const PIXEL_CHARACTER_PRESETS = [
+  { id: 'knight', label: 'Knight', prompt: 'armoured knight with a round shield, readable silhouette' },
+  { id: 'slime', label: 'Slime', prompt: 'green slime creature with two eyes, simple rounded silhouette' },
+  { id: 'bat', label: 'Bat', prompt: 'small cave bat with wide wings, readable silhouette' },
+  { id: 'wizard', label: 'Wizard', prompt: 'hooded wizard with a staff, long robe, readable silhouette' },
+] as const
+
 export const PIXELLAB_BASE = 'https://api.pixellab.ai/v2'
 export const PIXEL_KEY_HEADER = 'x-pixellab-key'
 

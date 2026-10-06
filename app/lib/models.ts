@@ -1,5 +1,7 @@
 'use client'
 
+import type { GatewayModel } from '@/app/lib/providers'
+
 export type ModelOption = {
   value: string
   label: string
@@ -12,6 +14,28 @@ export type ModelOption = {
   maxAttempts: number
   /** Rough single-call expected duration, shown to the user as guidance. */
   approxSecondsPerCall: number
+}
+
+/**
+ * Timing heuristics for a model id the app has never seen (anything a gateway
+ * discovers). The id is the only signal there is, so these only decide
+ * best-of-N and the ETA shown — never whether a call is allowed.
+ */
+function timingFor(id: string): Pick<ModelOption, 'maxAttempts' | 'approxSecondsPerCall'> {
+  if (/gpt-image/i.test(id)) return { maxAttempts: 1, approxSecondsPerCall: 240 }
+  if (/gemini.*pro/i.test(id)) return { maxAttempts: 1, approxSecondsPerCall: 75 }
+  return { maxAttempts: 3, approxSecondsPerCall: 20 }
+}
+
+/** Turn one entry from a gateway's `/models` list into a picker option. */
+export function gatewayModelOption(model: GatewayModel): ModelOption {
+  const slash = model.id.indexOf('/')
+  return {
+    value: model.id,
+    label: slash === -1 ? model.id : model.id.slice(slash + 1),
+    hint: model.vendor,
+    ...timingFor(model.id),
+  }
 }
 
 
@@ -49,16 +73,17 @@ export const MODELS: ModelOption[] = [
 
 export const DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview'
 
-export function getModelConfig(value: string): ModelOption {
+export function getModelConfig(value: string, extra: ModelOption[] = []): ModelOption {
   return (
     MODELS.find((m) => m.value === value) ||
+    extra.find((m) => m.value === value) ||
     MODELS.find((m) => m.value === DEFAULT_MODEL) ||
     MODELS[0]
   )
 }
 
 export function skipsArtDirectorReview(value: string): boolean {
-  return value.toLowerCase().startsWith('openai/gpt-')
+  return value.toLowerCase().startsWith('openai/gpt-') || /gpt-image/.test(value.toLowerCase())
 }
 
 

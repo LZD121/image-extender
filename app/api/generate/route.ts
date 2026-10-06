@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractCost } from '@/app/lib/generateCost'
+import { extractImageUrl } from '@/app/lib/llmResponse'
+import { llmTarget } from '@/app/lib/llmServer'
 import { styleDirective } from '@/app/lib/stylePrompt'
 
 const DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview'
@@ -70,6 +72,7 @@ export async function POST(request: NextRequest) {
       propCount,
       propRefImage,
       propAvoidHint,
+      provider,
     } = await request.json()
 
     if (!prompt || !width || !height) {
@@ -79,16 +82,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const openRouterKey = (typeof apiKey === 'string' && apiKey.trim())
-      ? apiKey.trim()
-      : process.env.OPENROUTER_API_KEY
-
-    if (!openRouterKey) {
-      return NextResponse.json(
-        { error: 'OpenRouter API key missing. Add one in Settings.' },
-        { status: 401 }
-      )
-    }
+    const target = llmTarget({
+      provider,
+      apiKey,
+      referer: request.headers.get('referer'),
+      title: 'AI Image Extender - Generator',
+    })
+    if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
     const modelId = (typeof model === 'string' && model.trim()) ? model.trim() : DEFAULT_MODEL
 
@@ -1152,15 +1152,10 @@ ${
       text: fullPrompt,
     })
 
-    // Call OpenRouter API with image generation model
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    // Call the provider gateway with the image generation model
+    const response = await fetch(target.url, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openRouterKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': request.headers.get('referer') || 'http://localhost:3000',
-        'X-Title': 'AI Image Extender - Generator',
-      },
+      headers: target.headers,
       body: JSON.stringify({
         model: modelId,
         messages: [
@@ -1196,7 +1191,7 @@ ${
 
     if (!response.ok) {
       const errorData = await response.json()
-      console.error('OpenRouter API error:', errorData)
+      console.error(`${target.provider.label} API error:`, errorData)
       return NextResponse.json(
         { error: errorData.error?.message || 'Failed to generate image' },
         { status: response.status }
@@ -1213,53 +1208,7 @@ ${
       )
     }
 
-    // Extract image from response (same logic as extend route)
-    let imageUrl = null
-    
-    // Check if images array exists (Gemini 2.5 Flash format)
-    if (message.images && Array.isArray(message.images) && message.images.length > 0) {
-      const firstImage = message.images[0]
-      if (firstImage.image_url?.url) {
-        imageUrl = firstImage.image_url.url
-      }
-    }
-    
-    // If no image found in images array, check content
-    if (!imageUrl) {
-      const content = message.content
-      
-      if (Array.isArray(content)) {
-        for (const part of content) {
-          if (part.type === 'image_url' && part.image_url?.url) {
-            imageUrl = part.image_url.url
-            break
-          }
-          if (part.type === 'image' && part.url) {
-            imageUrl = part.url
-            break
-          }
-          if (part.image_url?.data) {
-            imageUrl = `data:image/png;base64,${part.image_url.data}`
-            break
-          }
-          if (part.data) {
-            imageUrl = `data:image/png;base64,${part.data}`
-            break
-          }
-          if (part.inline_data?.data) {
-            const mimeType = part.inline_data.mime_type || 'image/png'
-            imageUrl = `data:${mimeType};base64,${part.inline_data.data}`
-            break
-          }
-        }
-      } else if (typeof content === 'string') {
-        if (content.startsWith('data:image') || content.startsWith('http')) {
-          imageUrl = content
-        } else if (content.length > 100 && /^[A-Za-z0-9+/=]+$/.test(content.substring(0, 100))) {
-          imageUrl = `data:image/png;base64,${content}`
-        }
-      }
-    }
+    const imageUrl = extractImageUrl(message)
 
     if (!imageUrl) {
       return NextResponse.json(

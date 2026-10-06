@@ -34,7 +34,8 @@ export const ART_STYLE_GROUPS: { label: string; options: { value: string; label:
       { value: 'digital-art', label: 'Digital art' },
       { value: 'cyberpunk', label: 'Cyberpunk' },
       { value: 'vaporwave', label: 'Vaporwave' },
-      { value: 'low-poly', label: 'Low poly' },
+      // ★ = best measured stylized result; see docs/superpowers/plans/2026-10-05-stylized-assets.md
+      { value: 'low-poly', label: 'Low poly ★' },
       { value: 'pixel-art', label: 'Pixel art' },
       { value: '3d-render', label: '3D render' },
     ],

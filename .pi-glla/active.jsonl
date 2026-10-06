@@ -1,0 +1,9 @@
+{"type":"session_rebound","value":{"reason":"startup"},"at":"2026-10-05T17:14:30.808Z"}
+{"type":"session_waiting_for_load","value":{"reason":"startup"},"at":"2026-10-05T17:14:30.814Z"}
+{"type":"state","value":{"goal":null,"list":[],"loop":null,"mainModelRecovery":null,"lastModelRef":"magpie/group/auto-deepseek-v4-1-flash","lastCompactionAt":null,"postCompactRecovery":null,"supervisorPausedAt":null,"loadHoldAt":null,"lastOutcome":null},"at":"2026-10-05T17:14:36.408Z"}
+{"type":"context_usage_sample","value":{"goalId":null,"provider":"magpie","model":"group/auto-deepseek-v4-1-flash","providerUsage":{"inputTokens":56095,"outputTokens":23,"cacheReadTokens":0,"cacheWriteTokens":0,"totalTokens":56118},"contextUsage":{"tokens":56118,"contextWindow":1048576,"percent":5.351829528808594}},"at":"2026-10-05T17:14:40.221Z"}
+{"type":"session_shutdown","value":{"reason":"quit"},"at":"2026-10-05T17:14:52.868Z"}
+{"type":"session_rebound","value":{"reason":"startup"},"at":"2026-10-05T17:15:29.038Z"}
+{"type":"id_invalidation","value":{"oldId":"01a10d0f-393a-77e1-965b-6d004683d3b4","newId":"01a10d10-25e3-7120-91c1-e05dbfc82cb5","reason":"session_shutdown","shutdownReason":"quit","at":"2026-10-05T17:15:29.043Z"},"at":"2026-10-05T17:15:29.043Z"}
+{"type":"session_waiting_for_load","value":{"reason":"startup"},"at":"2026-10-05T17:15:29.043Z"}
+{"type":"session_shutdown","value":{"reason":"quit"},"at":"2026-10-05T17:16:34.880Z"}

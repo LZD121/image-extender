@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { llmTarget } from '@/app/lib/llmServer'
 import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
 
 // ART DIRECTOR — call #1 of the two-call props pipeline.
@@ -79,24 +80,20 @@ function parseIdeas(raw: string): PropIdea[] {
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, sceneBrief, artStyle, apiKey, model, count, existing } =
+    const { prompt, sceneBrief, artStyle, apiKey, model, count, existing, provider } =
       await request.json()
 
     if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
       return NextResponse.json({ error: 'Missing biome prompt' }, { status: 400 })
     }
 
-    const openRouterKey =
-      typeof apiKey === 'string' && apiKey.trim()
-        ? apiKey.trim()
-        : process.env.OPENROUTER_API_KEY
-
-    if (!openRouterKey) {
-      return NextResponse.json(
-        { error: 'OpenRouter API key missing. Add one in Settings.' },
-        { status: 401 }
-      )
-    }
+    const target = llmTarget({
+      provider,
+      apiKey,
+      referer: request.headers.get('referer'),
+      title: 'AI Image Extender - Prop Art Director',
+    })
+    if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
     const modelId =
       typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL
@@ -139,14 +136,9 @@ Output STRICT JSON only — no prose, no markdown fences. Schema:
 
 Propose ${n} brand-new decoration props as strict JSON.`
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch(target.url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openRouterKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': request.headers.get('referer') || 'http://localhost:3000',
-        'X-Title': 'AI Image Extender - Prop Art Director',
-      },
+      headers: target.headers,
       body: JSON.stringify({
         model: modelId,
         messages: [

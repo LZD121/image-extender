@@ -46,6 +46,25 @@ export const STORAGE_KEY = 'extender:api_key'
 
 export const STORAGE_MODEL = 'extender:model'
 
+/** Which gateway the app talks to (`openrouter` | `magpie`). */
+export const STORAGE_PROVIDER = 'extender:provider'
+
+/**
+ * The art-director (vision/text) model the QA routes run on. It is a separate
+ * setting because an image model cannot review a composited tile set, and a
+ * gateway's model list is not shared between providers.
+ */
+export const STORAGE_QA_MODEL = 'extender:qaModel'
+
+/**
+ * One key per gateway: an OpenRouter key means nothing to magpie, and the
+ * Settings drawer labels the field with the gateway it belongs to. The default
+ * gateway keeps the original slot so existing installs keep their key.
+ */
+export function apiKeyStorageKey(provider: string): string {
+  return provider === 'openrouter' ? STORAGE_KEY : `${STORAGE_KEY}:${provider}`
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Inline icons — minimal SVG primitives, zero dependencies
 // ─────────────────────────────────────────────────────────────────────────────

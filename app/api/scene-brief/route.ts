@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { llmTarget } from '@/app/lib/llmServer'
 import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
 
 const DEFAULT_MODEL = 'google/gemini-2.0-flash-001'
 
 export async function POST(request: NextRequest) {
   try {
-    const { anchorPrompt, artStyle, apiKey, model } = await request.json()
+    const { anchorPrompt, artStyle, apiKey, model, provider } = await request.json()
 
     if (!anchorPrompt || typeof anchorPrompt !== 'string' || !anchorPrompt.trim()) {
       return NextResponse.json(
@@ -15,17 +16,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const openRouterKey =
-      typeof apiKey === 'string' && apiKey.trim()
-        ? apiKey.trim()
-        : process.env.OPENROUTER_API_KEY
-
-    if (!openRouterKey) {
-      return NextResponse.json(
-        { error: 'OpenRouter API key missing. Add one in Settings.' },
-        { status: 401 }
-      )
-    }
+    const target = llmTarget({
+      provider,
+      apiKey,
+      referer: request.headers.get('referer'),
+      title: 'AI Image Extender - Scene Brief',
+    })
+    if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
     const modelId =
       typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL
@@ -49,14 +46,9 @@ Rules for your brief:
 
 Write the shared scene brief for all parallax layers.`
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch(target.url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openRouterKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': request.headers.get('referer') || 'http://localhost:3000',
-        'X-Title': 'AI Image Extender - Scene Brief',
-      },
+      headers: target.headers,
       body: JSON.stringify({
         model: modelId,
         messages: [

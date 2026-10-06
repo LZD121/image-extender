@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { llmTarget } from '@/app/lib/llmServer'
+
 // QA ART DIRECTOR for sprite sheets — the review half of the sprite pipeline.
 //
 // After the image model paints the N-frame sheet (and we chroma-key + align
@@ -152,24 +154,20 @@ function parseReview(raw: string): Review | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, anim, bodyPlan, sceneBrief, apiKey, model, sheetImage, anchorImage } =
+    const { prompt, anim, bodyPlan, sceneBrief, apiKey, model, sheetImage, anchorImage, provider } =
       await request.json()
 
     if (typeof sheetImage !== 'string' || !sheetImage.startsWith('data:image/')) {
       return NextResponse.json({ error: 'Missing sprite sheet image' }, { status: 400 })
     }
 
-    const openRouterKey =
-      typeof apiKey === 'string' && apiKey.trim()
-        ? apiKey.trim()
-        : process.env.OPENROUTER_API_KEY
-
-    if (!openRouterKey) {
-      return NextResponse.json(
-        { error: 'OpenRouter API key missing. Add one in Settings.' },
-        { status: 401 }
-      )
-    }
+    const target = llmTarget({
+      provider,
+      apiKey,
+      referer: request.headers.get('referer'),
+      title: 'AI Image Extender - Sprite QA',
+    })
+    if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
     const modelId =
       typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL
@@ -255,14 +253,9 @@ Review the attached sprite sheet${hasAnchor ? ' against the character anchor' : 
     }
     content.push({ type: 'text', text: userText })
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch(target.url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openRouterKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': request.headers.get('referer') || 'http://localhost:3000',
-        'X-Title': 'AI Image Extender - Sprite QA',
-      },
+      headers: target.headers,
       body: JSON.stringify({
         model: modelId,
         messages: [
