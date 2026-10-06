@@ -1,0 +1,19 @@
+{
+  "channel": "magpie",
+  "profile": "probe-magpie",
+  "http_status": 200,
+  "ok": true,
+  "provider": "teamo-router",
+  "model": "teamo-router/gemini-3.1-flash-image",
+  "cost": null,
+  "names": [
+    "imageUrl"
+  ],
+  "imageUrlChars": 1973700,
+  "written": ".ie/probe/chaser_idle_f1_8dir.png",
+  "seconds_call": 15,
+  "stderr_tail": "",
+  "usage_line": "{\"route_id\":1791283431134,\"t\":\"2026-10-07T00:48:32.844826+08:00\",\"agent\":\"node\",\"provider\":\"teamo-router\",\"host\":\"api.teamorouter.com\",\"providerKeyId\":\"cddc22c8a2\",\"model\":\"gemini-3.1-flash-image\",\"req\":\"teamo-router/gemini-3.1-flash-image\",\"served\":\"gemini-3.1-flash-image\",\"in\":319,\"out\":1120,\"ms\":14629,\"status\":200,\"rid\":\"f6195b13-e8b3-4c64-8f44-3b26f46efc8c\"}",
+  "usage_provider": "teamo-router",
+  "usage_ms": 14629
+}

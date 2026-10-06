@@ -1,0 +1,14 @@
+{
+  "profiles": {
+    "probe-magpie": {
+      "provider": "magpie",
+      "imageModel": "teamo-router/gemini-3.1-flash-image"
+    },
+    "probe-teamo": {
+      "provider": "magpie",
+      "baseUrl": "https://api.teamorouter.com/v1",
+      "apiKeyEnv": "TEAMOROUTER_API_KEY",
+      "imageModel": "gemini-3.1-flash-image"
+    }
+  }
+}

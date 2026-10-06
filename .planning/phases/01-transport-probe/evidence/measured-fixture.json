@@ -1,0 +1,55 @@
+{
+  "file": "tests/fixtures/anim/chaser_idle_f1_8dir.png",
+  "N": 8,
+  "width": 2048,
+  "height": 246,
+  "aspect": 8.3252,
+  "field_rgb": [
+    253,
+    5,
+    250
+  ],
+  "field_hex": "#FD05FA",
+  "fitted_pitch": 255,
+  "phase": 253,
+  "uniform_pitch": 256,
+  "delta_pct_vs_uniform": -0.391,
+  "cut_mass": 246,
+  "median_column_mass": 167,
+  "gutter_ok": false,
+  "cut_lines": [
+    {
+      "x": 508,
+      "mass": 0
+    },
+    {
+      "x": 763,
+      "mass": 0
+    },
+    {
+      "x": 1018,
+      "mass": 0
+    },
+    {
+      "x": 1273,
+      "mass": 0
+    },
+    {
+      "x": 1528,
+      "mass": 246
+    },
+    {
+      "x": 1783,
+      "mass": 0
+    },
+    {
+      "x": 2038,
+      "mass": 0
+    }
+  ],
+  "search": {
+    "trials": 10496,
+    "span": "±8% of W/N"
+  },
+  "seconds_measure": 0.009718
+}
