@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apimartSize, apimartSizeCandidates, generateViaApimart } from '@/app/lib/apimartServer'
+import { PROVIDERS } from '@/app/lib/providers'
 
 const originalFetch = globalThis.fetch
 const originalKey = process.env.APIMART_API_KEY
@@ -63,7 +64,7 @@ function stubApimart(options: {
   return calls
 }
 
-const GENERATE = { provider: 'apimart', apiKey: 'sk-test', model: 'gpt-image-2-official', prompt: 'a red square', width: 2048, height: 1024 }
+const GENERATE = { provider: PROVIDERS.apimart, key: 'sk-test', model: 'gpt-image-2-official', prompt: 'a red square', width: 2048, height: 1024 }
 
 describe('apimartSize', () => {
   it('asks for exact pixels on the model that takes them', () => {
@@ -158,14 +159,8 @@ describe('generateViaApimart', () => {
   })
 
   it('refuses a gateway it does not serve', async () => {
-    const result = await generateViaApimart({ ...GENERATE, provider: 'magpie' })
+    const result = await generateViaApimart({ ...GENERATE, provider: PROVIDERS.magpie })
     expect('error' in result && result.error).toContain('Magpie')
-  })
-
-  it('asks for a key when there is none anywhere', async () => {
-    delete process.env.APIMART_API_KEY
-    const result = await generateViaApimart({ ...GENERATE, apiKey: '' })
-    expect('error' in result && result.error).toContain('APIMart API key missing')
   })
 
   it('carries the vendor message when the submit is rejected', async () => {

@@ -30,9 +30,11 @@ import {
   type GridAnalysis,
   type PixelBuffer,
 } from '@/app/utils/pixelGrid'
+import { downloadUrl } from '@/app/lib/studioDownload'
+import { StudioActionBar, StudioCountPill } from '@/app/components/StudioActionBar'
 import { Icons } from '@/app/components/icons'
 import LibraryPanel from '@/app/components/LibraryPanel'
-import type { CollectedAsset } from '@/app/lib/libraryCollect'
+import { buildProvenance, type CollectedAsset } from '@/app/lib/libraryCollect'
 import { LIBRARY_PROJECT_STORAGE } from '@/app/lib/app'
 import { useI18n, type Translate } from '@/app/lib/i18n'
 
@@ -143,12 +145,7 @@ function PixelCandidateCell({
 
   const download = () => {
     const name = candidate.label.trim().replace(/[^\w.-]+/g, '_').slice(0, 48) || 'pixel'
-    const link = document.createElement('a')
-    link.href = candidate.processedUrl ?? candidate.sourceUrl
-    link.download = `${name}.png`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    downloadUrl(candidate.processedUrl ?? candidate.sourceUrl, `${name}.png`)
   }
 
   return (
@@ -429,17 +426,14 @@ export function PixelStudio() {
       kind,
       files,
       manifest: null,
-      provenance: {
+      provenance: buildProvenance({
         backend: 'pixellab',
         model: sub === 'character' ? 'create-character-v3' : 'create-image-pixflux',
         prompt: description || null,
-        sceneBrief: null,
-        artStyle: null,
         params: sub === 'character' ? { template, view, size } : { width, height, no_background: noBackground, block, cell },
         requested: sub === 'character' ? `${size}x${size}` : `${width}x${height}`,
         returned: first.figure ? `${first.figure.width}x${first.figure.height}` : null,
-        cost: null,
-      },
+      }),
     }
   }, [candidates, sub, stillKind, description, template, view, size, width, height, noBackground, block, cell])
 
@@ -542,44 +536,39 @@ export function PixelStudio() {
         </div>
 
         {/* Action bar */}
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <button
-            onClick={() => void runGeneration()}
-            disabled={busy !== null || !key || !description.trim()}
-            className="btn btn-primary"
-            title={
-              !key
-                ? t('pixel.generate.titleNoKey')
-                : !description.trim()
-                  ? t('pixel.generate.titleNoDescription')
-                  : sub === 'stills'
-                    ? t('pixel.generate.titleStills')
-                    : t('pixel.generate.titleCharacter')
-            }
-          >
-            {busy ? <Icons.Spinner size={14} /> : <Icons.Sparkle size={14} />}
-            {busy ?? generateLabel}
-          </button>
-          <button
-            onClick={() => setCandidates([])}
-            disabled={!hasAny || busy !== null}
-            className="btn btn-ghost"
-            title={t('pixel.clear.title')}
-          >
-            <Icons.Trash size={14} />
-            {t('pixel.clear')}
-          </button>
-          <div
-            className="rounded-full border px-2.5 py-1 font-mono text-[11px]"
-            style={{
-              borderColor: 'var(--border)',
-              background: 'var(--bg-elev)',
-              color: hasAny ? 'var(--text-secondary)' : 'var(--text-muted)',
-            }}
-          >
-            {t('pixel.processed', { ready: readyCount, total: candidates.length })}
-          </div>
-        </div>
+        <StudioActionBar
+          running={false}
+          onStop={() => {}}
+          stopLabel=""
+          stopTitle=""
+          primary={{
+            label: busy ?? generateLabel,
+            title: !key
+              ? t('pixel.generate.titleNoKey')
+              : !description.trim()
+                ? t('pixel.generate.titleNoDescription')
+                : sub === 'stills'
+                  ? t('pixel.generate.titleStills')
+                  : t('pixel.generate.titleCharacter'),
+            icon: busy ? <Icons.Spinner size={14} /> : <Icons.Sparkle size={14} />,
+            onClick: () => void runGeneration(),
+            disabled: busy !== null || !key || !description.trim(),
+          }}
+          actions={[
+            {
+              label: t('pixel.clear'),
+              title: t('pixel.clear.title'),
+              icon: <Icons.Trash size={14} />,
+              onClick: () => setCandidates([]),
+              disabled: !hasAny || busy !== null,
+            },
+          ]}
+          status={
+            <StudioCountPill dimmed={!hasAny}>
+              {t('pixel.processed', { ready: readyCount, total: candidates.length })}
+            </StudioCountPill>
+          }
+        />
 
         {error && (
           <p

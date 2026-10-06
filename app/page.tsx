@@ -26,8 +26,9 @@ import { SPRITE_ANIMATIONS, SPRITE_FRAME_COUNT, SPRITE_FRAME_SIZE, SPRITE_GRID_C
 import { BODY_PLANS, BodyPlan, isAirborneAnim } from '@/app/lib/bodyPlans'
 import { CORNER_GRAFTS, ENABLE_CORNER_RECONCILE, TILESET_ATLAS_EXTRUDE_PX, TILESET_BY_ROLE, TILESET_COLS, TILESET_PADDED_SHEET_H, TILESET_PADDED_SHEET_W, TILESET_PADDED_STRIDE, TILESET_ROWS, TILESET_SHEET_H, TILESET_SHEET_W, TILESET_SLOTS, TILESET_TILE_SIZE, TILE_TEMPLATE_CELL, TILE_TEMPLATE_COLS, TILE_TEMPLATE_H, TILE_TEMPLATE_MASK, TILE_TEMPLATE_ROWS, TILE_TEMPLATE_SAMPLES, TILE_TEMPLATE_W, TileSetRole, TileSetSlot, alignAiOutputToTemplate, applyFeatheredRoleMask, buildTileSheetGuideDataUrl, createEmptyTileSet, rebuildCornerTile, reconcileAllCorners, templateRoleForCell } from '@/app/lib/tileset'
 import { alignSpriteFramesToBaseline, applyFullContextResult, centerSpriteFramesHorizontally, chromaKeyToAlpha, createChunkedExtension, createFullContextExtension, getImageDimensions, harmonizeHorizontalSeams, isolatePrimarySpriteComponent, isAiExtensionUnfilled, makeHorizontallyTileable, makeTileable2D, makeVerticallyTileable, measureSeamResidual, normalizeSpriteFrameScale, removeFrameBorder, removeUploadedBackground, sliceImageGrid, stitchExtendedChunk } from '@/app/utils/imageProcessor'
+import { CHROMA_PRESETS } from '@/app/lib/chromaPresets'
 import { SubjectBounds, drawPoseGuideSheet, measureSubjectBounds } from '@/app/utils/poseRig'
-import JSZip from 'jszip'
+import { downloadText, downloadUrl, downloadZip, type ZipEntry } from '@/app/lib/studioDownload'
 
 export default function Home() {
   const { t } = useI18n()
@@ -969,18 +970,13 @@ export default function Home() {
 
   const handleDownload = () => {
     if (!activeCandidate) return
-    const link = document.createElement('a')
-    link.href = activeCandidate.imageUrl
     const baseName = originalFileName.replace(/\.[^/.]+$/, '') || 'extended'
     // Tag the filename with the variant index when there are multiple, so
     // batch-downloading different cycles doesn't overwrite the same file.
     const variantTag = extendedCandidates.length > 1
       ? `_v${selectedCandidateIdx + 1}`
       : ''
-    link.download = `${baseName}_extended${variantTag}.png`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    downloadUrl(activeCandidate.imageUrl, `${baseName}_extended${variantTag}.png`)
   }
 
   const handleNewImage = () => {
@@ -1054,12 +1050,7 @@ export default function Home() {
    * zero natural magenta cast, so we can crank the threshold down without
    * eating real material colors. This kills the "thin pink stripe between
    * material and transparency" artefact at its source. */
-  const TILE_CHROMA_KEY_OPTS = {
-    castThreshold: 40,
-    castSoftness: 35,
-    despill: 1,
-    despillGreenBoost: 0.6,
-  }
+  const TILE_CHROMA_KEY_OPTS = CHROMA_PRESETS.tile
   const enforceTileRoleMask = async (
     role: TileSetRole,
     imageUrl: string
@@ -1104,12 +1095,7 @@ export default function Home() {
       // mode (cast threshold above 255 = nothing ever becomes transparent)
       // to neutralize any pinkish pixels back to neutral material color
       // before the 2D-tileable pass.
-      const despilled = await chromaKeyToAlpha(rawImageUrl, {
-        castThreshold: 256,
-        castSoftness: 0,
-        despill: 1,
-        despillGreenBoost: 0.6,
-      })
+      const despilled = await chromaKeyToAlpha(rawImageUrl, CHROMA_PRESETS.despill)
       // Body is repeated many times in the preview, so tiny edge errors and
       // left/right tonal drift become obvious grid lines. Use a stronger pass
       // than parallax/background tiling: wide blends hide the loop boundary,
@@ -1768,36 +1754,15 @@ export default function Home() {
         /[^a-z0-9]+/gi,
         '_'
       )
-      const link = document.createElement('a')
-      link.href = sheet
-      link.download = `${baseName}_sheet_${TILESET_SHEET_W}x${TILESET_SHEET_H}.png`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
+      downloadUrl(sheet, `${baseName}_sheet_${TILESET_SHEET_W}x${TILESET_SHEET_H}.png`)
 
       const paddedSheet = await buildPaddedTileSheetDataUrl()
       if (paddedSheet) {
-        const linkPadded = document.createElement('a')
-        linkPadded.href = paddedSheet
-        linkPadded.download = `${baseName}_sheet_padded_${TILESET_PADDED_SHEET_W}x${TILESET_PADDED_SHEET_H}.png`
-        document.body.appendChild(linkPadded)
-        linkPadded.click()
-        document.body.removeChild(linkPadded)
+        downloadUrl(paddedSheet, `${baseName}_sheet_padded_${TILESET_PADDED_SHEET_W}x${TILESET_PADDED_SHEET_H}.png`)
       }
 
       // Also offer the manifest as a sidecar JSON in a second click.
-      const manifest = buildTileSetManifest()
-      const json = JSON.stringify(manifest, null, 2)
-      const jsonUrl = URL.createObjectURL(
-        new Blob([json], { type: 'application/json' })
-      )
-      const linkJson = document.createElement('a')
-      linkJson.href = jsonUrl
-      linkJson.download = `${baseName}_manifest.json`
-      document.body.appendChild(linkJson)
-      linkJson.click()
-      document.body.removeChild(linkJson)
-      URL.revokeObjectURL(jsonUrl)
+      downloadText(JSON.stringify(buildTileSetManifest(), null, 2), `${baseName}_manifest.json`)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('extender.error.exportSheet'))
     }
@@ -1810,50 +1775,23 @@ export default function Home() {
         setError(t('extender.error.tileFirstZip'))
         return
       }
-      const zip = new JSZip()
-      // Drop each tile in as its own PNG.
-      for (const slot of populated) {
-        if (!slot.imageUrl) continue
-        const spec = TILESET_BY_ROLE[slot.role]
-        const base64 = slot.imageUrl.split(',')[1]
-        if (base64) {
-          zip.file(`${spec.fileName}.png`, base64, { base64: true })
-        }
-      }
-      // Combined sheet for engine import.
+      // Drop each tile in as its own PNG, plus the combined sheet, the padded
+      // sheet, and the manifest with its grid layout.
+      const entries: ZipEntry[] = populated.map((slot) => ({
+        name: `${TILESET_BY_ROLE[slot.role].fileName}.png`,
+        dataUrl: slot.imageUrl as string,
+      }))
       const sheet = await buildTileSheetDataUrl()
-      if (sheet) {
-        const base64 = sheet.split(',')[1]
-        if (base64) {
-          zip.file('sheet.png', base64, { base64: true })
-        }
-      }
+      if (sheet) entries.push({ name: 'sheet.png', dataUrl: sheet })
       const paddedSheet = await buildPaddedTileSheetDataUrl()
-      if (paddedSheet) {
-        const base64 = paddedSheet.split(',')[1]
-        if (base64) {
-          zip.file('sheet_padded.png', base64, { base64: true })
-        }
-      }
-      // Manifest with grid layout.
-      zip.file(
-        'manifest.json',
-        JSON.stringify(buildTileSetManifest(), null, 2)
-      )
+      if (paddedSheet) entries.push({ name: 'sheet_padded.png', dataUrl: paddedSheet })
+      entries.push({ name: 'manifest.json', text: JSON.stringify(buildTileSetManifest(), null, 2) })
 
-      const blob = await zip.generateAsync({ type: 'blob' })
       const baseName = (tilePrompt.trim().slice(0, 24) || 'tileset').replace(
         /[^a-z0-9]+/gi,
         '_'
       )
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${baseName}_tileset.zip`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
+      await downloadZip(`${baseName}_tileset.zip`, entries)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('extender.error.exportZip'))
     }
@@ -1871,12 +1809,7 @@ export default function Home() {
   // chroma-key rather than the aggressive tile tuning — enough to delete the
   // flat magenta cleanly without eating saturated prop colors. removeFrameBorder
   // then wipes any neighbor bleed that crept into a cell's outer band.
-  const PROP_CHROMA_KEY_OPTS = {
-    castThreshold: 70,
-    castSoftness: 30,
-    despill: 1,
-    despillGreenBoost: 0.5,
-  }
+  const PROP_CHROMA_KEY_OPTS = CHROMA_PRESETS.prop
 
   /** Magenta → alpha for one sliced prop cell, then trim cell-edge bleed. */
   const postProcessProp = async (rawCellUrl: string): Promise<string> => {
@@ -2330,24 +2263,8 @@ export default function Home() {
         /[^a-z0-9]+/gi,
         '_'
       )
-      const link = document.createElement('a')
-      link.href = sheet
-      link.download = `${baseName}_props_atlas.png`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-
-      const json = JSON.stringify(buildPropManifest(), null, 2)
-      const jsonUrl = URL.createObjectURL(
-        new Blob([json], { type: 'application/json' })
-      )
-      const linkJson = document.createElement('a')
-      linkJson.href = jsonUrl
-      linkJson.download = `${baseName}_props_manifest.json`
-      document.body.appendChild(linkJson)
-      linkJson.click()
-      document.body.removeChild(linkJson)
-      URL.revokeObjectURL(jsonUrl)
+      downloadUrl(sheet, `${baseName}_props_atlas.png`)
+      downloadText(JSON.stringify(buildPropManifest(), null, 2), `${baseName}_props_manifest.json`)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('extender.error.exportAtlas'))
     }
@@ -2360,36 +2277,17 @@ export default function Home() {
         setError(t('extender.error.propFirstZip'))
         return
       }
-      const zip = new JSZip()
       const names = resolvePropNames(populated)
-      populated.forEach((p, i) => {
-        const base64 = (p.imageUrl as string).split(',')[1]
-        if (base64) {
-          zip.file(names[i].file, base64, {
-            base64: true,
-          })
-        }
-      })
+      const entries: ZipEntry[] = populated.map((p, i) => ({ name: names[i].file, dataUrl: p.imageUrl as string }))
       const sheet = await buildPropAtlasDataUrl()
-      if (sheet) {
-        const base64 = sheet.split(',')[1]
-        if (base64) zip.file('props_atlas.png', base64, { base64: true })
-      }
-      zip.file('manifest.json', JSON.stringify(buildPropManifest(), null, 2))
+      if (sheet) entries.push({ name: 'props_atlas.png', dataUrl: sheet })
+      entries.push({ name: 'manifest.json', text: JSON.stringify(buildPropManifest(), null, 2) })
 
-      const blob = await zip.generateAsync({ type: 'blob' })
       const baseName = (propPrompt.trim().slice(0, 24) || 'props').replace(
         /[^a-z0-9]+/gi,
         '_'
       )
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${baseName}_props.zip`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
+      await downloadZip(`${baseName}_props.zip`, entries)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('extender.error.exportZip'))
     }
@@ -3313,33 +3211,13 @@ export default function Home() {
       ).replace(/[^a-z0-9]+/gi, '_')}`
 
       if (grid) {
-        const link = document.createElement('a')
-        link.href = grid
-        link.download = `${baseName}_grid_${SPRITE_SHEET_W}x${SPRITE_SHEET_H}.png`
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
+        downloadUrl(grid, `${baseName}_grid_${SPRITE_SHEET_W}x${SPRITE_SHEET_H}.png`)
       }
       if (strip) {
-        const link = document.createElement('a')
-        link.href = strip
-        link.download = `${baseName}_strip_${SPRITE_STRIP_W}x${SPRITE_STRIP_H}.png`
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
+        downloadUrl(strip, `${baseName}_strip_${SPRITE_STRIP_W}x${SPRITE_STRIP_H}.png`)
       }
       // Manifest as sidecar JSON.
-      const json = JSON.stringify(buildSpriteManifest(populated), null, 2)
-      const jsonUrl = URL.createObjectURL(
-        new Blob([json], { type: 'application/json' })
-      )
-      const linkJson = document.createElement('a')
-      linkJson.href = jsonUrl
-      linkJson.download = `${baseName}_manifest.json`
-      document.body.appendChild(linkJson)
-      linkJson.click()
-      document.body.removeChild(linkJson)
-      URL.revokeObjectURL(jsonUrl)
+      downloadText(JSON.stringify(buildSpriteManifest(populated), null, 2), `${baseName}_manifest.json`)
     } catch (err) {
       setError(
         err instanceof Error ? err.message : t('extender.error.exportSpriteSheet')
@@ -3361,46 +3239,23 @@ export default function Home() {
         return
       }
       const cellUrls = populated.map((f) => f.imageUrl as string)
-      const zip = new JSZip()
       // Per-frame PNGs (engines that prefer one file per frame). Reindexed to
       // contiguous positions so filenames match the repacked manifest/strip.
-      populated.forEach((f, i) => {
-        if (!f.imageUrl) return
-        const base64 = f.imageUrl.split(',')[1]
-        if (base64) {
-          const name = `frame_${String(i + 1).padStart(2, '0')}.png`
-          zip.file(name, base64, { base64: true })
-        }
-      })
-      // Combined grid sheet (recomposed from kept cells).
+      const entries: ZipEntry[] = populated.map((f, i) => ({
+        name: `frame_${String(i + 1).padStart(2, '0')}.png`,
+        dataUrl: f.imageUrl as string,
+      }))
       const grid = await composeSpriteGridSheet(cellUrls)
-      if (grid) {
-        const b64 = grid.split(',')[1]
-        if (b64) zip.file('sheet.png', b64, { base64: true })
-      }
+      if (grid) entries.push({ name: 'sheet.png', dataUrl: grid })
       // Horizontal strip for engines that want one row.
       const strip = await composeSpriteStripSheet(cellUrls)
-      if (strip) {
-        const b64 = strip.split(',')[1]
-        if (b64) zip.file('strip.png', b64, { base64: true })
-      }
-      zip.file(
-        'manifest.json',
-        JSON.stringify(buildSpriteManifest(populated), null, 2)
-      )
+      if (strip) entries.push({ name: 'strip.png', dataUrl: strip })
+      entries.push({ name: 'manifest.json', text: JSON.stringify(buildSpriteManifest(populated), null, 2) })
 
-      const blob = await zip.generateAsync({ type: 'blob' })
       const baseName = `${spriteAnim}_${(
         spritePrompt.trim().slice(0, 24) || 'sprite'
       ).replace(/[^a-z0-9]+/gi, '_')}`
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${baseName}_sprite.zip`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
+      await downloadZip(`${baseName}_sprite.zip`, entries)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('extender.error.exportZip'))
     }
@@ -3565,14 +3420,7 @@ export default function Home() {
     if (mode === 'parallax') {
       const layer = activeLayer
       if (!layer || !layer.imageUrl) return
-      const link = document.createElement('a')
-      link.href = layer.imageUrl
-      const w = layer.width ?? 0
-      const h = layer.height ?? 0
-      link.download = `parallax_${layer.role}_${w}x${h}.png`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
+      downloadUrl(layer.imageUrl, `parallax_${layer.role}_${layer.width ?? 0}x${layer.height ?? 0}.png`)
       return
     }
     const target = activeCandidate?.imageUrl ?? selectedImage
@@ -3580,13 +3428,8 @@ export default function Home() {
       ? candidateDims[selectedCandidateIdx] ?? null
       : currentImageDimensions
     if (!target || !dims) return
-    const link = document.createElement('a')
-    link.href = target
     const baseName = originalFileName.replace(/\.[^/.]+$/, '') || 'parallax'
-    link.download = `${baseName}_${dims.width}x${dims.height}.png`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    downloadUrl(target, `${baseName}_${dims.width}x${dims.height}.png`)
   }
 
   /**
@@ -3603,7 +3446,7 @@ export default function Home() {
     }
     setProgressMsg(t('extender.progress.packaging'))
     try {
-      const zip = new JSZip()
+      const entries: ZipEntry[] = []
       const manifest: {
         version: number
         createdAt: string
@@ -3625,9 +3468,7 @@ export default function Home() {
       for (const layer of parallaxLayers) {
         if (!layer.imageUrl) continue
         const filename = `${layer.role}.png`
-        const dataUrl = layer.imageUrl
-        const base64 = dataUrl.split(',')[1] ?? ''
-        zip.file(filename, base64, { base64: true })
+        entries.push({ name: filename, dataUrl: layer.imageUrl })
         manifest.layers.push({
           role: layer.role,
           file: filename,
@@ -3637,17 +3478,8 @@ export default function Home() {
           opaque: LAYER_ROLES[layer.role].isOpaque,
         })
       }
-      zip.file('parallax.json', JSON.stringify(manifest, null, 2))
-      const blob = await zip.generateAsync({ type: 'blob' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `parallax_project_${Date.now()}.zip`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      // Revoke the blob URL on the next tick so the click has fired.
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      entries.push({ name: 'parallax.json', text: JSON.stringify(manifest, null, 2) })
+      await downloadZip(`parallax_project_${Date.now()}.zip`, entries)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('extender.error.buildZip'))
     } finally {

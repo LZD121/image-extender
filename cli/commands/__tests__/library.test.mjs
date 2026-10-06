@@ -43,6 +43,11 @@ async function ctxFor(args, flags = {}) {
     async modules(name, imports) {
       return import(pathToFileURL(nodeBundle(name, imports)).href)
     },
+    /** Same as the real context: the app authors the provenance shape. */
+    async provenance(fields) {
+      const { buildProvenance } = await this.modules('librarycollect', ['app/lib/libraryCollect'])
+      return buildProvenance(fields)
+    },
   }
 }
 

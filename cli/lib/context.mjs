@@ -40,6 +40,12 @@ export function createContext({ globals, cmd, note }) {
       return fields
     },
 
+    /** The asset provenance shape, authored by the app; the CLI supplies facts. */
+    async provenance(fields) {
+      const { buildProvenance } = await ctx.modules('librarycollect', ['app/lib/libraryCollect'])
+      return buildProvenance(fields)
+    },
+
     async server() {
       ctx._server = ctx._server || (await ensureServer({ baseUrl: globals.baseUrl, port: globals.port, note }))
       return ctx._server

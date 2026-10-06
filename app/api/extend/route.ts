@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { extractImageUrl } from '@/app/lib/llmResponse'
-import { generateViaApimart } from '@/app/lib/apimartServer'
-import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
-import { chatCompletion } from '@/app/lib/llmChat'
+import { modelOrDefault } from '@/app/lib/llmServer'
+import { generateImage } from '@/app/lib/imageGeneration'
 import { ART_STYLE_PROMPTS } from '@/app/lib/stylePrompt'
 
 export async function POST(request: NextRequest) {
@@ -32,15 +30,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-
-    const target = llmTarget({
-      provider,
-      profile,
-      apiKey,
-      referer: request.headers.get('referer'),
-      title: 'AI Image Extender',
-    })
-    if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
     const modelId = modelOrDefault({ model, provider, profile, kind: 'image' })
 
@@ -187,78 +176,46 @@ KEY INSTRUCTIONS:
       prompt += `\n\nOUTPUT DIMENSIONS: Return the image at exactly ${chunkW}x${chunkH} pixels — the same dimensions as the input image. Fill every gray pixel in the blank area. Do NOT return a different size or aspect ratio.`
     }
 
-
-    // APIMart image models are an async task API. They also need the target
-    // canvas in pixels, which only the full-context path states: a chunked
-    // extend has no single output size to ask for, so say so instead of
-    // silently returning the wrong shape.
-    if (target.provider.id === 'apimart') {
-      const targetWidth = extensionInfo?.newWidth
-      const targetHeight = extensionInfo?.newHeight
-      if (!targetWidth || !targetHeight) {
+    // One request either way: the dispatch resolves the credentials once and
+    // picks the adapter this gateway needs. APIMart also needs the target
+    // canvas in pixels, which only the full-context path states — the dispatch
+    // carries that guard, because only the adapter can say why.
+    const image = await generateImage({
+      provider,
+      profile,
+      apiKey,
+      referer: request.headers.get('referer'),
+      title: 'AI Image Extender',
+      model: modelId,
+      prompt,
+      width: extensionInfo?.newWidth,
+      height: extensionInfo?.newHeight,
+      temperature: attempt === 0 ? 0.3 : attempt === 1 ? 0.5 : 0.7,
+      references: [expandedCanvas],
+      content: [
+        { type: 'image_url', image_url: { url: expandedCanvas } },
+        { type: 'text', text: prompt },
+      ],
+    })
+    if ('error' in image) {
+      if (image.reason === 'no-image') {
+        const message = image.message ?? {}
+        console.error('No image URL found. Message structure:', JSON.stringify(sanitizeForLogging(message), null, 2))
         return NextResponse.json(
-          { error: 'APIMart needs the full-context extend path — switch to a chat gateway for chunked extends.' },
-          { status: 400 },
+          {
+            error: 'The model responded without an image. It may not support image extension yet.',
+            debug: {
+              hasContent: !!message.content,
+              contentType: Array.isArray(message.content) ? 'array' : typeof message.content,
+            },
+          },
+          { status: 500 }
         )
       }
-      const result = await generateViaApimart({
-        provider,
-        profile,
-        apiKey,
-        model: modelId,
-        prompt,
-        width: targetWidth,
-        height: targetHeight,
-        references: [expandedCanvas],
-      })
-      if ('error' in result) {
-        console.error('APIMart error:', result.error)
-        return NextResponse.json({ error: result.error }, { status: 502 })
-      }
-      return NextResponse.json({ imageUrl: result.dataUrl, chunkInfo, provider: target.provider.id })
-    }
-    const reply = await chatCompletion({
-      target,
-      model: modelId,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: expandedCanvas } },
-            { type: 'text', text: prompt },
-          ],
-        },
-      ],
-      maxTokens: 2000,
-      temperature: attempt === 0 ? 0.3 : attempt === 1 ? 0.5 : 0.7,
-    })
-    if (!reply.ok) return NextResponse.json({ error: reply.error }, { status: reply.status })
-
-    const message = reply.message
-
-    const imageUrl = extractImageUrl(message)
-
-    console.log('\n=== Message Content Structure ===')
-    console.log('Content type:', message.content === null ? 'null' : Array.isArray(message.content) ? 'array' : typeof message.content)
-    console.log('Has images array:', !!(message.images as unknown[] | undefined)?.length)
-    console.log('Image extracted:', !!imageUrl)
-    console.log('===============================\n')
-
-    if (!imageUrl) {
-      console.error('No image URL found. Message structure:', JSON.stringify(sanitizeForLogging(message), null, 2))
-      return NextResponse.json(
-        {
-          error: 'The model responded without an image. It may not support image extension yet.',
-          debug: {
-            hasContent: !!message.content,
-            contentType: Array.isArray(message.content) ? 'array' : typeof message.content,
-          },
-        },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: image.error }, { status: image.status })
     }
 
-    return NextResponse.json({ imageUrl, chunkInfo })
+    return NextResponse.json({ imageUrl: image.imageUrl, chunkInfo, provider: image.provider })
   } catch (error) {
     console.error('Error in extend route:', error)
     return NextResponse.json(

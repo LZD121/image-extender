@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { Icons } from '@/app/components/icons'
 import { ART_STYLE_GROUPS } from '@/app/lib/artStyles'
 import { useI18n } from '@/app/lib/i18n'
+import { StudioActionBar, StudioCountPill } from '@/app/components/StudioActionBar'
 import { TILESET_COLS, TILESET_PRESETS, TILESET_ROWS, TILESET_SLOTS, TILE_TEMPLATE_MASK, TileSetRole, TileSetSlot, TileSetSlotSpec } from '@/app/lib/tileset'
 
 export function TileSlotCell({
@@ -315,68 +316,49 @@ export function TileStudio({
       </div>
 
       {/* Action bar */}
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {generating ? (
-          <button
-            onClick={onStop}
-            className="btn btn-danger"
-            title={t('tile.action.stopTitle')}
-          >
-            <Icons.Stop size={14} />
-            {t('tile.action.stop')}
-          </button>
-        ) : (
-          <button
-            onClick={onGenerateAll}
-            disabled={!prompt.trim()}
-            className="btn btn-primary"
-            title={t('tile.action.generateTitle')}
-          >
-            <Icons.Sparkle size={14} />
-            {hasAny ? t('tile.action.reroll') : t('tile.action.generate')}
-          </button>
-        )}
-        <button
-          onClick={onDownloadSheet}
-          disabled={!hasAny || generating}
-          className="btn btn-secondary"
-          title={t('tile.action.sheetManifestTitle')}
-        >
-          <Icons.Download size={14} />
-          {t('tile.action.sheetManifest')}
-        </button>
-        <button
-          onClick={onDownloadZip}
-          disabled={!hasAny || generating}
-          className="btn btn-ghost"
-          title={t('tile.action.zipTitle')}
-        >
-          <Icons.Layers size={14} />
-          {t('tile.action.zip')}
-        </button>
-        <button
-          onClick={onClearAll}
-          disabled={!hasAny || generating}
-          className="btn btn-ghost"
-          title={t('tile.action.clearTitle')}
-        >
-          <Icons.Trash size={14} />
-          {t('tile.action.clear')}
-        </button>
-        <div
-          className="rounded-full border px-2.5 py-1 font-mono text-[11px]"
-          style={{
-            borderColor: 'var(--border)',
-            background: 'var(--bg-elev)',
-            color: hasAny
-              ? 'var(--text-secondary)'
-              : 'var(--text-muted)',
-          }}
-        >
-          {t('tile.progress.count', { filled: filledCount, total })}
-          {progressMessage ? ` · ${progressMessage}` : ''}
-        </div>
-      </div>
+      <StudioActionBar
+        running={generating}
+        onStop={onStop}
+        stopLabel={t('tile.action.stop')}
+        stopTitle={t('tile.action.stopTitle')}
+        primary={{
+          label: hasAny ? t('tile.action.reroll') : t('tile.action.generate'),
+          title: t('tile.action.generateTitle'),
+          icon: <Icons.Sparkle size={14} />,
+          onClick: onGenerateAll,
+          disabled: !prompt.trim(),
+        }}
+        actions={[
+          {
+            label: t('tile.action.sheetManifest'),
+            title: t('tile.action.sheetManifestTitle'),
+            icon: <Icons.Download size={14} />,
+            onClick: onDownloadSheet,
+            variant: 'secondary',
+            disabled: !hasAny || generating,
+          },
+          {
+            label: t('tile.action.zip'),
+            title: t('tile.action.zipTitle'),
+            icon: <Icons.Layers size={14} />,
+            onClick: onDownloadZip,
+            disabled: !hasAny || generating,
+          },
+          {
+            label: t('tile.action.clear'),
+            title: t('tile.action.clearTitle'),
+            icon: <Icons.Trash size={14} />,
+            onClick: onClearAll,
+            disabled: !hasAny || generating,
+          },
+        ]}
+        status={
+          <StudioCountPill dimmed={!hasAny}>
+            {t('tile.progress.count', { filled: filledCount, total })}
+            {progressMessage ? ` · ${progressMessage}` : ''}
+          </StudioCountPill>
+        }
+      />
 
       {/* Two-column body: 4x4 grid on the left, platform preview on the right */}
       <div className="grid w-full flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">

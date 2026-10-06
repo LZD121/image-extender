@@ -6,6 +6,7 @@ import { useI18n } from '@/app/lib/i18n'
 import { ART_STYLE_GROUPS } from '@/app/lib/artStyles'
 import { SPRITE_ANIMATIONS, SPRITE_FRAME_COUNT, SPRITE_FRAME_SIZE, SPRITE_SHEET_H, SPRITE_SHEET_W, SpriteAnimType, SpriteFrame, SpriteSheet } from '@/app/lib/sprite'
 import { BODY_PLANS, BODY_PLAN_ORDER, BodyPlan } from '@/app/lib/bodyPlans'
+import { StudioActionBar, StudioCountPill } from '@/app/components/StudioActionBar'
 
 export function SpriteAnimationPlayer({
   frames,
@@ -521,100 +522,67 @@ export function SpriteStudio({
       </div>
 
       {/* Action bar */}
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {generating ? (
-          <button
-            onClick={onStop}
-            className="btn btn-danger"
-            title={t('sprite.action.stopHint')}
-          >
-            <Icons.Stop size={14} />
-            {t('sprite.action.stop')}
-          </button>
-        ) : (
-          <button
-            onClick={onGenerate}
-            disabled={!canGenerate}
-            className="btn btn-primary"
-            title={
-              anchor
-                ? t('sprite.action.generateTitle', {
-                    anim: t(
-                      `common.anim.${selectedAnim}.label`,
-                      undefined,
-                      spec.label
-                    ).toLowerCase(),
-                  })
-                : t('sprite.action.lockTitle', {
-                    anim: t(
-                      `common.anim.${selectedAnim}.label`,
-                      undefined,
-                      spec.label
-                    ).toLowerCase(),
-                  })
-            }
-          >
-            <Icons.Sparkle size={14} />
-            {anchor
-              ? hasAny
-                ? t('sprite.action.reroll', { anim: animLabel })
-                : t('sprite.action.generate', { anim: animLabel })
-              : t('sprite.action.lock', { anim: animLabel })}
-          </button>
-        )}
-        {anchor && !generating && (
-          <button
-            onClick={onRerollCharacter}
-            disabled={!prompt.trim()}
-            className="btn btn-secondary"
-            title={t('sprite.action.rerollCharacterHint')}
-          >
-            <Icons.Refresh size={14} />
-            {t('sprite.action.rerollCharacter')}
-          </button>
-        )}
-        <button
-          onClick={onDownloadSheet}
-          disabled={!hasAny || generating}
-          className="btn btn-secondary"
-          title={t('sprite.action.downloadSheetHint')}
-        >
-          <Icons.Download size={14} />
-          {t('sprite.action.downloadSheet')}
-        </button>
-        <button
-          onClick={onDownloadZip}
-          disabled={!hasAny || generating}
-          className="btn btn-ghost"
-          title={t('sprite.action.downloadZipHint')}
-        >
-          <Icons.Layers size={14} />
-          {t('sprite.action.downloadZip')}
-        </button>
-        <button
-          onClick={onClear}
-          disabled={(!hasAny && !anchor) || generating}
-          className="btn btn-ghost"
-          title={t('sprite.action.clearHint')}
-        >
-          <Icons.Trash size={14} />
-          {t('sprite.action.clear')}
-        </button>
-        <div
-          className="rounded-full border px-2.5 py-1 font-mono text-[11px]"
-          style={{
-            borderColor: 'var(--border)',
-            background: 'var(--bg-elev)',
-            color: hasAny ? 'var(--text-secondary)' : 'var(--text-muted)',
-          }}
-        >
-          {t('sprite.action.frameCount', {
-            filled: filledCount,
-            total: SPRITE_FRAME_COUNT,
-          })}
-          {progressMessage ? ` · ${progressMessage}` : ''}
-        </div>
-      </div>
+      <StudioActionBar
+        running={generating}
+        onStop={onStop}
+        stopLabel={t('sprite.action.stop')}
+        stopTitle={t('sprite.action.stopHint')}
+        primary={{
+          label: anchor
+            ? hasAny
+              ? t('sprite.action.reroll', { anim: animLabel })
+              : t('sprite.action.generate', { anim: animLabel })
+            : t('sprite.action.lock', { anim: animLabel }),
+          title: anchor
+            ? t('sprite.action.generateTitle', { anim: animLabel })
+            : t('sprite.action.lockTitle', { anim: animLabel }),
+          icon: <Icons.Sparkle size={14} />,
+          onClick: onGenerate,
+          disabled: !canGenerate,
+        }}
+        actions={[
+          ...(anchor && !generating
+            ? [
+                {
+                  label: t('sprite.action.rerollCharacter'),
+                  title: t('sprite.action.rerollCharacterHint'),
+                  icon: <Icons.Refresh size={14} />,
+                  onClick: onRerollCharacter,
+                  variant: 'secondary' as const,
+                  disabled: !prompt.trim(),
+                },
+              ]
+            : []),
+          {
+            label: t('sprite.action.downloadSheet'),
+            title: t('sprite.action.downloadSheetHint'),
+            icon: <Icons.Download size={14} />,
+            onClick: onDownloadSheet,
+            variant: 'secondary',
+            disabled: !hasAny || generating,
+          },
+          {
+            label: t('sprite.action.downloadZip'),
+            title: t('sprite.action.downloadZipHint'),
+            icon: <Icons.Layers size={14} />,
+            onClick: onDownloadZip,
+            disabled: !hasAny || generating,
+          },
+          {
+            label: t('sprite.action.clear'),
+            title: t('sprite.action.clearHint'),
+            icon: <Icons.Trash size={14} />,
+            onClick: onClear,
+            disabled: (!hasAny && !anchor) || generating,
+          },
+        ]}
+        status={
+          <StudioCountPill dimmed={!hasAny}>
+            {t('sprite.action.frameCount', { filled: filledCount, total: SPRITE_FRAME_COUNT })}
+            {progressMessage ? ` · ${progressMessage}` : ''}
+          </StudioCountPill>
+        }
+      />
 
       {/* Two-column body: compact live-player rail on the left, frame grid +
           controls on the right (which carries most of the content). */}

@@ -3,6 +3,7 @@
 import { Icons } from '@/app/components/icons'
 import { StatusPill } from '@/app/components/TopBar'
 import { Direction } from '@/app/lib/app'
+import { StudioCountPill } from '@/app/components/StudioActionBar'
 import { useI18n } from '@/app/lib/i18n'
 
 export function EdgeHandle({
@@ -164,16 +165,9 @@ export function Workspace({
       {/* Below-image meta row */}
       <div className="mt-5 flex items-center gap-3 anim-slide-up">
         {dimensions && (
-          <div
-            className="rounded-full border px-2.5 py-1 font-mono text-[11px]"
-            style={{
-              borderColor: 'var(--border)',
-              background: 'var(--bg-elev)',
-              color: 'var(--text-secondary)',
-            }}
-          >
+          <StudioCountPill>
             {dimensions.width} × {dimensions.height}
-          </div>
+          </StudioCountPill>
         )}
         {isResult && variantSelector}
         {isResult && resultMessage && (

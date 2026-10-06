@@ -73,15 +73,40 @@ export function slugify(input: string): string {
   return slug || 'asset'
 }
 
-const base = (prompt: string | null, model: string) => ({
-  backend: 'openrouter' as BackendLabel,
-  model,
-  prompt,
-  sceneBrief: null,
-  artStyle: null,
-  requested: null,
-  returned: null,
-  cost: null,
+/**
+ * The provenance shape, authored once. The browser collector, the pixel studio
+ * and the headless CLI all describe one asset the same way — they differ only
+ * in the facts they have (a backend id, a cost, a returned size). Every field
+ * is written, so a reader never has to tell "absent" from "null".
+ */
+export function buildProvenance<Backend extends string>(opts: {
+  backend: Backend
+  model: string
+  prompt?: string | null
+  sceneBrief?: string | null
+  artStyle?: string | null
+  params?: Record<string, unknown>
+  requested?: string | null
+  returned?: string | null
+  cost?: { usd: number; source: string } | null
+}): Omit<Provenance, 'toolVersion'> & { backend: Backend } {
+  return {
+    backend: opts.backend,
+    model: opts.model,
+    prompt: opts.prompt ?? null,
+    sceneBrief: opts.sceneBrief ?? null,
+    artStyle: opts.artStyle ?? null,
+    params: opts.params ?? {},
+    requested: opts.requested ?? null,
+    returned: opts.returned ?? null,
+    cost: opts.cost ?? null,
+  }
+}
+
+/** The collector's skeleton: everything a browser studio does not know yet. */
+const base = (prompt: string | null, model: string): CollectedAsset['provenance'] => ({
+  ...buildProvenance({ backend: 'openrouter', model, prompt }),
+  backend: 'openrouter',
 })
 
 export function collectStudioAsset(input: CollectorInput): CollectedAsset | null {

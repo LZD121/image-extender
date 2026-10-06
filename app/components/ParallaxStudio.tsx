@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icons } from '@/app/components/icons'
 import { StatusPill } from '@/app/components/TopBar'
+import { StudioCountPill } from '@/app/components/StudioActionBar'
 import { Direction } from '@/app/lib/app'
 import { useI18n } from '@/app/lib/i18n'
 import { LAYER_ROLES, PARALLAX_TARGET_PRESETS, ParallaxLayer, getLayerIndexByRole, getRecommendedLayerIndex, getWorkflowPrerequisite, getWorkflowStep } from '@/app/lib/parallax'
@@ -935,14 +936,7 @@ export function ParallaxStudio({
             </div>
 
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <div
-                className="rounded-full border px-2.5 py-1 font-mono text-[11px]"
-                style={{
-                  borderColor: 'var(--border)',
-                  background: 'var(--bg-elev)',
-                  color: 'var(--text-secondary)',
-                }}
-              >
+              <StudioCountPill>
                 {t(
                   `common.layer.${activeLayer.role}.short`,
                   undefined,
@@ -951,7 +945,7 @@ export function ParallaxStudio({
                 {activeDimensions
                   ? ` · ${activeDimensions.width} × ${activeDimensions.height}`
                   : ''}
-              </div>
+              </StudioCountPill>
               {isResult && variantSelector}
               {isResult && resultMessage && (
                 <StatusPill status="ok" message={resultMessage} />

@@ -163,17 +163,7 @@ async function save(ctx, lib) {
       manifest: null,
       // The full Provenance shape minus toolVersion (stamped below), so
       // meta.json never has holes a reader would have to treat as absent-vs-null.
-      provenance: {
-        backend: 'openrouter',
-        model: '',
-        prompt: null,
-        sceneBrief: null,
-        artStyle: null,
-        params: {},
-        requested: null,
-        returned: null,
-        cost: null,
-      },
+      provenance: await ctx.provenance({ backend: 'openrouter', model: '' }),
     },
     { project, slug }
   )

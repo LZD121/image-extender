@@ -4,6 +4,7 @@ import { Icons } from '@/app/components/icons'
 import { ART_STYLE_GROUPS } from '@/app/lib/artStyles'
 import { PROP_PRESETS, PropItem } from '@/app/lib/props'
 import { useI18n } from '@/app/lib/i18n'
+import { StudioActionBar, StudioCountPill } from '@/app/components/StudioActionBar'
 
 export function PropItemCell({
   item,
@@ -157,74 +158,53 @@ export function PropStudio({
       </div>
 
       {/* Action bar */}
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {generating ? (
-          <button
-            onClick={onStop}
-            className="btn btn-danger"
-            title={t('props.action.stopTitle')}
-          >
-            <Icons.Stop size={14} />
-            {t('props.action.stop')}
-          </button>
-        ) : (
-          <button
-            onClick={onAddMore}
-            disabled={!prompt.trim()}
-            className="btn btn-primary"
-            title={
-              hasAny
-                ? t('props.action.addMoreTitle', { count: batchSize })
-                : t('props.action.firstTitle', { count: batchSize })
-            }
-          >
-            <Icons.Plus size={14} />
-            {hasAny
-              ? t('props.action.addMore', { count: batchSize })
-              : t('props.action.generate', { count: batchSize })}
-          </button>
-        )}
-        <button
-          onClick={onDownloadSheet}
-          disabled={!hasAny || generating}
-          className="btn btn-secondary"
-          title={t('props.action.atlasTitle')}
-        >
-          <Icons.Download size={14} />
-          {t('props.action.atlas')}
-        </button>
-        <button
-          onClick={onDownloadZip}
-          disabled={!hasAny || generating}
-          className="btn btn-ghost"
-          title={t('props.action.zipTitle')}
-        >
-          <Icons.Layers size={14} />
-          {t('props.action.zip')}
-        </button>
-        <button
-          onClick={onClearAll}
-          disabled={!hasAny || generating}
-          className="btn btn-ghost"
-          title={t('props.action.clearTitle')}
-        >
-          <Icons.Trash size={14} />
-          {t('props.action.clear')}
-        </button>
-        <div
-          className="rounded-full border px-2.5 py-1 font-mono text-[11px]"
-          style={{
-            borderColor: 'var(--border)',
-            background: 'var(--bg-elev)',
-            color: hasAny ? 'var(--text-secondary)' : 'var(--text-muted)',
-          }}
-        >
-          {t(filledCount === 1 ? 'props.count.one' : 'props.count.other', {
-            count: filledCount,
-          })}
-          {progressMessage ? ` · ${progressMessage}` : ''}
-        </div>
-      </div>
+      <StudioActionBar
+        running={generating}
+        onStop={onStop}
+        stopLabel={t('props.action.stop')}
+        stopTitle={t('props.action.stopTitle')}
+        primary={{
+          label: hasAny
+            ? t('props.action.addMore', { count: batchSize })
+            : t('props.action.generate', { count: batchSize }),
+          title: hasAny
+            ? t('props.action.addMoreTitle', { count: batchSize })
+            : t('props.action.firstTitle', { count: batchSize }),
+          icon: <Icons.Plus size={14} />,
+          onClick: onAddMore,
+          disabled: !prompt.trim(),
+        }}
+        actions={[
+          {
+            label: t('props.action.atlas'),
+            title: t('props.action.atlasTitle'),
+            icon: <Icons.Download size={14} />,
+            onClick: onDownloadSheet,
+            variant: 'secondary',
+            disabled: !hasAny || generating,
+          },
+          {
+            label: t('props.action.zip'),
+            title: t('props.action.zipTitle'),
+            icon: <Icons.Layers size={14} />,
+            onClick: onDownloadZip,
+            disabled: !hasAny || generating,
+          },
+          {
+            label: t('props.action.clear'),
+            title: t('props.action.clearTitle'),
+            icon: <Icons.Trash size={14} />,
+            onClick: onClearAll,
+            disabled: !hasAny || generating,
+          },
+        ]}
+        status={
+          <StudioCountPill dimmed={!hasAny}>
+            {t(filledCount === 1 ? 'props.count.one' : 'props.count.other', { count: filledCount })}
+            {progressMessage ? ` · ${progressMessage}` : ''}
+          </StudioCountPill>
+        }
+      />
 
       {/* Library gallery */}
       <div className="flex flex-col gap-2">

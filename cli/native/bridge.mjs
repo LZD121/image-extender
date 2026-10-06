@@ -45,33 +45,12 @@ const PAGE_PROGRAM = async (job) => {
   const IN = job.inputs
 
   /**
-   * Chroma presets. `tile`/`prop` mirror the app's per-mode options; `despill`
-   * (threshold above 255) never makes a pixel transparent, it only neutralizes
-   * magenta cast — the app uses it on the fully-opaque tile `body` cell.
+   * The app's own chroma tunings and tile export names. Both used to be copies
+   * here (only a human kept them in step); the bundle already carries the
+   * modules that own them, so the bridge reads them from there.
    */
-  const CHROMA = {
-    default: { castThreshold: 80, castSoftness: 30, despill: 1, despillGreenBoost: 0.5 },
-    tile: { castThreshold: 40, castSoftness: 35, despill: 1, despillGreenBoost: 0.6 },
-    prop: { castThreshold: 70, castSoftness: 30, despill: 1, despillGreenBoost: 0.5 },
-    despill: { castThreshold: 256, castSoftness: 0, despill: 1, despillGreenBoost: 0.6 },
-  }
-
-  /** Export file name per tile role (matches TILESET_BY_ROLE[].fileName). */
-  const ROLE_FILE = {
-    tl_outer: 'corner-tl-outer',
-    top: 'edge-top',
-    tr_outer: 'corner-tr-outer',
-    tl_inner: 'corner-tl-inner',
-    left: 'edge-left',
-    body: 'body',
-    right: 'edge-right',
-    tr_inner: 'corner-tr-inner',
-    bl_outer: 'corner-bl-outer',
-    bottom: 'edge-bottom',
-    br_outer: 'corner-br-outer',
-    bl_inner: 'corner-bl-inner',
-    br_inner: 'corner-br-inner',
-  }
+  const CHROMA = IE.CHROMA_PRESETS
+  const ROLE_FILE = Object.fromEntries(IE.TILESET_SLOTS.map((slot) => [slot.role, slot.fileName]))
 
   const load = (durl) =>
     new Promise((res, rej) => {

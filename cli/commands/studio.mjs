@@ -254,17 +254,15 @@ const extend = {
           ...target,
           files: libraryFiles([['derived/image.png', out]]),
           manifest,
-          provenance: {
+          provenance: await ctx.provenance({
             backend: backend.provider,
             model: backend.model,
-            prompt: prompt ?? null,
-            sceneBrief: null,
+            prompt,
             artStyle: style ?? null,
             params: { direction, amount, attempts: calls.length },
-            requested: null,
             returned: `${returned.width}x${returned.height}`,
             cost: cost[0] ?? null,
-          },
+          }),
         })
       : null
 
@@ -409,17 +407,16 @@ const tiles = {
             ...roleFiles.map(({ file }) => [`derived/${file}`, path.join(out, file)]),
           ]),
           manifest,
-          provenance: {
+          provenance: await ctx.provenance({
             backend: backend.provider,
             model: backend.model,
             prompt,
-            sceneBrief: null,
             artStyle: style ?? null,
             params: { cell: mods.TILESET_TILE_SIZE, passes: passes.length, reviewed: passes[passes.length - 1].reviewed },
             requested: `${mods.TILE_TEMPLATE_W}x${mods.TILE_TEMPLATE_H}`,
             returned: best.sheetSize ? `${best.sheetSize.width}x${best.sheetSize.height}` : null,
             cost: cost[0] ?? null,
-          },
+          }),
         })
       : null
 
@@ -552,17 +549,16 @@ const sprite = {
             ]),
           ]),
           manifest,
-          provenance: {
+          provenance: await ctx.provenance({
             backend: backend.provider,
             model: backend.model,
             prompt,
-            sceneBrief: null,
             artStyle: style ?? null,
             params: { bodyPlan, anim, frames, airborne: mods.isAirborneAnim(bodyPlan, anim) },
             requested: `${cols * frameSize}x${rows * frameSize}`,
             returned: sheetSize ? `${sheetSize.width}x${sheetSize.height}` : null,
             cost: cost[0] ?? null,
-          },
+          }),
         })
       : null
 
@@ -670,17 +666,16 @@ const props = {
             ...items.map((item) => [`derived/${item.file}`, item.path]),
           ]),
           manifest,
-          provenance: {
+          provenance: await ctx.provenance({
             backend: backend.provider,
             model: backend.model,
             prompt,
-            sceneBrief: null,
             artStyle: style ?? null,
             params: { count: items.length, cols, rows },
             requested: `${cols * tile}x${rows * tile}`,
             returned: sheetSize ? `${sheetSize.width}x${sheetSize.height}` : null,
             cost: cost[0] ?? null,
-          },
+          }),
         })
       : null
 

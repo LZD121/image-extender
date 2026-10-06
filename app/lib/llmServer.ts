@@ -96,6 +96,27 @@ export function llmCredentials(opts: {
   return { provider, key }
 }
 
+/**
+ * The endpoint for credentials that are already resolved — the half of
+ * `llmTarget` that turns "which provider and key" into "where and with what".
+ * `imageGeneration` resolves once and then picks an adapter, so it needs this
+ * without a second trip through `llmCredentials`.
+ */
+export function targetFor(
+  credentials: { provider: Provider; key: string },
+  opts: { title: string; referer?: string | null }
+): LlmTarget {
+  const { provider, key } = credentials
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (key) headers.Authorization = `Bearer ${key}`
+  if (provider.id === 'openrouter') {
+    // OpenRouter attributes traffic from these; other gateways ignore them.
+    headers['HTTP-Referer'] = opts.referer || 'http://localhost:3000'
+    headers['X-Title'] = opts.title
+  }
+  return { provider, url: `${provider.baseUrl}/chat/completions`, headers }
+}
+
 /** Where a chat/completions call goes and what it carries. */
 export function llmTarget(opts: {
   provider: unknown
@@ -106,17 +127,7 @@ export function llmTarget(opts: {
 }): LlmTarget | { error: string } {
   const credentials = llmCredentials(opts)
   if ('error' in credentials) return { error: credentials.error }
-  const { provider, key } = credentials
-
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (key) headers.Authorization = `Bearer ${key}`
-  if (provider.id === 'openrouter') {
-    // OpenRouter attributes traffic from these; other gateways ignore them.
-    headers['HTTP-Referer'] = opts.referer || 'http://localhost:3000'
-    headers['X-Title'] = opts.title
-  }
-
-  return { provider, url: `${provider.baseUrl}/chat/completions`, headers }
+  return targetFor(credentials, opts)
 }
 
 /**

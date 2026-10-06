@@ -156,7 +156,9 @@ unknown profile, 400 = bad input, 5xx = upstream).
 }
 ```
 
-→ `{ "imageUrl": "data:image/png;base64,…" | "https://…", "names": ["…"], "cost": {…} }`
+→ `{ "imageUrl": "data:image/png;base64,…" | "https://…", "names": ["…"],
+   "cost": { "usd": 0.004, "source": "apimart" } | null, "provider": "magpie",
+   "model": "…", "requestedSize": "2048x1024"? }`
 
 Sharp edges: `names[]` is only present for the prop modes. `tileSheet` requires
 the generated 4096² guide image (`ie tile-guide`), otherwise the layout is
@@ -177,7 +179,7 @@ back into the app's pixel code (`ie` does this for you).
   Its failure `detail` carries `{ via, provider, baseUrl, status?, error?, serverProbe? }`,
   so an agent can tell a route probe from a direct CLI probe at a glance.
 
-→ `{ "imageUrl": "data:…", "chunkInfo": {…}? }`
+→ `{ "imageUrl": "data:…", "chunkInfo": {…}?, "provider": "magpie" }`
 
 Sharp edges: the response is the **whole extended canvas**, not the new strip —
 blend it back with the app's own code (`ie extend`, or the `apply-full-context`

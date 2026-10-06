@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { extractCost } from '@/app/lib/generateCost'
-import { extractImageUrl, messageText } from '@/app/lib/llmResponse'
-import { chatCompletion } from '@/app/lib/llmChat'
-import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
+import { modelOrDefault } from '@/app/lib/llmServer'
 import { generateKind, type GenerateBody } from '@/app/lib/generateRequest'
+import { generateImage } from '@/app/lib/imageGeneration'
 import { styleDirective } from '@/app/lib/stylePrompt'
-import { generateViaApimart } from '@/app/lib/apimartServer'
 
 const SUPPORTED_IMAGE_ASPECT_RATIOS = [
   '1:1',
@@ -83,15 +80,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-
-    const target = llmTarget({
-      provider,
-      profile,
-      apiKey,
-      referer: request.headers.get('referer'),
-      title: 'AI Image Extender - Generator',
-    })
-    if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
 
     const modelId = modelOrDefault({ model, provider, profile, kind: 'image' })
 
@@ -1157,48 +1145,30 @@ ${
       text: fullPrompt,
     })
 
-    // APIMart's image models are an async task API, not a chat completion, so
-    // the same prompt and the same attached references go through their own
-    // adapter — the response shape stays { imageUrl } for every studio.
-    if (target.provider.id === 'apimart') {
-      const result = await generateViaApimart({
-        provider,
-        profile,
-        apiKey,
-        model: modelId,
-        prompt: fullPrompt,
-        width,
-        height,
-        references: messageContent
-          .filter((part) => part.type === 'image_url')
-          .map((part) => part.image_url.url as string),
-      })
-      if ('error' in result) {
-        console.error('APIMart error:', result.error)
-        return NextResponse.json({ error: result.error }, { status: 502 })
-      }
-      return NextResponse.json({
-        imageUrl: result.dataUrl,
-        cost: result.cost,
-        model: result.model,
-        provider: target.provider.id,
-        requestedSize: result.size,
-      })
-    }
-
-    // Call the provider gateway with the image generation model
-    const reply = await chatCompletion({
-      target,
+    // One request either way: the dispatch resolves the credentials once and
+    // picks the adapter this gateway needs — chat completions, or APIMart's
+    // submit-and-poll task API.
+    const image = await generateImage({
+      provider,
+      profile,
+      apiKey,
+      referer: request.headers.get('referer'),
+      title: 'AI Image Extender - Generator',
       model: modelId,
-      messages: [{ role: 'user', content: messageContent }],
+      prompt: fullPrompt,
+      width,
+      height,
       // Low temperature on multi-cell sheet generation keeps the model
       // disciplined about the grid layout + per-cell consistency.
       // Sprite sheets need even lower temperature than tile sheets —
       // 8 keyframes of the SAME character on one canvas amplifies any
       // appearance drift between cells (flicker). 0.2 is the value
       // most 2026 sprite-AI pipelines converged on.
-      maxTokens: 2000,
       temperature: kind === 'spriteSheet' ? 0.2 : kind === 'tileSheet' ? 0.35 : kind === 'propSheet' ? 0.6 : 0.7,
+      references: messageContent
+        .filter((part) => part.type === 'image_url')
+        .map((part) => part.image_url.url as string),
+      content: messageContent,
       extra: {
         modalities: ['image', 'text'],
         // GPT image models are especially literal about the requested canvas
@@ -1209,26 +1179,15 @@ ${
         image_config: { aspect_ratio: supportedAspectRatioForSize(width, height) },
       },
     })
-    if (!reply.ok) return NextResponse.json({ error: reply.error }, { status: reply.status })
-
-    const message = reply.message
-    const imageUrl = extractImageUrl(message)
-
-    if (!imageUrl) {
-      return NextResponse.json(
-        { error: 'No image generated. The model may not support pure image generation.' },
-        { status: 500 }
-      )
-    }
+    if ('error' in image) return NextResponse.json({ error: image.error }, { status: image.status })
 
     // For props, the model also returns a text line naming each decoration
     // ("ITEMS: a | b | c"). We parse it so the client can keep a cheap TEXT
     // de-dup list instead of shipping the whole library back as images.
     let names: string[] = []
     if (kind === 'propSheet' || kind === 'propMode') {
-      const text = messageText(message.content, ' ')
-      const m = text.match(/ITEMS?\s*:\s*(.+)/i)
-      const raw = m ? m[1] : text
+      const m = image.text.match(/ITEMS?\s*:\s*(.+)/i)
+      const raw = m ? m[1] : image.text
       names = raw
         .split(/[|\n,]+/)
         .map((s) => s.replace(/^[\s\-*\d.)]+/, '').trim().toLowerCase())
@@ -1236,7 +1195,14 @@ ${
         .slice(0, 64)
     }
 
-    return NextResponse.json({ imageUrl, names, cost: extractCost(reply.data) })
+    return NextResponse.json({
+      imageUrl: image.imageUrl,
+      names,
+      cost: image.cost,
+      provider: image.provider,
+      model: image.model,
+      ...(image.size ? { requestedSize: image.size } : {}),
+    })
   } catch (error) {
     console.error('Error in generate route:', error)
     return NextResponse.json(

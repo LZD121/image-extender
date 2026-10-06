@@ -13,7 +13,7 @@
  *    and every failure carries the vendor's own message instead of a guess.
  */
 
-import { llmCredentials } from '@/app/lib/llmServer'
+import type { Provider } from '@/app/lib/providers'
 
 const POLL_EVERY_MS = 2500
 const POLL_LIMIT_MS = 6 * 60 * 1000
@@ -210,22 +210,21 @@ export type ApimartImage = {
  * One image, from an APIMart image model. `references` are data URLs the model
  * restyles (tile guides, sprite pose maps / anchors, prop montages, an expanded
  * canvas to extend) — APIMart takes up to 16.
+ *
+ * Credentials arrive resolved: `imageGeneration` resolves the request once and
+ * hands the adapter the provider and key it picked, so the choice of adapter
+ * and the credential chain are not two independent decisions.
  */
 export async function generateViaApimart(opts: {
-  provider: unknown
-  apiKey: unknown
-  profile?: unknown
+  provider: Provider
+  key: string
   model: string
   prompt: string
   width: number
   height: number
   references?: string[]
 }): Promise<ApimartImage | { error: string }> {
-  // The same resolution the chat path uses, so a config profile drives this
-  // adapter too (provider, base URL and credential all come from one place).
-  const credentials = llmCredentials({ provider: opts.provider, apiKey: opts.apiKey, profile: opts.profile })
-  if ('error' in credentials) return { error: credentials.error }
-  const { provider, key } = credentials
+  const { provider, key } = opts
   if (provider.id !== 'apimart') return { error: `The APIMart adapter cannot serve ${provider.label}.` }
 
   const references = (opts.references ?? []).filter((reference) => reference.startsWith('data:image/')).slice(0, 16)
