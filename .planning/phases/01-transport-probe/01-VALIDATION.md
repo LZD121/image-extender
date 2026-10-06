@@ -57,7 +57,7 @@ Task ID 由 PLAN.md 落定后回填；断言本体见下表（来自 `01-RESEARC
 ## Wave 0 Requirements
 
 - [ ] `app/api/generate/__tests__/aspectRatio.test.ts` — 比例表 blast radius 的断言（V5/V6）
-- [ ] `tests/fixtures/anim/` — 一张下采样后的真实条带图（**宽 2048，实测 2048×246，约 0.75–0.88 MB**；原始返回 11712×1408 ≈ 16.3 MB 只留在 `.ie/probe/`，不进库）
+- [ ] `tests/fixtures/anim/` — 一张下采样后的真实条带图（**宽 2048，实测 2048×246、0.945 MB**；本次探针的原始返回是 2928×352 = 1.48 MB，只留在 `.ie/probe/`，不进库。语料里那种 11712×1408 ≈ 16.3 MB 的图属于另一条历史通道）
 - [ ] `scripts/probe-measure.mjs`（或等价的一次性测量脚本）— 从 PNG 重算尺寸/场色/拟合参数（V3）
 - [ ] `.planning/phases/01-transport-probe/01-PROBE-RECORD.md` — 探针五项记录（V1/V4）
 

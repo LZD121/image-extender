@@ -68,12 +68,12 @@ A 2D game sprite sheet for a dark-fantasy dungeon, laid out as a flat 1-row x 8-
 ## Fixture
 
 - `tests/fixtures/anim/chaser_idle_f1_8dir.png`：2048×246，0.945 MB，`git check-attr diff` → `diff: unset`（`.gitattributes` 的 `*.png -diff` 自动覆盖）
-- 为什么不是原图：真实返回 2928×352 ≈ 16.3 MB（研究文档里"1–3 MB"的估算是给 4096×512 的请求算的，不是模型实际返回的尺寸）
+- 为什么还是下采样：本次返回 2928×352 只有 1.48 MB（研究文档里"1–3 MB"的估算反而接近；16.3 MB 那组是**语料**里 11712×1408 的图，不是这一张）。仍下采样是为了让 fixture 与"宽 ≤2048"的约定一致，并把原始尺寸/拟合参数一并留在记录里
 - 下采样会按比例缩放 pitch/phase（raw 360 → fixture 255），所以两套数字都记在上表
 
 ## Raw file
 
-- 原始图只留在 `.ie/probe/chaser_idle_f1_8dir.png`（`.ie/` 已 gitignore）：16.3 MB 级的二进制不进仓库
+- 原始图只留在 `.ie/probe/chaser_idle_f1_8dir.png`（`.ie/` 已 gitignore）：**本次返回 1,480,226 B = 1.48 MB**（不是语料那种 16.3 MB 的大图）。原始图不进仓库是纪律，不是体积所迫
 
 ## Background（不是本探针的结果）
 

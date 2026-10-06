@@ -26,7 +26,7 @@ const MODEL = 'google/gemini-3.1-flash-image-preview'
 
 /** The ratio the route actually puts on the wire for a given canvas. */
 async function emittedRatio(width: number, height: number): Promise<string> {
-  const fetchMock = vi.fn(async () =>
+  const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) =>
     new Response(
       JSON.stringify({
         choices: [{ message: { role: 'assistant', content: null, images: [{ image_url: { url: PNG } }] } }],
@@ -44,7 +44,7 @@ async function emittedRatio(width: number, height: number): Promise<string> {
       })
     )
     expect(res.status).toBe(200)
-    const sent = JSON.parse(fetchMock.mock.calls[0][1].body) as {
+    const sent = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? '')) as {
       image_config?: { aspect_ratio?: string }
     }
     const ratio = sent.image_config?.aspect_ratio

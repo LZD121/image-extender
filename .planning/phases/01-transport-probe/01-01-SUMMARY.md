@@ -18,7 +18,7 @@ requirements: [TRAN-03]
 | `.planning/phases/01-transport-probe/01-PROBE-RECORD.md` | D-10 五项 + D-11 分类 + 网关原行 + 两套（原始/fixture）拟合数字；唯一一个 json 围栏 |
 | `.planning/phases/01-transport-probe/evidence/{call-result.json,measured-raw.json,measured-fixture.json}` | 裁剪过的调用证据（无 data URL、无 key）与两套测量 |
 | `tests/fixtures/anim/chaser_idle_f1_8dir.png` | 2048×246、0.945 MB、`diff: unset`（`.gitattributes` 自动覆盖） |
-| `.ie/probe/chaser_idle_f1_8dir.png` | 原始返回 2928×352（1.48 MB），**不进仓库**（`.ie/` 已 gitignore） |
+| `.ie/probe/chaser_idle_f1_8dir.png` | 原始返回 2928×352 = 1,480,226 B（**1.48 MB**，不是语料那种 16.3 MB 的大图），**不进仓库**（`.ie/` 已 gitignore） |
 
 ## 结果
 
