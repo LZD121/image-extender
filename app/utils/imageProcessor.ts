@@ -1,3 +1,5 @@
+import type { ChromaKeyOptions } from '@/app/lib/chromaPresets'
+
 export async function expandCanvas(
   originalImageDataUrl: string,
   direction: 'up' | 'down' | 'left' | 'right',
@@ -1415,37 +1417,6 @@ export function splitIntoTiles(
 // edge falloff and despill so element borders don't show a magenta fringe.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface ChromaKeyOptions {
-  /** Key color RGB. Default is pure magenta (255,0,255). */
-  keyR?: number
-  keyG?: number
-  keyB?: number
-  /**
-   * Magenta-cast value at or above which a pixel becomes fully transparent.
-   * Cast = max(0, min(r, b) - g). Range 0..255. Default 80 — comfortably
-   * above the cast that natural warm/cool tones produce while still catching
-   * blended-edge pixels.
-   */
-  castThreshold?: number
-  /**
-   * Width of the soft alpha falloff just below `castThreshold`. Pixels with
-   * cast in `[castThreshold - castSoftness, castThreshold]` get partial
-   * alpha so anti-aliased element borders feather cleanly. Default 30.
-   */
-  castSoftness?: number
-  /**
-   * How aggressively to neutralize magenta cast on every pixel that has
-   * any. 0 = off (leaves a pink halo); 1 = fully subtract the cast from
-   * R and B. Default 1.0 — natural images contain no real magenta, so any
-   * cast is a blend artefact and should be removed.
-   */
-  despill?: number
-  /**
-   * Fraction of the despilled cast to add back into the green channel so
-   * a desaturated edge pixel doesn't go dead grey. Default 0.5.
-   */
-  despillGreenBoost?: number
-}
 
 /**
  * Returns a new PNG data URL with the key color replaced by transparency.

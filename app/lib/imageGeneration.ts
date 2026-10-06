@@ -15,7 +15,7 @@ import { generateViaApimart } from '@/app/lib/apimartServer'
 import { chatCompletion } from '@/app/lib/llmChat'
 import { extractImageUrl, messageText } from '@/app/lib/llmResponse'
 import { llmCredentials, targetFor } from '@/app/lib/llmServer'
-import type { ProviderId } from '@/app/lib/providers'
+import type { Provider, ProviderId } from '@/app/lib/providers'
 
 export type GeneratedImage = {
   imageUrl: string
@@ -44,13 +44,8 @@ export type ImageOutcome = GeneratedImage | ImageFailure
 const APIMART_NEEDS_FULL_CONTEXT =
   'APIMart needs the full-context extend path — switch to a chat gateway for chunked extends.'
 
-/**
- * An image for this request. `content` overrides the chat message body (the
- * image routes attach references as content parts); `extra` carries the
- * chat-only knobs (`modalities`, `image_config`). APIMart ignores both — it
- * takes the prompt and the references.
- */
-export async function generateImage(opts: {
+/** What a route asks for: every knob any adapter might need. */
+export type GenerateImageOpts = {
   provider: unknown
   apiKey: unknown
   profile?: unknown
@@ -65,48 +60,34 @@ export async function generateImage(opts: {
   references?: string[]
   content?: unknown
   extra?: Record<string, unknown>
-}): Promise<ImageOutcome> {
-  const credentials = llmCredentials({ provider: opts.provider, apiKey: opts.apiKey, profile: opts.profile })
-  if ('error' in credentials) return { error: credentials.error, status: 401, reason: 'credentials' }
-  const { provider, key } = credentials
+}
 
-  if (provider.id === 'apimart') {
-    if (opts.width == null || opts.height == null) {
-      return { error: APIMART_NEEDS_FULL_CONTEXT, status: 400, reason: 'size' }
-    }
-    const result = await generateViaApimart({
-      provider,
-      key,
-      model: opts.model,
-      prompt: opts.prompt,
-      width: opts.width,
-      height: opts.height,
-      references: opts.references ?? [],
-    })
-    if ('error' in result) {
-      console.error('APIMart error:', result.error)
-      return { error: result.error, status: 502, reason: 'gateway' }
-    }
-    return {
-      imageUrl: result.dataUrl,
-      // APIMart reports a plain USD number; the chat path reports a shape.
-      cost: result.cost == null ? null : { usd: result.cost, source: 'apimart' },
-      provider: provider.id,
-      model: result.model,
-      // APIMart answers with the render, not prose.
-      text: '',
-      size: result.size,
-    }
-  }
+/** The same request once the gateway and its credential are resolved. */
+export type ImageRequest = Omit<GenerateImageOpts, 'provider' | 'apiKey' | 'profile'> & {
+  provider: Provider
+  key: string
+}
 
-  const target = targetFor(credentials, { title: opts.title, referer: opts.referer })
+/** One way to get an image out of a gateway. */
+export type ImageAdapter = (request: ImageRequest) => Promise<ImageOutcome>
+
+/**
+ * A chat/completions gateway: the render arrives inside the message.
+ *
+ * `content` overrides the chat message body (the image routes attach references
+ * as content parts); `extra` carries the chat-only knobs (`modalities`,
+ * `image_config`). APIMart ignores both — it takes the prompt and the references.
+ */
+async function viaChat(request: ImageRequest): Promise<ImageOutcome> {
+  const { provider, key } = request
+  const target = targetFor({ provider, key }, { title: request.title, referer: request.referer })
   const reply = await chatCompletion({
     target,
-    model: opts.model,
-    messages: [{ role: 'user', content: opts.content ?? [{ type: 'text', text: opts.prompt }] }],
+    model: request.model,
+    messages: [{ role: 'user', content: request.content ?? [{ type: 'text', text: request.prompt }] }],
     maxTokens: 2000,
-    temperature: opts.temperature,
-    extra: opts.extra,
+    temperature: request.temperature,
+    extra: request.extra,
   })
   if (!reply.ok) return { error: reply.error, status: reply.status, reason: 'gateway' }
 
@@ -123,7 +104,62 @@ export async function generateImage(opts: {
     imageUrl,
     cost: extractCost(reply.data),
     provider: provider.id,
-    model: opts.model,
+    model: request.model,
     text: messageText(reply.message.content, ' '),
   }
+}
+
+/**
+ * APIMart: submit the task, poll it, and inline the expiring render URL. The
+ * adapter itself owns the size shape; the caller only names the canvas.
+ */
+async function viaApimart(request: ImageRequest): Promise<ImageOutcome> {
+  const { provider, key } = request
+  if (request.width == null || request.height == null) {
+    return { error: APIMART_NEEDS_FULL_CONTEXT, status: 400, reason: 'size' }
+  }
+  const result = await generateViaApimart({
+    provider,
+    key,
+    model: request.model,
+    prompt: request.prompt,
+    width: request.width,
+    height: request.height,
+    references: request.references ?? [],
+  })
+  if ('error' in result) {
+    console.error('APIMart error:', result.error)
+    return { error: result.error, status: 502, reason: 'gateway' }
+  }
+  return {
+    imageUrl: result.dataUrl,
+    // APIMart reports a plain USD number; the chat path reports a shape.
+    cost: result.cost == null ? null : { usd: result.cost, source: 'apimart' },
+    provider: provider.id,
+    model: result.model,
+    // APIMart answers with the render, not prose.
+    text: '',
+    size: result.size,
+  }
+}
+
+/**
+ * Which adapter serves which gateway — the one place the pairing is written
+ * down. A new provider does not compile until it is given an adapter here.
+ */
+export const IMAGE_ADAPTERS: Record<ProviderId, ImageAdapter> = {
+  openrouter: viaChat,
+  magpie: viaChat,
+  apimart: viaApimart,
+}
+
+/** An image for this request, with the adapter the resolved gateway needs. */
+export async function generateImage(opts: GenerateImageOpts): Promise<ImageOutcome> {
+  const credentials = llmCredentials({ provider: opts.provider, apiKey: opts.apiKey, profile: opts.profile })
+  if ('error' in credentials) return { error: credentials.error, status: 401, reason: 'credentials' }
+  return IMAGE_ADAPTERS[credentials.provider.id]({
+    ...opts,
+    provider: credentials.provider,
+    key: credentials.key,
+  })
 }

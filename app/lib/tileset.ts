@@ -1,7 +1,5 @@
 'use client'
 
-import { chromaKeyToAlpha } from '@/app/utils/imageProcessor'
-
 export type TileSetRole =
   | 'body'
   | 'top'
