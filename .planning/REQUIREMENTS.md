@@ -103,47 +103,42 @@
 由 roadmap 创建时填充。
 
 | Requirement | Phase | Status |
-|-------------|-------|--------|
-| TRAN-01 | — | Pending |
-| TRAN-02 | — | Pending |
-| TRAN-03 | — | Pending |
-| TRAN-04 | — | Pending |
-| TRAN-05 | — | Pending |
-| GEOM-01 | — | Pending |
-| GEOM-02 | — | Pending |
-| GEOM-03 | — | Pending |
-| GEN-01 | — | Pending |
-| GEN-02 | — | Pending |
-| GEN-03 | — | Pending |
-| GEN-04 | — | Pending |
-| GEN-05 | — | Pending |
-| GEN-06 | — | Pending |
-| GEN-07 | — | Pending |
-| GEN-08 | — | Pending |
-| POST-01 | — | Pending |
-| POST-02 | — | Pending |
-| POST-03 | — | Pending |
-| POST-04 | — | Pending |
-| POST-05 | — | Pending |
-| LIB-01 | — | Pending |
-| LIB-02 | — | Pending |
-| LIB-03 | — | Pending |
-| LIB-04 | — | Pending |
-| LIB-05 | — | Pending |
-| LIB-06 | — | Pending |
-| CLI-01 | — | Pending |
-| CLI-02 | — | Pending |
-| CLI-03 | — | Pending |
-| UI-01 | — | Pending |
-| UI-02 | — | Pending |
-| UI-03 | — | Pending |
-| UI-04 | — | Pending |
-| UI-05 | — | Pending |
-| UI-06 | — | Pending |
-| ACC-01 | — | Pending |
-| ACC-02 | — | Pending |
-| ACC-03 | — | Pending |
-
----
-*Requirements defined: 2026-10-06*
-*Last updated: 2026-10-06 after initial definition*
+| TRAN-01 | Phase 4 | Pending |
+| TRAN-02 | Phase 4 | Pending |
+| TRAN-03 | Phase 1 | Pending |
+| TRAN-04 | Phase 1 | Pending |
+| TRAN-05 | Phase 1 | Pending |
+| GEOM-01 | Phase 2 | Pending |
+| GEOM-02 | Phase 3 | Pending |
+| GEOM-03 | Phase 2 | Pending |
+| GEN-01 | Phase 4 | Pending |
+| GEN-02 | Phase 4 | Pending |
+| GEN-03 | Phase 4 | Pending |
+| GEN-04 | Phase 4 | Pending |
+| GEN-05 | Phase 4 | Pending |
+| GEN-06 | Phase 4 | Pending |
+| GEN-07 | Phase 2 | Pending |
+| GEN-08 | Phase 2 | Pending |
+| POST-01 | Phase 3 | Pending |
+| POST-02 | Phase 3 | Pending |
+| POST-03 | Phase 3 | Pending |
+| POST-04 | Phase 6 | Pending |
+| POST-05 | Phase 3 | Pending |
+| LIB-01 | Phase 5 | Pending |
+| LIB-02 | Phase 5 | Pending |
+| LIB-03 | Phase 5 | Pending |
+| LIB-04 | Phase 5 | Pending |
+| LIB-05 | Phase 5 | Pending |
+| LIB-06 | Phase 5 | Pending |
+| CLI-01 | Phase 4 | Pending |
+| CLI-02 | Phase 4 | Pending |
+| CLI-03 | Phase 5 | Pending |
+| UI-01 | Phase 6 | Pending |
+| UI-02 | Phase 6 | Pending |
+| UI-03 | Phase 6 | Pending |
+| UI-04 | Phase 6 | Pending |
+| UI-05 | Phase 6 | Pending |
+| UI-06 | Phase 6 | Pending |
+| ACC-01 | Phase 7 | Pending |
+| ACC-02 | Phase 7 | Pending |
+| ACC-03 | Phase 7 | Pending |

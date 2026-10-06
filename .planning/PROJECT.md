@@ -26,11 +26,12 @@
 
 <!-- 当前 scope：本里程碑（S1）。spec = docs/superpowers/specs/2026-10-06-animation-set-production-design.md -->
 
-- [ ] 探针先行：验证 magpie → `teamo-router/gemini-3.1-flash-image` 是否透传 `4096×512`（8:1）；失败则在同一 provider 表里加 Teamo 直连（key 文件 + `host=ip` pin），接口不变
+- [ ] 探针先行（**先于一切实现**）：一次真实调用测出返回尺寸 vs 请求尺寸、面板拟合 `(spacing, phase)`、场色。预期失败模式是 **magpie 的 ~15s 超时**（不是比例）；fallback 表达为一个 **magpie profile**（`baseUrl` + `apiKeyEnv`），不新增 ProviderId
+- [ ] 传输：把"精确尺寸能否到达模型"钉成常量；只有在探针证明现有通路无论如何送不出 8:1/4:1 时，才条件性放宽 `SUPPORTED_IMAGE_ASPECT_RATIOS`（须重算 blast radius 并断言六个既有 studio 请求档位不变）
 - [ ] 纯核心：`app/lib/animSet.ts`（规格校验 / `planStrips` / `set.json` / 断点续跑判定）与 `app/lib/animStrip.ts`（strip prompt 组装 + cell↔方向映射），全部可单测
-- [ ] 生成与后处理：逐 strip 打 `/api/generate`（现有 plain 形状）→ 落 `raw/` → 复用 bridge/`imageProcessor` 切格、抠底、去边、归一化居中 → 写 `derived/` 与 `set.json`
+- [ ] 生成与后处理：逐 strip 打 `/api/generate`（现有 plain 形状）→ **原子写** `raw/` → 新 bridge op `strip-frames`（**拟合面板网格 + gutter 断言**、抠底二值化、去边、套 cell 居中；**基线对齐显式关闭**）→ 写 `derived/` 与 `set.json`
 - [ ] CLI 面：`ie anim plan`（预演，打印调用数与尺寸）与 `ie anim run --go [--redo] [--keep-going]`；入库复用 `ie library save`
-- [ ] 库面：新增 `AssetKind = 'animations'`，一个动画集 = 一个资产（`derived/*.png` + `set.json` + `meta.json`），provenance 的 `params` 记 `calls/cells/seconds`
+- [ ] 库面：新增 `AssetKind = 'animations'`，一个动画集 = 一个资产（`derived/*.png` + `set.json` + `meta.json`，**raw 永不入库**——16 张真实 raw = 363.8M base64 > route 上限 279.6M）；provenance 的 `params` 记 `calls/cells/seconds`，且 `backend` 与实际服务方一致、`cost.source === backend`（或 `cost === null`）；修掉 `ie library save` 硬编码的 `backend:'openrouter'`
 - [ ] UI 面：第 7 个模式 `anim`（规格表单 → 计划确认 → 逐 strip 进度 → 帧画廊 → Save to library）+ `app/i18n/messages/anim.ts`（en/zh）
 - [ ] 端到端验收：用 hero（idle+walk，8 次调用）实跑一遍 → 入库 → 刷新页面后仍能从面板找回
 - [ ] 收尾：`dark-black/tools/gen_assets_teamo.py` 退役（改由本管线产出，游戏侧只留消费端脚本）
@@ -50,12 +51,12 @@
 - **消费端现状**（`~/repos/dark-black`，Godot 4.7）：v11 手绘路径 = `tools/gen_assets_teamo.py` 逐 (状态, 帧) 生成 8 向 strip（`4096×512`，exact ratio，cell i 对应方向 i，方向顺序 = 运行时 sector 顺序）→ `assets/handpainted/sprites/<actor>/` → `tools/build_handpainted_sheets.py` 组 per-actor atlas（行 = 方向×状态、列 = 帧、64px cell）→ `scripts/actors/enemy.gd:86-87,192` 读 `sprite-sheet-alpha.png`。像素 atlas 已退役为 fallback（提交 `6abb5ed`，2026-09-24）；一条 PixelLab 8 向动画路线（`gen_monsters_8dir.py`）计划过但未落地。
 - **本 fork 的既有 spec**：`docs/superpowers/specs/2026-10-05-fork-design.md`（资产库，已实现）、`docs/superpowers/specs/2026-10-06-animation-set-production-design.md`（S1，本里程碑）。
 - **并行的历史实现**：agent skill 的 `~/.agents/skills/image-extender/scripts/ie.py` ↔ repo 的 `cli/ie.mjs`（repo 是后代）；游戏侧 python 脚本 ↔ app 的 studio；游戏侧 `generation-ledger.json` ↔ 库的 `meta.json`。
+- **本次研究**（`.planning/research/`，1891 行，2026-10-06）：八条实测改写了 S1 的四条前提——① 8:1 出不了本 app（比例表无 8:1/4:1，8:1→21:9，chat 适配器甚至不发尺寸）；② magpie 有 ~15s 硬超时（一条 strip 要 20–70s）；③ `sprite-align` 无条件跑基线对齐，不能当单元用；④ 均匀切格在 32 条已交付 strip 里有 23 条切到生物像素（拟合 pitch 与 `W/N` 只差 0.91%，但内容只留 3–4px 边距）。spec 已据此升到 v2。
 - **已知债务**（细节见 `.planning/codebase/CONCERNS.md`）：`app/page.tsx` 约 4k 行的在飞重构（分支 `feat/deepen-modules`）；库索引串行读每个 `meta.json`；面板缩略图加载全尺寸 PNG 且 `cache-control: no-store`；`BACKEND_LABELS` 只允许 `openrouter|pixellab` 会把 APIMart/Magpie 产出谎报成 `openrouter`。
 
 ## Constraints
 
-- **Tech stack**：复用现有 provider 表与 `/api/generate` 的 wire 形状（不新增 kind）；后处理必须复用 `app/utils/imageProcessor.ts` + bridge 现有 op，不在服务端重写
-- **Cost/Spend**：任何生成前必须展示计划与调用数；CLI 要 `--go`、UI 要二次确认；探针会真实花钱（一次调用）
+- **Tech stack**：复用现有 provider 表与 `/api/generate` 的 wire 形状（不新增 kind、不新增路由）；后处理复用 `app/utils/imageProcessor.ts` 的导出，新增**一个** bridge op 做薄组合，不在服务端重写
 - **Compatibility**：既有 studio 的 ZIP/manifest 导出逐字节不变；`AssetMeta` 保持 `schemaVersion: 1`
 - **Compatibility**：方向顺序即契约（消费端按运行时 sector 顺序把行映射到方向）
 - **Dependencies**：本机无法 spawn 具名 `gsd-*` agent（走 generic-agent workaround）；headless 像素引擎需要 Chromium（`npx playwright install chromium-headless-shell`）
@@ -72,6 +73,10 @@
 | 中性"动画集"模型 + 可替换 transport | 先 Godot 后泛化；探针失败可切 Teamo 直连而不动接口 | — Pending |
 | 成本保持单单位（usd），`usage{calls,cells,seconds}` 进 `provenance.params` | 不动库 schema；双单位是 PixelLab 后端的账，留给第二适配器 | — Pending |
 | 身份锚 v1 关闭 | 缩小 S1；避免给 `/api/generate` wire 加字段 | — Pending |
+| 切格改为**拟合网格 + gutter 断言**（不假设 `W/N`） | 实测：近似均匀的网格上均匀切格仍破坏 23/32 条 strip；判定闸门选"切线落在空白 gutter"，因为它与损伤相关 | — Pending |
+| 后处理改为新 op `strip-frames`（弃用 `sprite-align`） | 后者无条件跑基线对齐，会把俯视/仰视格钉到同一地面并丢内容 | — Pending |
+| raw **永不入库** | 16 张真实 raw = 363.8M base64 > route 上限 279.6M，且 413 在 body 缓冲后才发生 | — Pending |
+| Teamo 直连表达为 **magpie profile** 而非第四个 provider | `ieConfig.ts` 允许 magpie 配 `baseUrl`；provider 表是"一处一个事实"的既有不变量 | — Pending |
 
 ## Evolution
 
