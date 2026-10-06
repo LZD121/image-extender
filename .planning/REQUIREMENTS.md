@@ -105,9 +105,9 @@
 | Requirement | Phase | Status |
 | TRAN-01 | Phase 4 | Pending |
 | TRAN-02 | Phase 4 | Pending |
-| TRAN-03 | Phase 1 | Pending |
-| TRAN-04 | Phase 1 | Pending |
-| TRAN-05 | Phase 1 | Pending |
+| TRAN-03 | Phase 1 | Complete |
+| TRAN-04 | Phase 1 | Complete |
+| TRAN-05 | Phase 1 | Complete |
 | GEOM-01 | Phase 2 | Pending |
 | GEOM-02 | Phase 3 | Pending |
 | GEOM-03 | Phase 2 | Pending |

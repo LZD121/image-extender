@@ -29,8 +29,8 @@
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: 探针：一次真实 strip 调用 + 尺寸/网格/场色测量记录
-- [ ] 01-02: 传输落地：profile 或比例表放宽（含 blast-radius 回归断言）
+- [x] 01-01: 探针：一次真实 strip 调用 + 尺寸/网格/场色测量记录
+- [x] 01-02: 传输落地：profile 或比例表放宽（含 blast-radius 回归断言）
 
 ### Phase 2: 纯核心（`animStrip.ts` + `animSet.ts`）
 
@@ -138,7 +138,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 传输探针与精确尺寸透传 | 0/2 | Not started | - |
+| 1. 传输探针与精确尺寸透传 | 2/2 | Executed (verify pending) | 2026-10-07 |
 | 2. 纯核心（animStrip + animSet） | 0/2 | Not started | - |
 | 3. strip → frames 后处理 | 0/2 | Not started | - |
 | 4. CLI runner | 0/3 | Not started | - |
