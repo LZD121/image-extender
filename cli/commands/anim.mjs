@@ -23,7 +23,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { UsageError, numberFlag } from '../lib/args.mjs'
-import { dataUrlSize, ensureFile, toDataUrl, writeDataUrl, writeFileAtomic } from '../lib/media.mjs'
+import { dataUrlSize, decodesAsImage, ensureFile, toDataUrl, writeDataUrl, writeFileAtomic } from '../lib/media.mjs'
 
 const SUBCOMMANDS = ['plan', 'run']
 
@@ -50,6 +50,35 @@ const MODULES = ['app/lib/animSet', 'app/lib/animStrip']
 
 /** 2s then 8s: enough for the gateway's ~15s ceiling to clear, ~10s total when it never does. */
 const RETRY_DELAYS_MS = [2000, 8000]
+
+/**
+ * How far the returned canvas may drift from the requested one before the
+ * strip is refused. Phase 1 measured 2928x352 for a 4096x512 request — 3.977%
+ * off — and the committed fixture is 2048x246 for the same request: 4.065%.
+ * Both are the NORM (40 strips of consumer corpus share the signature), so 5%
+ * has to clear them; a tighter number would refuse this pipeline's own normal
+ * output (0.0407 is where the fixture arm flips). Looser would admit a square
+ * (87.50%) or a 21:9 squash (70.83%). The check refuses SHAPES, not drift —
+ * and it can be loose because cutting does not depend on the returned ratio
+ * (`fitPanelGrid` measures the returned image itself).
+ */
+const ASPECT_TOLERANCE = 0.05
+
+/** `requested` vs the bytes on disk: a wrong ratio is refused BEFORE the op. */
+function aspectMismatch(requested, returned) {
+  if (!returned) return true
+  const a = requested.width / requested.height
+  const b = returned.width / returned.height
+  return Math.abs(b / a - 1) > ASPECT_TOLERANCE
+}
+
+/** The refusal note carries both ratios, so the operator can check the arithmetic. */
+function aspectNote(requested, returned) {
+  const a = requested.width / requested.height
+  const b = returned.width / returned.height
+  return `returned ${returned.width}x${returned.height} (${b.toFixed(3)}) vs requested ` +
+    `${requested.width}x${requested.height} (${a.toFixed(3)}) — off by ${(Math.abs(b / a - 1) * 100).toFixed(3)}%`
+}
 
 /**
  * The POST, retried. Retrying means paying again, so this wraps ONE call and
@@ -292,6 +321,29 @@ function recordFor(mods, item, spec, { ok, seconds, size, meta }) {
 }
 
 /**
+ * What the resume decision needs, measured — never inferred from `ok` alone.
+ * `rawDecodable` is a FULL decode: a truncated PNG still parses as a header.
+ *
+ * Read-only and network-free, so it may run over the whole plan; the cost is
+ * the filesystem, which is the point — "the file exists" is not the fact.
+ */
+async function collectFacts(spec, outRoot, record, mods) {
+  const dirs = mods.dirsForPreset(spec.dirs)
+  const facts = new Map()
+  for (const item of mods.planStrips(spec)) {
+    const key = mods.stripKey(item.state, item.frame)
+    const rawPath = path.join(outRoot, item.file)
+    const rawDecodable = existsSync(rawPath) ? await decodesAsImage(rawPath) : false
+    let derivedCount = 0
+    for (const dir of dirs) {
+      if (existsSync(path.join(outRoot, mods.frameFile(item.state, item.frame, dir)))) derivedCount++
+    }
+    facts.set(key, { rawDecodable, derivedCount })
+  }
+  return facts
+}
+
+/**
  * The serial pipeline (D-29). Per strip: generate → atomically write `raw/`
  * *immediately* (before any post-processing: a failed cut must keep the
  * bytes that were paid for) → the `strip-frames` op, fed the file path so it
@@ -337,14 +389,41 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
     return record
   }
 
-  const todo = plan.filter((p) => !redo || redo.has(mods.stripKey(p.state, p.frame)))
+  // The record says what happened last time; the filesystem says what is there
+  // now. `nextPending` is the only thing allowed to combine the two into "still
+  // to do" — the CLI must not grow a second completion rule (T-04-15), because
+  // two rules drift and the drifting one is always the looser.
+  const facts = await collectFacts(spec, outRoot, load.strips, mods)
+  const { pending, done, total, duplicates } = mods.nextPending(spec, load.strips, facts, {
+    redo: redo ? [...redo] : [],
+  })
+  if (duplicates.length) {
+    ctx.fail('duplicate_ledger', `two rows for ${duplicates.join(', ')} in ${setFile} — merge them before re-running`)
+  }
+
+  // Everything done: the acceptance shape of a resumed run is ZERO calls — not
+  // a log line claiming it skipped. Nothing is written and nothing is asked.
+  if (!pending.length) {
+    ctx.note(`nothing to do — ${done}/${total} strips complete, zero calls`)
+    return {
+      summary: `anim set complete — 0 to do, ${done}/${total} done`,
+      written: [],
+      strips: load.strips,
+      setJson: setFile,
+    }
+  }
+
+  const summary = `anim set — ${pending.length} to do, ${done}/${total} done · out ${outRoot}`
   let ok = 0
   let failed = 0
 
-  for (let i = 0; i < todo.length; i++) {
-    const item = todo[i]
-    // Progress goes to stderr: stdout carries exactly one parseable object.
-    ctx.note(`[${i + 1}/${todo.length}] ${item.state} f${item.frame + 1} → ${item.width}x${item.height}`)
+  for (let i = 0; i < pending.length; i++) {
+    const item = pending[i]
+    const key = mods.stripKey(item.state, item.frame)
+    // Progress goes to stderr: stdout carries exactly one parseable object. The
+    // reason rides along — a decision the operator cannot see is one they
+    // cannot argue with.
+    ctx.note(`[${i + 1}/${pending.length}] ${key} · ${item.reason} → redo ${item.width}x${item.height}`)
 
     const started = Date.now()
     // `<spec>.retryDelays` is the test seam: the four unit arms assert the real
@@ -373,23 +452,41 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
       // attempts left nothing on disk (no reply arrived), so there is no raw.
       const seconds = Number(((Date.now() - started) / 1000).toFixed(3))
       failed++
-      ctx.note(`${item.state}:${item.frame} failed after ${err.attempts ? err.attempts.length : 1} attempt(s): ${err.message}`)
+      ctx.note(`${key} failed after ${err.attempts ? err.attempts.length : 1} attempt(s): ${err.message}`)
       commit(recordFor(mods, item, spec, { ok: false, seconds, size: null, meta: null }))
       if (!keepGoing) {
-        ctx.note(`stopped after ${item.state}:${item.frame} — pass --keep-going to run the rest`)
+        ctx.note(`stopped after ${key} — pass --keep-going to run the rest`)
         break
       }
       continue
     }
     if (!res || !res.imageUrl) {
-      ctx.fail('no_image', `generate answered without an imageUrl for ${item.state} f${item.frame + 1}`)
+      ctx.fail('no_image', `generate answered without an imageUrl for ${key}`)
     }
     const dataUrl = await toDataUrl(res.imageUrl)
+
+    // raw lands BEFORE anything that could refuse the strip: it is the only
+    // paid-for evidence, and every failure line in spec §8 keeps it.
+    const rawPath = writeDataUrl(dataUrl, path.join(outRoot, mods.stripFile(item.state, item.frame, spec.dirs)))
+    written.push(rawPath)
+
     const size = await dataUrlSize(dataUrl)
     const seconds = Number(((Date.now() - started) / 1000).toFixed(3))
 
-    const rawPath = writeDataUrl(dataUrl, path.join(outRoot, mods.stripFile(item.state, item.frame, spec.dirs)))
-    written.push(rawPath)
+    // The ratio gate sits between "the bytes are safe" and "the cutter runs".
+    // Cutting a wrong-shaped canvas would "fix" it — 8 plausible-looking cells
+    // out of a square — which is R1's trap: the mistake would enter derived/
+    // and Phase 5/6 would take it for a sprite sheet.
+    if (aspectMismatch(item, size)) {
+      ctx.note(`aspect refused: ${aspectNote(item, size)}`)
+      failed++
+      commit(recordFor(mods, item, spec, { ok: false, seconds, size, meta: null }))
+      if (!keepGoing) {
+        ctx.note(`stopped after ${key} — pass --keep-going to run the rest`)
+        break
+      }
+      continue
+    }
 
     // `bridge_failed` (the op itself died) is booked like any other strip that
     // could not be finished, then handled by the walk mode — a dead Chromium
@@ -399,10 +496,10 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
       op = ctx.bridge({ op: 'strip-frames', opts: { cell: spec.cell, dirs }, inputs: [rawPath] })
     } catch (err) {
       failed++
-      ctx.note(`${item.state}:${item.frame} failed: ${err.message}`)
+      ctx.note(`${key} failed: ${err.message}`)
       commit(recordFor(mods, item, spec, { ok: false, seconds, size, meta: null }))
       if (!keepGoing) {
-        ctx.note(`stopped after ${item.state}:${item.frame} — pass --keep-going to run the rest`)
+        ctx.note(`stopped after ${key} — pass --keep-going to run the rest`)
         break
       }
       continue
@@ -415,7 +512,7 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
       commit(recordFor(mods, item, spec, { ok: false, seconds, size, meta }))
       ctx.note(`failed (${seconds}s)`)
       if (!keepGoing) {
-        ctx.note(`stopped after ${item.state}:${item.frame} — pass --keep-going to run the rest`)
+        ctx.note(`stopped after ${key} — pass --keep-going to run the rest`)
         break
       }
       continue
@@ -427,7 +524,7 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
       commit(recordFor(mods, item, spec, { ok: false, seconds, size, meta }))
       ctx.note(`failed (${seconds}s)`)
       if (!keepGoing) {
-        ctx.note(`stopped after ${item.state}:${item.frame} — pass --keep-going to run the rest`)
+        ctx.note(`stopped after ${key} — pass --keep-going to run the rest`)
         break
       }
       continue
@@ -443,9 +540,9 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
   }
 
   if (failed) ctx.note(`${ok} ok, ${failed} failed`)
-  if (redo) ctx.note(`--redo: ${todo.length} strip(s) re-done, the other rows are untouched`)
+  if (redo) ctx.note(`--redo: ${pending.length} strip(s) re-done, the other rows are untouched`)
 
-  return { written, strips: plan.map((p) => merged.get(mods.stripKey(p.state, p.frame))).filter(Boolean), setJson: setFile }
+  return { summary, written, strips: plan.map((p) => merged.get(mods.stripKey(p.state, p.frame))).filter(Boolean), setJson: setFile }
 }
 
 const anim = {

@@ -597,6 +597,11 @@ describe('ie anim — the write path', () => {
     // The first pass creates <out>/raw; making the directory read-only then
     // stops the atomic write from creating its sibling temp file.
     await runCli(['run', '--spec', file, '--go'], { api, bridge })
+    // The resume gate skips a complete set, so the arm keeps one strip genuinely
+    // unfinished: a truncated raw is `raw-unreadable` and must be re-made.
+    const rawFile = path.join(out, 'raw/idle_f1_8dir.png')
+    const bytes = readFileSync(rawFile)
+    writeFileSync(rawFile, bytes.subarray(0, Math.floor(bytes.length * 0.6)))
     const raw = path.join(out, 'raw')
     chmodSync(raw, 0o500)
     locked.push(raw)
@@ -632,6 +637,229 @@ describe('ie anim — resume facts', () => {
     const empty = path.join(root, 'empty.png')
     writeFileSync(empty, Buffer.alloc(0))
     expect(await decodesAsImage(empty)).toBe(false)
+  })
+})
+
+describe('ie anim — the resume gate (nextPending is the only judgement)', () => {
+  /** One full pass over the three-frame plan: all ok, eight frames each. */
+  async function runOnce(out, file, extra = {}) {
+    return runCli(['run', '--spec', file, '--go', ...(extra.flags || [])], {
+      api: scriptedApi([dataUrlFromFile(FIXTURE)]),
+      bridge: extra.bridge || strictBridge(await frames(), fixtureMeta()),
+    })
+  }
+
+  it('makes a second pass over a complete set cost ZERO calls', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    const complete = await runOnce(out, file)
+    expect(complete.strips.length).toBe(3)
+
+    const apiCalls = { count: 0 }
+    const bridgeCalls = { count: 0 }
+    const payload = await runCli(['run', '--spec', file, '--go'], { apiCalls, bridgeCalls })
+
+    expect(apiCalls.count).toBe(0)
+    expect(bridgeCalls.count).toBe(0)
+    expect(payload.written).toEqual([])
+    expect(payload.summary).toContain('0 to do, 3/3 done')
+  })
+
+  it('redoes one strip whose raw is truncated, and only that one', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    await runOnce(out, file)
+
+    const raw = path.join(out, 'raw/idle_f2_8dir.png')
+    const bytes = readFileSync(raw)
+    writeFileSync(raw, bytes.subarray(0, Math.floor(bytes.length * 0.6)))
+
+    const api = scriptedApi([dataUrlFromFile(FIXTURE)])
+    const bridge = strictBridge(await frames(), fixtureMeta())
+    const notes = []
+    const payload = await runCli(['run', '--spec', file, '--go'], { api, bridge, note: (m) => notes.push(m) })
+
+    expect(api.calls.length).toBe(1)
+    expect(notes.some((m) => m.includes('raw-unreadable'))).toBe(true)
+    expect(readFileSync(raw)).toEqual(readFileSync(FIXTURE))
+    const set = JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8'))
+    expect(set.strips.length).toBe(3)
+    expect(payload.written.length).toBeGreaterThan(0)
+  })
+
+  it('redoes one strip whose derived set is short by a frame', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    await runOnce(out, file)
+
+    const missing = path.join(out, 'derived/idle_f3_west.png')
+    rmSync(missing)
+
+    const api = scriptedApi([dataUrlFromFile(FIXTURE)])
+    const bridge = strictBridge(await frames(), fixtureMeta())
+    const notes = []
+    await runCli(['run', '--spec', file, '--go'], { api, bridge, note: (m) => notes.push(m) })
+
+    expect(api.calls.length).toBe(1)
+    expect(notes.some((m) => m.includes('derived-short'))).toBe(true)
+    expect(existsSync(missing)).toBe(true)
+  })
+
+  it('redoes a strip the record says failed, and the row comes back ok', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    await runOnce(out, file)
+
+    const setFile = path.join(out, 'set.json')
+    const set = JSON.parse(readFileSync(setFile, 'utf8'))
+    const row = set.strips.find((s) => s.frame === 0)
+    row.ok = false
+    writeFileSync(setFile, JSON.stringify(set))
+    for (const dir of DIRS8) rmSync(path.join(out, 'derived', `idle_f1_${dir}.png`))
+
+    const api = scriptedApi([dataUrlFromFile(FIXTURE)])
+    const bridge = strictBridge(await frames(), fixtureMeta())
+    const notes = []
+    const payload = await runCli(['run', '--spec', file, '--go'], { api, bridge, note: (m) => notes.push(m) })
+
+    expect(api.calls.length).toBe(1)
+    expect(notes.some((m) => m.includes('not-ok'))).toBe(true)
+    const after = JSON.parse(readFileSync(setFile, 'utf8'))
+    expect(after.strips.find((s) => s.frame === 0).ok).toBe(true)
+    expect(payload.strips.length).toBe(3)
+  })
+
+  it('exercises all five reasons across a first pass, a resumed pass and a --redo', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    const notes = []
+    const note = (m) => notes.push(m)
+
+    // First pass: nothing on disk → `missing` for every strip.
+    await runCli(['run', '--spec', file, '--go'], {
+      api: scriptedApi([dataUrlFromFile(FIXTURE)]),
+      bridge: strictBridge(await frames(), fixtureMeta()),
+      note,
+    })
+
+    // A record that says failed, plus a shortened derived set and a broken raw:
+    // `not-ok`, `derived-short` and `raw-unreadable` in one resumed pass.
+    const setFile = path.join(out, 'set.json')
+    const set = JSON.parse(readFileSync(setFile, 'utf8'))
+    set.strips.find((s) => s.frame === 0).ok = false
+    writeFileSync(setFile, JSON.stringify(set))
+    rmSync(path.join(out, 'derived/idle_f3_west.png'))
+    const raw = path.join(out, 'raw/idle_f2_8dir.png')
+    writeFileSync(raw, readFileSync(raw).subarray(0, Math.floor(readFileSync(raw).length * 0.6)))
+
+    await runCli(['run', '--spec', file, '--go', '--keep-going'], {
+      api: scriptedApi([dataUrlFromFile(FIXTURE)]),
+      bridge: strictBridge(await frames(), fixtureMeta()),
+      note,
+      retryDelays: [0, 0],
+    })
+
+    // `--redo` names its own reason.
+    await runCli(['run', '--spec', file, '--go', '--redo', 'idle:0'], {
+      api: scriptedApi([dataUrlFromFile(FIXTURE)]),
+      bridge: strictBridge(await frames(), fixtureMeta()),
+      note,
+    })
+
+    for (const reason of ['missing', 'not-ok', 'raw-unreadable', 'derived-short', 'redo']) {
+      expect(notes.some((m) => m.includes(reason))).toBe(true)
+    }
+  })
+})
+
+describe('ie anim — the aspect gate', () => {
+  /** A generated PNG of exactly the given size, as a data URL. */
+  async function reply(width, height) {
+    const buf = await sharp({
+      create: { width, height, channels: 4, background: { r: 20, g: 30, b: 40, alpha: 1 } },
+    }).png().toBuffer()
+    return 'data:image/png;base64,' + buf.toString('base64')
+  }
+
+  async function one(out, extra = {}) {
+    const file = specFile(spec({ out, states: ONE_STATE }), 'one.json')
+    const apiCalls = { count: 0 }
+    const bridgeCalls = { count: 0 }
+    const notes = []
+    const payload = await runCli(['run', '--spec', file, '--go', ...(extra.flags || [])], {
+      api: extra.api || scriptedApi([dataUrlFromFile(FIXTURE)]),
+      bridge: extra.bridge || strictBridge(await frames(), fixtureMeta()),
+      apiCalls,
+      bridgeCalls,
+      note: (m) => notes.push(m),
+    })
+    return { payload, apiCalls, bridgeCalls, notes, out }
+  }
+
+  // TRAN-02, the core arm: a square answer to an 8:1 request is refused BEFORE
+  // the cut, because cutting would "fix" it — 8 normal-looking cells out of a
+  // square — and the mistake would land in derived/ for Phase 5/6 to trust.
+  it('refuses an absurd return without cutting it (1:1 against 8:1, 87.50% off)', async () => {
+    const out = path.join(root, 'out')
+    const bridgeCalls = { count: 0 }
+    const notes = []
+    const file = specFile(spec({ out, states: ONE_STATE }), 'one.json')
+    const payload = await runCli(['run', '--spec', file, '--go'], {
+      api: scriptedApi([await reply(2048, 2048)]),
+      bridgeCalls,
+      note: (m) => notes.push(m),
+    })
+
+    const strip = payload.strips[0]
+    expect(bridgeCalls.count).toBe(0)
+    expect(strip.ok).toBe(false)
+    expect(strip.returned).toBe('2048x2048')
+    // An echo implementation would write `requested` here, so this is the arm
+    // that catches it.
+    expect(strip.returned).not.toBe(strip.requested)
+    expect(existsSync(path.join(out, 'raw/idle_f1_8dir.png'))).toBe(true)
+    expect(derivedNames(out)).toEqual([])
+    // Both ratios are visible: 8.000 requested, 1.000 returned.
+    expect(notes.some((m) => m.includes('4096x512') && m.includes('2048x2048'))).toBe(true)
+    expect(notes.some((m) => m.includes('8.000') && m.includes('1.000'))).toBe(true)
+  })
+
+  // Both sides of ASPECT_TOLERANCE, because a one-sided arm cannot tell "the
+  // gate works" from "the gate rejects everything". The shapes are the measured
+  // ones: 4096x510 (0.392%), 2928x352 (3.977% — Phase 1's probe) and 2048x246
+  // (4.065% — the committed fixture). All three are this pipeline's NORMAL
+  // output and must pass, or the gate refuses the pipeline's own work.
+  it('passes the normal drift this pipeline actually produces', async () => {
+    for (const canvas of ['4096x510', '2928x352', '2048x246']) {
+      const [width, height] = canvas.split('x').map(Number)
+      const out = path.join(root, `out-${canvas}`)
+      const bridge = strictBridge(await frames(), fixtureMeta())
+      const payload = await runCli(['run', '--spec', specFile(spec({ out, states: ONE_STATE }), `one-${width}.json`), '--go'], {
+        api: scriptedApi([await reply(width, height)]),
+        bridge,
+      })
+      expect(payload.strips[0].ok, `${canvas} must pass`).toBe(true)
+      expect(bridge.calls.length, `${canvas} must have been cut`).toBe(1)
+      expect(payload.strips[0].returned).toBe(canvas)
+    }
+  })
+
+  // Two absurd shapes, not one: their flip points differ (0.8750 for the square,
+  // 0.7083 for the 21:9 squash). With only the square, a tolerance parked at
+  // 0.71–0.87 would let a squashed 21:9 through unobserved.
+  it('refuses both ends of the absurd side', async () => {
+    for (const canvas of ['2048x2048', '4096x1755']) {
+      const [width, height] = canvas.split('x').map(Number)
+      const out = path.join(root, `bad-${canvas}`)
+      const bridgeCalls = { count: 0 }
+      const payload = await runCli(['run', '--spec', specFile(spec({ out, states: ONE_STATE }), `bad-${width}.json`), '--go'], {
+        api: scriptedApi([await reply(width, height)]),
+        bridgeCalls,
+      })
+      expect(payload.strips[0].ok, `${canvas} must fail`).toBe(false)
+      expect(bridgeCalls.count, `${canvas} must not be cut`).toBe(0)
+      expect(derivedNames(out)).toEqual([])
+    }
   })
 })
 
