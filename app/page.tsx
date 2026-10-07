@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CommandBar } from '@/app/components/CommandBar'
 import { EmptyState } from '@/app/components/EmptyState'
-import { ApiKeyModal, ErrorToast, GenerateModal, SettingsDrawer, Toggle } from '@/app/components/Modals'
+import { ApiKeyModal, ErrorToast, GenerateModal, SettingsDrawer } from '@/app/components/Modals'
 import { ParallaxStudio } from '@/app/components/ParallaxStudio'
 import { PixelStudio } from '@/app/components/PixelStudio'
 import { PropStudio } from '@/app/components/PropStudio'
@@ -16,22 +16,22 @@ import { ResultActions, VariantSelector } from '@/app/components/VariantSelector
 import { Workspace } from '@/app/components/Workspace'
 import { Candidate, Direction, EXTENSION_PERCENT, LIBRARY_PROJECT_STORAGE, Mode, STORAGE_MODE, STORAGE_MODEL, STORAGE_PROVIDER, STORAGE_QA_MODEL, apiKeyStorageKey } from '@/app/lib/app'
 import { useI18n } from '@/app/lib/i18n'
-import { DEFAULT_MODEL, getModelConfig, skipsArtDirectorReview } from '@/app/lib/models'
+import { DEFAULT_MODEL, getModelConfig } from '@/app/lib/models'
 import { toWire, type GenerateRequest } from '@/app/lib/generateRequest'
 import { studioRequest } from '@/app/lib/studioRequest'
 import { DEFAULT_PROVIDER, PROVIDERS, isProviderId, type ProviderId } from '@/app/lib/providers'
 import { LAYER_ORDER, type LayerRole } from '@/app/lib/layerRoles'
-import { LAYER_ROLES, PARALLAX_MAX_AUTO_STEPS, ParallaxLayer, WORKFLOW_ORDER, createDefaultLayers, getRecommendedLayerIndex, getWorkflowPrerequisite } from '@/app/lib/parallax'
-import { PROP_BATCH, PROP_BATCH_COLS, PROP_BATCH_H, PROP_BATCH_ROWS, PROP_BATCH_W, PROP_TILE_SIZE, PropItem, nextPropId, propAtlasLayout, resolvePropNames } from '@/app/lib/props'
-import { SPRITE_ANIMATIONS, SPRITE_FRAME_COUNT, SPRITE_FRAME_SIZE, SPRITE_GRID_COLS, SPRITE_GRID_ROWS, SPRITE_SHEET_H, SPRITE_SHEET_W, SPRITE_STRIP_H, SPRITE_STRIP_W, SpriteAnimType, SpriteSheet, createEmptySpriteSheet } from '@/app/lib/sprite'
-import { BODY_PLANS, BodyPlan, isAirborneAnim } from '@/app/lib/bodyPlans'
-import { CORNER_GRAFTS, ENABLE_CORNER_RECONCILE, TILESET_ATLAS_EXTRUDE_PX, TILESET_BY_ROLE, TILESET_PADDED_SHEET_H, TILESET_PADDED_SHEET_W, TILESET_PADDED_STRIDE, TILESET_SHEET_H, TILESET_SHEET_W, TILESET_TILE_SIZE, TILE_TEMPLATE_CELL, TILE_TEMPLATE_H, TILE_TEMPLATE_W, TileSetRole, TileSetSlot, buildTileSheetGuideDataUrl, createEmptyTileSet, rebuildCornerTile } from '@/app/lib/tileset'
-import { alignSpriteFramesToBaseline, applyFullContextResult, centerSpriteFramesHorizontally, chromaKeyToAlpha, createChunkedExtension, createFullContextExtension, getImageDimensions, harmonizeHorizontalSeams, isolatePrimarySpriteComponent, isAiExtensionUnfilled, makeHorizontallyTileable, measureSeamResidual, normalizeSpriteFrameScale, removeFrameBorder, removeUploadedBackground, sliceImageGrid, stitchExtendedChunk } from '@/app/utils/imageProcessor'
-import { CHROMA_PRESETS } from '@/app/lib/chromaPresets'
-import { SubjectBounds, drawPoseGuideSheet, measureSubjectBounds } from '@/app/utils/poseRig'
-import { buildTilePreviewComposite, buildTileSheetAtlas, finishTileCell, finishTileSheet } from '@/app/utils/tileFinish'
-import { buildPropManifest, buildSpriteManifest, buildTileSetManifest } from '@/app/lib/sheetManifest'
-import { downloadText, downloadUrl, downloadZip, type ZipEntry } from '@/app/lib/studioDownload'
+import { WORKFLOW_ORDER, createDefaultLayers, getWorkflowPrerequisite } from '@/app/lib/parallax'
+import { PROP_BATCH, resolvePropNames } from '@/app/lib/props'
+import { SPRITE_ANIMATIONS, createEmptySpriteSheet } from '@/app/lib/sprite'
+import { createEmptyTileSet } from '@/app/lib/tileset'
+import { applyFullContextResult, chromaKeyToAlpha, createChunkedExtension, createFullContextExtension, isAiExtensionUnfilled, measureSeamResidual, stitchExtendedChunk } from '@/app/utils/imageProcessor'
+import { buildPropManifest, buildTileSetManifest } from '@/app/lib/sheetManifest'
+import { useTileStudio } from '@/app/lib/useTileStudio'
+import { usePropStudio } from '@/app/lib/usePropStudio'
+import { useSpriteStudio } from '@/app/lib/useSpriteStudio'
+import { useParallaxStudio } from '@/app/lib/useParallaxStudio'
+import { downloadUrl } from '@/app/lib/studioDownload'
 
 export default function Home() {
   const { t } = useI18n()
@@ -82,115 +82,12 @@ export default function Home() {
   // game designer doesn't have to re-pick parallax every visit.
   const [mode, setModeState] = useState<Mode>('extender')
 
-  // Parallax-specific state. Target width is the "auto-extend until we hit
-  // this width" goal; autoExtending tracks the loop; the stop ref lets the
-  // user interrupt mid-loop without React re-render races. The layers array
-  // holds the per-depth-band images that compose into a real parallax scene.
-  const [parallaxTargetWidth, setParallaxTargetWidth] = useState<number | null>(null)
-  const [parallaxAutoExtending, setParallaxAutoExtending] = useState(false)
-  const parallaxAutoStopRef = useRef(false)
-  const [parallaxLayers, setParallaxLayers] = useState<ParallaxLayer[]>(() =>
-    createDefaultLayers()
-  )
-  const [parallaxActiveIdx, setParallaxActiveIdx] = useState(() =>
-    LAYER_ORDER.indexOf(WORKFLOW_ORDER[0])
-  )
   /** Shared art direction for all parallax layers — auto-derived from the
    * first Near layer generation prompt, editable before Mid / Far / Sky.
    * Also reused by Tile mode so generated material textures match the
    * existing project palette/lighting/style. */
   const [sceneBrief, setSceneBrief] = useState('')
   const [sceneBriefLoading, setSceneBriefLoading] = useState(false)
-
-  // Tile-set state. A 13-slot autotile set for 2D platformer tile-maps:
-  // body + 4 edges + 4 outer corners + 4 inner corners. Each non-body tile
-  // is generated against magenta and chroma-keyed to alpha so the user can
-  // drop tiles over any background. Generated text-only with role-specific
-  // magenta-layout instructions; consistency comes from a shared prompt +
-  // sceneBrief across calls.
-  const [tileSet, setTileSet] = useState<TileSetSlot[]>(() => createEmptyTileSet())
-  const [tilePrompt, setTilePrompt] = useState('')
-  const [tileSetGenerating, setTileSetGenerating] = useState(false)
-  const [tileProgressMsg, setTileProgressMsg] = useState<string | null>(null)
-  const tileStopRef = useRef(false)
-
-  // Props / decoration state — a sheet of standalone transparent decoration
-  // sprites scattered on top of a tile map. Generated in one AI call (like the
-  // tile set) so the whole set shares a palette; sliced + chroma-keyed client
-  // side. Each prop can be re-rolled individually via a separate call.
-  const [propItems, setPropItems] = useState<PropItem[]>([])
-  const [propPrompt, setPropPrompt] = useState('')
-  const [propSetGenerating, setPropSetGenerating] = useState(false)
-  const [propProgressMsg, setPropProgressMsg] = useState<string | null>(null)
-  const propStopRef = useRef(false)
-
-  // Sprite-animation state. One sheet at a time (the active animation type).
-  // Switching animation chips creates a fresh empty sheet so each animation
-  // is independent; the previous sheet is replaced rather than archived.
-  //
-  // Frame consistency: we use a two-pass anchor → sheet workflow. Pass 1
-  // generates a single neutral standing reference of the character ("the
-  // anchor"); Pass 2 generates the 8-frame sheet and passes the anchor as
-  // a visual reference, which 2026's AI-sprite community identified as the
-  // strongest known technique for keeping the character on-model across
-  // cells (chongdashu/ai-game-spritesheets, Robotic Ape, Auto-Sprite, etc.).
-  // The anchor PERSISTS across animation switches so the same character can
-  // be re-used for idle/walk/run/jump/attack/hurt/death without re-rolling
-  // identity.
-  // Which body plan we're animating (humanoid / quadruped / serpent / flyer /
-  // blob). The plan selects the deterministic pose rig, the available
-  // animations, and the choreography/QA the API uses.
-  const [spriteBodyPlan, setSpriteBodyPlan] = useState<BodyPlan>('biped')
-  const [spriteAnim, setSpriteAnim] = useState<SpriteAnimType>('idle')
-  const [spriteSheet, setSpriteSheet] = useState<SpriteSheet>(() =>
-    createEmptySpriteSheet('idle')
-  )
-  // Per-(plan, anim) cache so switching tabs/plans doesn't discard generated
-  // sheets. Keyed by `${bodyPlan}:${anim}`; the latest sheet for each is kept
-  // here so the user can flip between animations and still see prior results.
-  // Cleared when the character identity (anchor) or body plan changes, since
-  // cached sheets belong to the previous character/plan.
-  const spriteSheetCacheRef = useRef<Record<string, SpriteSheet>>({})
-  const spriteCacheKey = (plan: BodyPlan, anim: SpriteAnimType) =>
-    `${plan}:${anim}`
-  // Set of animation types (for the CURRENT plan) that have a generated
-  // (cached) sheet, used to mark those tabs with a dot.
-  const [spriteGeneratedAnims, setSpriteGeneratedAnims] = useState<
-    Set<SpriteAnimType>
-  >(new Set())
-  useEffect(() => {
-    spriteSheetCacheRef.current[spriteCacheKey(spriteBodyPlan, spriteSheet.anim)] =
-      spriteSheet
-    const prefix = `${spriteBodyPlan}:`
-    const next = new Set<SpriteAnimType>()
-    for (const [key, sheet] of Object.entries(spriteSheetCacheRef.current)) {
-      if (key.startsWith(prefix) && sheet && sheet.frames.some((f) => !!f.imageUrl)) {
-        next.add(key.slice(prefix.length) as SpriteAnimType)
-      }
-    }
-    setSpriteGeneratedAnims(next)
-  }, [spriteSheet, spriteBodyPlan])
-  const [spriteAnchor, setSpriteAnchor] = useState<{
-    /** Chroma-keyed thumbnail (transparent background) for display. */
-    imageUrl: string
-    /** Raw magenta-background version — fed to the AI as a reference image
-     * on every sheet pass. The model sees magenta naturally, transparent
-     * regions less so, so we keep the un-keyed version for inference. */
-    rawImageUrl: string
-    /** Prompt that produced this anchor. */
-    prompt: string
-    /** True when the anchor came from a user-uploaded image rather than the
-     * anchor generation pass. Uploaded anchors are never auto-regenerated
-     * from the prompt. */
-    uploaded?: boolean
-  } | null>(null)
-  const [spritePrompt, setSpritePrompt] = useState('')
-  const [spriteFps, setSpriteFps] = useState<number>(
-    SPRITE_ANIMATIONS.idle.defaultFps
-  )
-  const [spriteGenerating, setSpriteGenerating] = useState(false)
-  const [spriteProgressMsg, setSpriteProgressMsg] = useState<string | null>(null)
-  const spriteStopRef = useRef(false)
 
   // Modal/drawer state
   const [showGenerateModal, setShowGenerateModal] = useState(false)
@@ -208,7 +105,6 @@ export default function Home() {
   /** Vision model for the QA routes — an image model cannot review a sheet. */
   const [qaModel, setQaModel] = useState<string>(PROVIDERS[DEFAULT_PROVIDER].qaModel)
   const [libraryProject, setLibraryProject] = useState<string>('default')
-  const skipArtDirectorReview = skipsArtDirectorReview(selectedModel)
   const [hydrated, setHydrated] = useState(false)
   const [showApiKeyModal, setShowApiKeyModal] = useState(false)
   // Required-mode means the user can't dismiss the modal (first run, no key
@@ -360,222 +256,6 @@ export default function Home() {
     return true
   }
 
-  // ── Parallax layer helpers ─────────────────────────────────────────────────
-
-  /** Convenience accessor for the currently-edited parallax layer. */
-  const activeLayer: ParallaxLayer | null =
-    mode === 'parallax' ? parallaxLayers[parallaxActiveIdx] ?? null : null
-
-  /**
-   * Update a single field on the currently-active layer. Used by the layer
-   * panel sliders and by image-loading paths that need to write back the
-   * generated/extended image plus its dimensions.
-   */
-  const patchActiveLayer = useCallback(
-    (patch: Partial<ParallaxLayer>) => {
-      setParallaxLayers((prev) =>
-        prev.map((l, i) => (i === parallaxActiveIdx ? { ...l, ...patch } : l))
-      )
-    },
-    [parallaxActiveIdx]
-  )
-
-  const setLayerScrollSpeed = useCallback((idx: number, speed: number) => {
-    setParallaxLayers((prev) =>
-      prev.map((l, i) =>
-        i === idx ? { ...l, scrollSpeed: Math.max(0, speed) } : l
-      )
-    )
-  }, [])
-
-  const clearLayer = useCallback((idx: number) => {
-    setParallaxLayers((prev) =>
-      prev.map((l, i) =>
-        i === idx
-          ? {
-              ...l,
-              imageUrl: null,
-              rawImageUrl: null,
-              width: null,
-              height: null,
-              fromUpload: false,
-            }
-          : l
-      )
-    )
-  }, [])
-
-  /**
-   * Apply a freshly-loaded image (from upload or generation) to the active
-   * layer. Sky layers are stored as-is; non-sky layers are chroma-keyed for
-   * display while the raw is preserved for future extension. Uploads are
-   * trusted to already have correct alpha and bypass the keying pass.
-   */
-  const applyImageToActiveLayer = useCallback(
-    async (imageUrl: string, options: { fromUpload: boolean }) => {
-      const layer = parallaxLayers[parallaxActiveIdx]
-      if (!layer) return
-      const isKeyed = !LAYER_ROLES[layer.role].isOpaque
-      const dims = await getImageDimensions(imageUrl)
-      let displayImage = imageUrl
-      let rawImage: string | null = imageUrl
-      if (isKeyed && !options.fromUpload) {
-        // Keyed layers from generation/extension: apply chroma key for
-        // display, keep the raw for re-feeding into the extend pipeline.
-        displayImage = await chromaKeyToAlpha(imageUrl)
-        rawImage = imageUrl
-      } else if (isKeyed && options.fromUpload) {
-        // User-supplied alpha — trust it. raw == display.
-        rawImage = imageUrl
-      }
-      patchActiveLayer({
-        imageUrl: displayImage,
-        rawImageUrl: rawImage,
-        width: dims.width,
-        height: dims.height,
-        fromUpload: options.fromUpload,
-      })
-      // Nudge workflow: after filling a layer, jump to the next empty one
-      // in front→back order so users naturally build Near → Mid → Far → Sky.
-      const updatedLayers = parallaxLayers.map((l, i) =>
-        i === parallaxActiveIdx
-          ? {
-              ...l,
-              imageUrl: displayImage,
-              rawImageUrl: rawImage,
-              width: dims.width,
-              height: dims.height,
-              fromUpload: options.fromUpload,
-            }
-          : l
-      )
-      const nextIdx = getRecommendedLayerIndex(updatedLayers)
-      if (nextIdx !== null && nextIdx !== parallaxActiveIdx) {
-        setParallaxActiveIdx(nextIdx)
-      }
-    },
-    [parallaxLayers, parallaxActiveIdx, patchActiveLayer]
-  )
-
-  // Mirror the active parallax layer's dimensions into the legacy
-  // currentImageDimensions state used by the extend pipeline guard. We have
-  // to depend on the dims directly (not just `parallaxActiveIdx`) so the
-  // sync re-fires when generation/extension fills in dims for a previously-
-  // empty layer — otherwise the guard would still see a null and throw
-  // "Image dimensions not available yet."
-  const activeLayerWidth =
-    mode === 'parallax' ? parallaxLayers[parallaxActiveIdx]?.width ?? null : null
-  const activeLayerHeight =
-    mode === 'parallax' ? parallaxLayers[parallaxActiveIdx]?.height ?? null : null
-  useEffect(() => {
-    if (mode !== 'parallax') return
-    if (activeLayerWidth && activeLayerHeight) {
-      setCurrentImageDimensions({
-        width: activeLayerWidth,
-        height: activeLayerHeight,
-      })
-    } else {
-      setCurrentImageDimensions(null)
-    }
-  }, [mode, activeLayerWidth, activeLayerHeight])
-
-  // Switching to a different layer should wipe in-flight review state —
-  // otherwise a stale candidate from layer N would render over layer M's
-  // canvas. This is intentionally separate from the dim-sync effect above so
-  // it only fires on actual layer switches, not on every layer mutation.
-  useEffect(() => {
-    if (mode !== 'parallax') return
-    setExtendedCandidates([])
-    setCandidateDims([])
-    setSelectedCandidateIdx(0)
-    setImageBeforeExtension(null)
-    setLastExtensionParams(null)
-    setActiveDirection(null)
-  }, [mode, parallaxActiveIdx])
-
-  // ── Image loaders ──────────────────────────────────────────────────────────
-
-  const loadDataUrlAsImage = useCallback(
-    (dataUrl: string, filename = 'image.png') => {
-      setSelectedImage(dataUrl)
-      setExtendedCandidates([])
-      setCandidateDims([])
-      setSelectedCandidateIdx(0)
-      setError(null)
-      setOriginalFileName(filename)
-      const img = new Image()
-      img.onload = () => {
-        setCurrentImageDimensions({ width: img.width, height: img.height })
-      }
-      img.src = dataUrl
-    },
-    []
-  )
-
-  /**
-   * Adopts a fresh set of candidates: stores them, resets selection to the
-   * top (best-blend) variant, and kicks off async dimension reads for each so
-   * the meta row stays accurate as the user cycles.
-   */
-  const adoptCandidates = useCallback((candidates: Candidate[]) => {
-    setExtendedCandidates(candidates)
-    setSelectedCandidateIdx(0)
-    setCandidateDims(new Array(candidates.length).fill(null))
-    candidates.forEach((c, idx) => {
-      const img = new Image()
-      img.onload = () => {
-        setCandidateDims((prev) => {
-          const next = prev.slice()
-          next[idx] = { width: img.width, height: img.height }
-          return next
-        })
-      }
-      img.src = c.imageUrl
-    })
-  }, [])
-
-  const handleFile = useCallback(
-    (file: File) => {
-      const reader = new FileReader()
-      reader.onload = async (e) => {
-        const dataUrl = e.target?.result as string
-        if (mode === 'parallax') {
-          // Parallax uploads target the active layer, not the global image.
-          // We trust user-supplied alpha (PNG with transparency works as-is).
-          try {
-            await applyImageToActiveLayer(dataUrl, { fromUpload: true })
-            setOriginalFileName(file.name)
-            setError(null)
-          } catch (err) {
-            setError(
-              err instanceof Error ? err.message : t('extender.error.loadImage')
-            )
-          }
-        } else if (mode === 'tile') {
-          // Tile-set mode is generate-only — uploads aren't supported because
-          // each tile has a strict role + magenta layout that an arbitrary
-          // upload can't match. Surface a clear hint instead of silently
-          // ignoring the dropped file.
-          setError(t('extender.error.tilePromptOnly'))
-        } else if (mode === 'sprite') {
-          // Sprite mode is also generate-only — animation sheets need
-          // strict 4×2 keyframe staging on a magenta key that an arbitrary
-          // upload can't match.
-          setError(t('extender.error.spritePromptOnly'))
-        } else {
-          loadDataUrlAsImage(dataUrl, file.name)
-        }
-      }
-      reader.readAsDataURL(file)
-    },
-    [mode, applyImageToActiveLayer, loadDataUrlAsImage, t]
-  )
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) handleFile(file)
-  }
-
   // ── Generate from scratch ──────────────────────────────────────────────────
 
   /** One policy for every request that needs a key: flag it, then offer it. */
@@ -584,6 +264,67 @@ export default function Home() {
     setShowApiKeyModal(true)
   }, [])
 
+  // The tile studio: state and orchestration live in one module; the page just
+  // supplies the settings and the shell callbacks it needs.
+  const {
+    tileSet,
+    setTileSet,
+    tilePrompt,
+    setTilePrompt,
+    tileSetGenerating,
+    tileProgressMsg,
+    setTileProgressMsg,
+    tileStopRef,
+    handleGenerateTileSet,
+    handleStopTileSet,
+    handleRegenerateTile,
+    handleClearTileSet,
+    buildTileSheetDataUrl,
+    handleDownloadTileSheet,
+    handleDownloadTileSetZip,
+  } = useTileStudio({
+    apiKey,
+    provider,
+    model: selectedModel,
+    qaModel,
+    artStyle,
+    sceneBrief,
+    debugMode,
+    setError,
+    ensureCanGenerate,
+    onNeedsKey,
+  })
+  // The props studio: state and orchestration live in one module; the page just
+  // supplies the settings and the shell callbacks it needs.
+  const {
+    propItems,
+    setPropItems,
+    propPrompt,
+    setPropPrompt,
+    propSetGenerating,
+    propProgressMsg,
+    setPropProgressMsg,
+    propStopRef,
+    buildPropAtlasDataUrl,
+    handleAddPropBatch,
+    handleStopPropSet,
+    handleRegenerateProp,
+    handleDeleteProp,
+    handleClearPropSet,
+    handleDownloadPropSheet,
+    handleDownloadPropZip,
+  } = usePropStudio({
+    apiKey,
+    provider,
+    model: selectedModel,
+    qaModel,
+    artStyle,
+    sceneBrief,
+    debugMode,
+    setError,
+    ensureCanGenerate,
+    onNeedsKey,
+  })
   const deriveSceneBrief = useCallback(
     async (anchorPrompt: string) => {
       if (!anchorPrompt.trim()) return
@@ -1030,678 +771,6 @@ export default function Home() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  // ── Tile-set mode handlers ───────────────────────────────────────────────
-
-  /** Mutate a single tile slot in the set. */
-  const patchTileSlot = (
-    role: TileSetRole,
-    patch: Partial<TileSetSlot>
-  ) => {
-    setTileSet((prev) =>
-      prev.map((s) => (s.role === role ? { ...s, ...patch } : s))
-    )
-  }
-
-  /** Generate a single tile slot. Returns the resolved image URL (already
-   * post-processed) so callers can chain or assign as needed. Throws on
-   * failure so the caller can surface error state. */
-  const generateOneTile = async (role: TileSetRole): Promise<string> => {
-    const spec = TILESET_BY_ROLE[role]
-    const roleLabel = (
-      t(`common.tileRole.${role}.label`, undefined, spec.label)
-    ).toLowerCase()
-    setTileProgressMsg(
-      t('extender.progress.generatingPhase', { label: roleLabel })
-    )
-    patchTileSlot(role, { generating: true })
-
-    try {
-      const tileGuideImage = buildTileSheetGuideDataUrl()
-      const data = await studioRequest<{ imageUrl?: string }>(
-        '/api/generate',
-        toWire({
-          kind: 'tileMode',
-          prompt: tilePrompt,
-          width: TILESET_TILE_SIZE,
-          height: TILESET_TILE_SIZE,
-          artStyle: artStyle !== 'none' ? artStyle : undefined,
-          apiKey: apiKey || undefined,
-          provider,
-          model: selectedModel,
-          tileRole: role,
-          sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
-        }),
-        { on401: onNeedsKey, fallbackMessage: t('extender.error.tileRole', { label: roleLabel }) }
-      )
-      if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
-
-      setTileProgressMsg(
-        t('extender.progress.processingPhase', { label: roleLabel })
-      )
-      const processed = await finishTileCell(role, data.imageUrl)
-
-      // Keep corners reconciled with their edge neighbors after a single
-      // regen (the generate-all path reconciles the whole set at once). We
-      // read neighbor URLs from current state.
-      const neighborUrls: Partial<Record<TileSetRole, string>> = {}
-      tileSet.forEach((s) => {
-        if (s.imageUrl && s.role !== role) neighborUrls[s.role] = s.imageUrl
-      })
-
-      const isCorner = !!CORNER_GRAFTS[role]
-      if (ENABLE_CORNER_RECONCILE && isCorner) {
-        // A corner was regenerated → rebuild it against current neighbors
-        // (inner corners are assembled from neighbors; outer corners grafted).
-        let finalUrl = processed
-        try {
-          finalUrl = await rebuildCornerTile(role, processed, neighborUrls)
-        } catch {
-          /* fall back to the raw corner */
-        }
-        patchTileSlot(role, {
-          imageUrl: finalUrl,
-          hasImage: true,
-          generating: false,
-        })
-        return finalUrl
-      }
-
-      patchTileSlot(role, {
-        imageUrl: processed,
-        hasImage: true,
-        generating: false,
-      })
-
-      // An edge/body was regenerated → rebuild every corner so their shared
-      // borders (and assembled inner corners) track the new tile.
-      const affectsCorners =
-        role === 'top' ||
-        role === 'bottom' ||
-        role === 'left' ||
-        role === 'right' ||
-        role === 'body'
-      if (affectsCorners && ENABLE_CORNER_RECONCILE) {
-        const updatedNeighbors = { ...neighborUrls, [role]: processed }
-        await Promise.all(
-          (Object.keys(CORNER_GRAFTS) as TileSetRole[]).map(async (cRole) => {
-            const cUrl = tileSet.find((s) => s.role === cRole)?.imageUrl
-            if (!cUrl) return
-            try {
-              const rebuilt = await rebuildCornerTile(
-                cRole,
-                cUrl,
-                updatedNeighbors
-              )
-              patchTileSlot(cRole, { imageUrl: rebuilt })
-            } catch {
-              /* leave the corner as-is on failure */
-            }
-          })
-        )
-      }
-
-      return processed
-    } catch (err) {
-      patchTileSlot(role, { generating: false })
-      throw err
-    }
-  }
-
-  /** Review half of the reverse pipeline — hand the assembled preview + sheet
-   * to the QA art director. Returns null (≈ approve) on any failure so a flaky
-   * critic never blocks the user. */
-  const fetchTileReview = async (
-    previewImage: string,
-    sheetImage: string | null
-  ): Promise<{ ok: boolean; issues: string[]; fix: string } | null> => {
-    try {
-      const data = await studioRequest<{ ok?: boolean; issues?: string[]; fix?: string }>(
-        '/api/tile-review',
-        {
-          prompt: tilePrompt,
-          sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
-          apiKey: apiKey || undefined,
-          provider,
-          model: qaModel,
-          previewImage,
-          sheetImage: sheetImage || undefined,
-        },
-        { on401: onNeedsKey }
-      )
-      if (typeof data?.ok !== 'boolean') return null
-      return { ok: data.ok, issues: data.issues ?? [], fix: data.fix ?? '' }
-    } catch {
-      return null
-    }
-  }
-
-  /** Generate the full 13-tile set in ONE AI call as a 4×4 sprite-sheet, then
-   * slice + post-process each cell. This is the consistency win: all tiles come
-   * out of the same diffusion pass so palette, texture detail, and lighting are
-   * locked across the set. The per-tile path (used by `handleRegenerateTile`)
-   * is retained as an escape hatch for individual failures. */
-  const handleGenerateTileSet = async () => {
-    if (tileSetGenerating) return
-    if (!tilePrompt.trim()) {
-      setError(t('extender.error.describeMaterial'))
-      return
-    }
-    if (!ensureCanGenerate()) return
-    setError(null)
-    tileStopRef.current = false
-    setTileSetGenerating(true)
-    const startedAt = Date.now()
-    // Up to this many extra repaint passes after the first generation, each
-    // driven by the QA art director's fix report.
-    const MAX_TILE_REVIEW_PASSES = 2
-
-    // Mark every slot as "generating" up front so the UI shows the whole
-    // set spinning during the single AI call (vs. one cell at a time).
-    setTileSet((prev) => prev.map((s) => ({ ...s, generating: true })))
-
-    // Tick a live elapsed-seconds counter so the user sees progress during
-    // the long single call (sheet generation typically takes 30-90s).
-    let phase = t('extender.phase.generatingSheet')
-    const tickHandle = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startedAt) / 1000)
-      setTileProgressMsg(t('extender.progress.phase', { phase, seconds: elapsed }))
-    }, 1000)
-
-    // One full generate → align → slice → process → reconcile pass. Returns
-    // the reconciled role→url map, or null if stopped. `fixNotes` carries the
-    // QA report into the regeneration prompt on retry passes.
-    const renderSheetOnce = async (
-      fixNotes?: string
-    ): Promise<Partial<Record<TileSetRole, string>> | null> => {
-      const tileGuideImage = buildTileSheetGuideDataUrl()
-      const data = await studioRequest<{ imageUrl?: string }>(
-        '/api/generate',
-        toWire({
-          kind: 'tileSheet',
-          prompt: tilePrompt,
-          width: TILE_TEMPLATE_W,
-          height: TILE_TEMPLATE_H,
-          artStyle: artStyle !== 'none' ? artStyle : undefined,
-          apiKey: apiKey || undefined,
-          provider,
-          model: selectedModel,
-          tileGuideImage,
-          tileFixNotes: fixNotes,
-          sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
-        }),
-        { on401: onNeedsKey, fallbackMessage: t('extender.error.tileSheet') }
-      )
-      if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
-      if (tileStopRef.current) return null
-
-      const finished = await finishTileSheet(data.imageUrl, {
-        cell: TILE_TEMPLATE_CELL,
-        onStep: (step) => {
-          phase =
-            step === 'align'
-              ? t('extender.phase.aligning')
-              : step === 'slice'
-                ? t('extender.phase.slicing')
-                : step === 'finish'
-                  ? t('extender.phase.processingTiles')
-                  : t('extender.phase.reconciling')
-        },
-        shouldContinue: () => !tileStopRef.current,
-      })
-      if (!finished) return null
-      return finished.byRole
-    }
-
-    // `reviewing` keeps each populated cell's spinner overlay on while the art
-    // director inspects the result (so the sheet visibly shows "still working"
-    // during review / repaint), then clears it once the verdict is final.
-    const applyMap = (
-      map: Partial<Record<TileSetRole, string>>,
-      reviewing: boolean
-    ) =>
-      setTileSet((prev) =>
-        prev.map((slot) => {
-          const url = map[slot.role] ?? null
-          return {
-            role: slot.role,
-            imageUrl: url,
-            hasImage: !!url,
-            generating: reviewing && !!url,
-          }
-        })
-      )
-
-    try {
-      let fixNotes: string | undefined
-      // Track the BEST candidate across passes and commit that one at the end —
-      // never just the last pass. A repaint fully re-rolls every flat tile (and
-      // the corners are composited deterministically afterwards), so a critic
-      // that rejects a clean first generation can otherwise replace it with a
-      // drifted, uglier sheet. Keep-best makes the review loop strictly safe:
-      // it can only ever improve on, never regress, the first generation.
-      // score: -1 = critic approved (best possible); otherwise the number of
-      // issues raised (fewer = better). Strictly-better comparison means TIES
-      // keep the EARLIER pass — and the first, un-nudged generation is the one
-      // least likely to have drifted.
-      let best: {
-        map: Partial<Record<TileSetRole, string>>
-        score: number
-      } | null = null
-
-      for (let pass = 0; pass <= MAX_TILE_REVIEW_PASSES; pass++) {
-        phase =
-          pass === 0
-            ? t('extender.phase.generatingSheet')
-            : t('extender.phase.repaintingSheet', { pass: pass + 1 })
-        const reconciled = await renderSheetOnce(fixNotes)
-        if (tileStopRef.current || !reconciled) return
-
-        // Show the attempt but KEEP each tile's spinner on to signal that the
-        // art director is still reviewing the sheet.
-        applyMap(reconciled, true)
-
-        if (skipArtDirectorReview) {
-          if (debugMode) {
-            // eslint-disable-next-line no-console
-            console.log('🧱 Skipping art director review for GPT image model')
-          }
-          best = { map: reconciled, score: -1 }
-          break
-        }
-
-        phase = t('extender.progress.reviewing')
-        setTileProgressMsg(t('extender.progress.reviewing'))
-        const [previewImage, sheetImage] = await Promise.all([
-          buildTilePreviewComposite(reconciled),
-          buildTileSheetAtlas(reconciled),
-        ])
-        if (tileStopRef.current) return
-
-        // No preview → can't review; treat as a neutral candidate.
-        const review = previewImage
-          ? await fetchTileReview(previewImage, sheetImage)
-          : null
-        if (tileStopRef.current) return
-
-        // null (critic unavailable/parse error) is treated as approved so a
-        // flaky critic never blocks the user.
-        const approved = !review || review.ok
-        const score = approved ? -1 : review.issues?.length || 1
-        if (!best || score < best.score) best = { map: reconciled, score }
-
-        if (approved) {
-          if (debugMode && review) {
-            // eslint-disable-next-line no-console
-            console.log('🧱 QA approved the tileset')
-          }
-          break
-        }
-
-        // Rejected — stop if there's nothing actionable or we're out of budget;
-        // otherwise carry the fix report into the next repaint.
-        fixNotes = review.fix || review.issues.join('; ')
-        if (!fixNotes || pass === MAX_TILE_REVIEW_PASSES) break
-
-        if (debugMode) {
-          // eslint-disable-next-line no-console
-          console.log('🧱 QA rejected, repainting with notes:', fixNotes)
-        }
-        // Leave the spinners on — they now signal the repaint in progress.
-        setTileProgressMsg(t('extender.progress.repainting'))
-      }
-
-      // Commit the best candidate we saw (spinners off) — preferring the best,
-      // not the last, is what stops the review loop from turning a clean first
-      // generation into one with corner artifacts.
-      if (best) applyMap(best.map, false)
-    } catch (err) {
-      // Wipe the "generating" flags on failure so the UI stops spinning.
-      setTileSet((prev) => prev.map((s) => ({ ...s, generating: false })))
-      setError(
-        err instanceof Error ? err.message : t('extender.error.tileSheet')
-      )
-    } finally {
-      clearInterval(tickHandle)
-      setTileSetGenerating(false)
-      setTileProgressMsg(null)
-      const elapsed = Math.floor((Date.now() - startedAt) / 1000)
-      // eslint-disable-next-line no-console
-      if (debugMode) console.log(`🧱 Tile-set generated in ${elapsed}s`)
-    }
-  }
-
-  const handleStopTileSet = () => {
-    tileStopRef.current = true
-  }
-
-  /** Regenerate a single tile in the set without touching the others. */
-  const handleRegenerateTile = async (role: TileSetRole) => {
-    if (tileSetGenerating) return
-    if (!tilePrompt.trim()) {
-      setError(t('extender.error.describeMaterialFirst'))
-      return
-    }
-    if (!ensureCanGenerate()) return
-    setError(null)
-    setTileSetGenerating(true)
-    try {
-      await generateOneTile(role)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('extender.error.regenerateTile'))
-    } finally {
-      setTileSetGenerating(false)
-      setTileProgressMsg(null)
-    }
-  }
-
-  const handleClearTileSet = () => {
-    setTileSet(createEmptyTileSet())
-    setTilePrompt('')
-    setTileProgressMsg(null)
-    tileStopRef.current = false
-    setError(null)
-  }
-
-  /** Render the 4x4 sprite-sheet PNG (4096x4096) by drawing each populated
-   * tile into its grid cell. Empty cells stay transparent. */
-  const buildTileSheetDataUrl = async (): Promise<string | null> => {
-    const populated = tileSet.filter((s) => s.imageUrl)
-    if (populated.length === 0) return null
-
-    const canvas = document.createElement('canvas')
-    canvas.width = TILESET_SHEET_W
-    canvas.height = TILESET_SHEET_H
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    ctx.imageSmoothingEnabled = false
-
-    await Promise.all(
-      populated.map(
-        (slot) =>
-          new Promise<void>((resolve, reject) => {
-            if (!slot.imageUrl) {
-              resolve()
-              return
-            }
-            const spec = TILESET_BY_ROLE[slot.role]
-            const img = new Image()
-            img.onload = () => {
-              ctx.drawImage(
-                img,
-                spec.col * TILESET_TILE_SIZE,
-                spec.row * TILESET_TILE_SIZE,
-                TILESET_TILE_SIZE,
-                TILESET_TILE_SIZE
-              )
-              resolve()
-            }
-            img.onerror = () => reject(new Error(t('extender.error.loadTile', { role: spec.role })))
-            img.src = slot.imageUrl
-          })
-      )
-    )
-
-    return canvas.toDataURL('image/png')
-  }
-
-  /** Render an engine atlas with a 2px duplicated border around each tile.
-   * Importers should use the inner 512x512 region for each tile and leave
-   * the extruded pixels as atlas padding. */
-  const buildPaddedTileSheetDataUrl = async (): Promise<string | null> => {
-    const populated = tileSet.filter((s) => s.imageUrl)
-    if (populated.length === 0) return null
-
-    const canvas = document.createElement('canvas')
-    canvas.width = TILESET_PADDED_SHEET_W
-    canvas.height = TILESET_PADDED_SHEET_H
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    ctx.imageSmoothingEnabled = false
-
-    await Promise.all(
-      populated.map(
-        (slot) =>
-          new Promise<void>((resolve, reject) => {
-            if (!slot.imageUrl) {
-              resolve()
-              return
-            }
-            const spec = TILESET_BY_ROLE[slot.role]
-            const img = new Image()
-            img.onload = () => {
-              const x = spec.col * TILESET_PADDED_STRIDE
-              const y = spec.row * TILESET_PADDED_STRIDE
-              const p = TILESET_ATLAS_EXTRUDE_PX
-
-              ctx.drawImage(img, x + p, y + p, TILESET_TILE_SIZE, TILESET_TILE_SIZE)
-
-              // Edges.
-              ctx.drawImage(img, 0, 0, TILESET_TILE_SIZE, 1, x + p, y, TILESET_TILE_SIZE, p)
-              ctx.drawImage(img, 0, TILESET_TILE_SIZE - 1, TILESET_TILE_SIZE, 1, x + p, y + p + TILESET_TILE_SIZE, TILESET_TILE_SIZE, p)
-              ctx.drawImage(img, 0, 0, 1, TILESET_TILE_SIZE, x, y + p, p, TILESET_TILE_SIZE)
-              ctx.drawImage(img, TILESET_TILE_SIZE - 1, 0, 1, TILESET_TILE_SIZE, x + p + TILESET_TILE_SIZE, y + p, p, TILESET_TILE_SIZE)
-
-              // Corners.
-              ctx.drawImage(img, 0, 0, 1, 1, x, y, p, p)
-              ctx.drawImage(img, TILESET_TILE_SIZE - 1, 0, 1, 1, x + p + TILESET_TILE_SIZE, y, p, p)
-              ctx.drawImage(img, 0, TILESET_TILE_SIZE - 1, 1, 1, x, y + p + TILESET_TILE_SIZE, p, p)
-              ctx.drawImage(img, TILESET_TILE_SIZE - 1, TILESET_TILE_SIZE - 1, 1, 1, x + p + TILESET_TILE_SIZE, y + p + TILESET_TILE_SIZE, p, p)
-
-              resolve()
-            }
-            img.onerror = () => reject(new Error(t('extender.error.loadTile', { role: spec.role })))
-            img.src = slot.imageUrl
-          })
-      )
-    )
-
-    return canvas.toDataURL('image/png')
-  }
-
-  const handleDownloadTileSheet = async () => {
-    try {
-      const sheet = await buildTileSheetDataUrl()
-      if (!sheet) {
-        setError(t('extender.error.tileFirstSheet'))
-        return
-      }
-      const baseName = (tilePrompt.trim().slice(0, 24) || 'tileset').replace(
-        /[^a-z0-9]+/gi,
-        '_'
-      )
-      downloadUrl(sheet, `${baseName}_sheet_${TILESET_SHEET_W}x${TILESET_SHEET_H}.png`)
-
-      const paddedSheet = await buildPaddedTileSheetDataUrl()
-      if (paddedSheet) {
-        downloadUrl(paddedSheet, `${baseName}_sheet_padded_${TILESET_PADDED_SHEET_W}x${TILESET_PADDED_SHEET_H}.png`)
-      }
-
-      // Also offer the manifest as a sidecar JSON in a second click.
-      downloadText(JSON.stringify(buildTileSetManifest({ prompt: tilePrompt, sceneBrief, artStyle, presentRoles: tileSet.filter((s) => s.imageUrl).map((s) => s.role) }), null, 2), `${baseName}_manifest.json`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('extender.error.exportSheet'))
-    }
-  }
-
-  const handleDownloadTileSetZip = async () => {
-    try {
-      const populated = tileSet.filter((s) => s.imageUrl)
-      if (populated.length === 0) {
-        setError(t('extender.error.tileFirstZip'))
-        return
-      }
-      // Drop each tile in as its own PNG, plus the combined sheet, the padded
-      // sheet, and the manifest with its grid layout.
-      const entries: ZipEntry[] = populated.map((slot) => ({
-        name: `${TILESET_BY_ROLE[slot.role].fileName}.png`,
-        dataUrl: slot.imageUrl as string,
-      }))
-      const sheet = await buildTileSheetDataUrl()
-      if (sheet) entries.push({ name: 'sheet.png', dataUrl: sheet })
-      const paddedSheet = await buildPaddedTileSheetDataUrl()
-      if (paddedSheet) entries.push({ name: 'sheet_padded.png', dataUrl: paddedSheet })
-      entries.push({ name: 'manifest.json', text: JSON.stringify(buildTileSetManifest({ prompt: tilePrompt, sceneBrief, artStyle, presentRoles: tileSet.filter((s) => s.imageUrl).map((s) => s.role) }), null, 2) })
-
-      const baseName = (tilePrompt.trim().slice(0, 24) || 'tileset').replace(
-        /[^a-z0-9]+/gi,
-        '_'
-      )
-      await downloadZip(`${baseName}_tileset.zip`, entries)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('extender.error.exportZip'))
-    }
-  }
-
-  // ── Props / decoration mode handlers ──────────────────────────────────────
-  //
-  // Open-ended library: each "add more" press paints a fresh batch of
-  // PROP_BATCH decorations in one AI call and APPENDS them — existing props are
-  // never regenerated. To keep the growing library coherent, every batch (and
-  // every single re-roll) is given the current props as a style reference so
-  // palette / lighting stay locked while the model invents new decorations.
-
-  // Props are colorful (flowers, crystals, mushrooms), so we use a moderate
-  // chroma-key rather than the aggressive tile tuning — enough to delete the
-  // flat magenta cleanly without eating saturated prop colors. removeFrameBorder
-  // then wipes any neighbor bleed that crept into a cell's outer band.
-  const PROP_CHROMA_KEY_OPTS = CHROMA_PRESETS.prop
-
-  /** Magenta → alpha for one sliced prop cell, then trim cell-edge bleed. */
-  const postProcessProp = async (rawCellUrl: string): Promise<string> => {
-    const keyed = await chromaKeyToAlpha(rawCellUrl, PROP_CHROMA_KEY_OPTS)
-    try {
-      return await removeFrameBorder(keyed)
-    } catch {
-      return keyed
-    }
-  }
-
-  /** Compose a REPRESENTATIVE sample of the existing library onto a magenta
-   * grid as a STYLE REFERENCE for the next batch — the model matches its
-   * palette/lighting but must paint decorations of DIFFERENT kinds. We sample
-   * evenly across the WHOLE library (not just the recent batch) so the model
-   * can see everything already made and avoid re-painting earlier categories.
-   * Drawn on magenta (the key color) so the model reads them in the same
-   * convention it must output. Returns undefined if empty. */
-  const buildPropStyleRefDataUrl = async (
-    items: PropItem[]
-  ): Promise<string | undefined> => {
-    const all = items.filter((p) => p.imageUrl)
-    if (all.length === 0) return undefined
-    // This image is a small STYLE ANCHOR — its only job is to lock palette /
-    // lighting / rendering, which text can't convey. De-duplication is handled
-    // separately by a cheap TEXT name list (see the ITEMS text line), so we keep this
-    // tiny and FIXED-SIZE: a 3-col swatch of up to 9 props sampled evenly across
-    // the whole library, regardless of how big the library grows.
-    const CAP = 9
-    let withImg: PropItem[]
-    if (all.length <= CAP) {
-      withImg = all
-    } else {
-      withImg = []
-      for (let i = 0; i < CAP; i++) {
-        withImg.push(all[Math.floor((i * all.length) / CAP)])
-      }
-    }
-    const cell = 200
-    const cols = Math.min(3, withImg.length)
-    const rows = Math.ceil(withImg.length / cols)
-    const canvas = document.createElement('canvas')
-    canvas.width = cols * cell
-    canvas.height = rows * cell
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return undefined
-    ctx.fillStyle = '#FF00FF'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'high'
-    await Promise.all(
-      withImg.map(
-        (p, i) =>
-          new Promise<void>((resolve) => {
-            const img = new Image()
-            img.onload = () => {
-              ctx.drawImage(img, (i % cols) * cell, Math.floor(i / cols) * cell, cell, cell)
-              resolve()
-            }
-            img.onerror = () => resolve()
-            img.src = p.imageUrl as string
-          })
-      )
-    )
-    return canvas.toDataURL('image/png')
-  }
-
-  /** Unique decoration categories already in the library (lowercase). Sent to
-   * the art director as the "do not repeat" set. */
-  const propCategoriesOf = (items: PropItem[]): string[] => {
-    const seen = new Set<string>()
-    for (const p of items) {
-      const n = (p.name || '').trim().toLowerCase()
-      if (n) seen.add(n)
-    }
-    return Array.from(seen)
-  }
-
-  /** CALL #1 of the props pipeline — ask the art-director text model for the
-   * next `count` fresh decoration ideas, given everything already made. Returns
-   * [] on any failure so callers fall back to free image-model invention. */
-  const fetchPropIdeas = async (
-    count: number,
-    items: PropItem[]
-  ): Promise<{ category: string; description: string }[]> => {
-    try {
-      const data = await studioRequest<{ ideas?: { category: string; description: string }[] }>(
-        '/api/prop-brief',
-        {
-          prompt: propPrompt,
-          sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
-          artStyle: artStyle !== 'none' ? artStyle : undefined,
-          apiKey: apiKey || undefined,
-          provider,
-          model: qaModel,
-          count,
-          existing: propCategoriesOf(items),
-        },
-        { on401: onNeedsKey }
-      )
-      return Array.isArray(data.ideas) ? data.ideas : []
-    } catch {
-      return []
-    }
-  }
-
-  /** Pack the whole library into one transparent atlas (PROP_ATLAS_COLS wide). */
-  const buildPropAtlasDataUrl = async (): Promise<string | null> => {
-    const populated = propItems.filter((p) => p.imageUrl)
-    if (populated.length === 0) return null
-    const layout = propAtlasLayout(populated.length)
-    const canvas = document.createElement('canvas')
-    canvas.width = layout.width
-    canvas.height = layout.height
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    ctx.clearRect(0, 0, layout.width, layout.height)
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'high'
-    await Promise.all(
-      populated.map(
-        (p, i) =>
-          new Promise<void>((resolve) => {
-            const r = layout.rect(i)
-            const img = new Image()
-            img.onload = () => {
-              ctx.drawImage(img, r.x, r.y, r.width, r.height)
-              resolve()
-            }
-            img.onerror = () => resolve()
-            img.src = p.imageUrl as string
-          })
-      )
-    )
-    return canvas.toDataURL('image/png')
-  }
-
   /**
    * Snapshot of what the current studio would hand to the library. Reads the
    * same state the ZIP exporters read; never mutates it. Deliberately NOT
@@ -1757,1482 +826,186 @@ export default function Home() {
     })
   }
 
-  /** Generate one batch of PROP_BATCH decorations and append them. Used for the
-   * first batch AND every "add more" — the model freely invents the items. */
-  const handleAddPropBatch = async () => {
-    if (propSetGenerating) return
-    if (!propPrompt.trim()) {
-      setError(t('extender.error.describeBiome'))
-      return
-    }
-    if (!ensureCanGenerate()) return
-    setError(null)
-    propStopRef.current = false
-    setPropSetGenerating(true)
-    const startedAt = Date.now()
+  // The sprite studio: same shape — the two-pass anchor → sheet pipeline and
+  // the deterministic repaint loop live in the module, the page keeps the JSX.
+  const {
+    spriteBodyPlan,
+    spriteAnim,
+    spriteSheet,
+    setSpriteSheet,
+    spriteGeneratedAnims,
+    spriteAnchor,
+    setSpriteAnchor,
+    spritePrompt,
+    setSpritePrompt,
+    spriteFps,
+    setSpriteFps,
+    spriteGenerating,
+    spriteProgressMsg,
+    setSpriteProgressMsg,
+    spriteStopRef,
+    handleSelectSpriteAnim,
+    handleSelectBodyPlan,
+    handleGenerateSpriteSheet,
+    handleRerollSpriteCharacter,
+    handleUploadSpriteCharacter,
+    handleRemoveUploadedCharacter,
+    handleStopSpriteSheet,
+    handleToggleSpriteFrame,
+    handleClearSpriteSheet,
+    handleDownloadSpriteSheet,
+    handleDownloadSpriteZip,
+  } = useSpriteStudio({
+    apiKey,
+    provider,
+    model: selectedModel,
+    artStyle,
+    sceneBrief,
+    debugMode,
+    setError,
+    ensureCanGenerate,
+    onNeedsKey,
+  })
+  // The parallax studio: layer state, the auto-extend loop, the harmonize /
+  // tileable passes and the exporters live in one module. It is called after
+  // the extend pipeline and the layer mirror state it reads, and every name it
+  // returns below keeps the identifier it had in the page.
+  const {
+    parallaxTargetWidth,
+    setParallaxTargetWidth,
+    parallaxAutoExtending,
+    parallaxLayers,
+    setParallaxLayers,
+    parallaxActiveIdx,
+    setParallaxActiveIdx,
+    activeLayer,
+    patchActiveLayer,
+    setLayerScrollSpeed,
+    clearLayer,
+    applyImageToActiveLayer,
+    handleAutoExtend,
+    handleStopAutoExtend,
+    openGenerateModal,
+    handleDownloadFull,
+    handleExportZip,
+    handleHarmonizeActiveLayer,
+    handleMakeActiveLayerTileable,
+  } = useParallaxStudio({
+    mode,
+    sceneBrief,
+    customPrompt,
+    artStyle,
+    selectedImage,
+    setSelectedImage,
+    originalFileName,
+    currentImageDimensions,
+    setCurrentImageDimensions,
+    activeCandidate,
+    candidateDims,
+    selectedCandidateIdx,
+    loading,
+    setLoading,
+    setError,
+    setProgressMsg,
+    setActiveDirection,
+    setExtendedCandidates,
+    setCandidateDims,
+    setSelectedCandidateIdx,
+    setImageBeforeExtension,
+    setLastExtensionParams,
+    setShowGenerateModal,
+    generatePrompt,
+    setGeneratePrompt,
+    setGenerateWidth,
+    setGenerateHeight,
+    runExtend,
+    resolveExtendSource,
+    ensureCanGenerate,
+  })
 
-    // Snapshot existing props for the style reference, then drop in BATCH
-    // spinner placeholders so the user sees the new cells filling in.
-    const existing = propItems.filter((p) => p.imageUrl)
-    const batchIds = Array.from({ length: PROP_BATCH }, () => nextPropId())
-    const batchIdSet = new Set(batchIds)
-    setPropItems((prev) => [
-      ...prev,
-      ...batchIds.map((id) => ({ id, imageUrl: null, generating: true })),
-    ])
+  // ── Image loaders ──────────────────────────────────────────────────────────
 
-    const propBatchStart = (seconds: number) =>
-      t('extender.progress.batchProps', {
-        action: existing.length
-          ? t('extender.progress.adding')
-          : t('extender.progress.generatingAction'),
-        count: PROP_BATCH,
-        seconds,
-      })
-
-    const tickHandle = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startedAt) / 1000)
-      setPropProgressMsg(propBatchStart(elapsed))
-    }, 1000)
-
-    const dropBatch = () =>
-      setPropItems((prev) => prev.filter((p) => !batchIdSet.has(p.id)))
-
-    try {
-      const refImage = await buildPropStyleRefDataUrl(existing)
-
-      // CALL #1 — ART DIRECTOR. A text model decides what NEW props to make,
-      // given the biome + every category already in the library. This is what
-      // keeps the set from looping the same lanterns/nests/pots — a reasoning
-      // model deliberately reaches for fresh kinds. Failure is non-fatal: we
-      // fall back to letting the image model free-invent.
-      setPropProgressMsg(t('extender.progress.planningProps'))
-      const ideas = await fetchPropIdeas(PROP_BATCH, existing)
-      const briefs = ideas.map((i) => i.description)
-      const cats = ideas.map((i) => i.category)
-
-      // CALL #2 — RENDER. The image model paints exactly the art director's
-      // list, matched to the style anchor.
-      setPropProgressMsg(propBatchStart(0))
-      const data = await studioRequest<{ imageUrl?: string }>(
-        '/api/generate',
-        toWire({
-          kind: 'propSheet',
-          prompt: propPrompt,
-          width: PROP_BATCH_W,
-          height: PROP_BATCH_H,
-          artStyle: artStyle !== 'none' ? artStyle : undefined,
-          apiKey: apiKey || undefined,
-          provider,
-          model: selectedModel,
-          propCols: PROP_BATCH_COLS,
-          propRows: PROP_BATCH_ROWS,
-          propCount: PROP_BATCH,
-          propRefImage: refImage,
-          propList: briefs.length ? briefs : undefined,
-          sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
-        }),
-        { on401: onNeedsKey, fallbackMessage: t('extender.error.generateProps') }
-      )
-      if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
-      if (propStopRef.current) {
-        dropBatch()
-        return
-      }
-
-      setPropProgressMsg(t('extender.progress.slicing'))
-      const cells = await sliceImageGrid(data.imageUrl, {
-        cols: PROP_BATCH_COLS,
-        rows: PROP_BATCH_ROWS,
-        cellSize: PROP_TILE_SIZE,
-      })
-      if (propStopRef.current) {
-        dropBatch()
-        return
-      }
-
-      setPropProgressMsg(t('extender.progress.processing'))
-      const processed = await Promise.all(
-        batchIds.map(async (_id, i) => {
-          const raw = cells[i]
-          if (!raw) return null
-          try {
-            return await postProcessProp(raw)
-          } catch {
-            return raw
-          }
-        })
-      )
-      if (propStopRef.current) {
-        dropBatch()
-        return
-      }
-
-      // Fill placeholders with their result; drop any cell that came back empty.
-      // The art director's category list lines up with the cells in reading
-      // order, so we tag each prop with the kind the director chose.
-      const urlById = new Map<string, string>()
-      const nameById = new Map<string, string>()
-      batchIds.forEach((id, i) => {
-        const url = processed[i]
-        if (url) {
-          urlById.set(id, url)
-          if (cats[i]) nameById.set(id, cats[i])
-        }
-      })
-      setPropItems((prev) =>
-        prev
-          .map((p) =>
-            batchIdSet.has(p.id)
-              ? {
-                  ...p,
-                  imageUrl: urlById.get(p.id) ?? null,
-                  name: nameById.get(p.id),
-                  generating: false,
-                }
-              : p
-          )
-          .filter((p) => !(batchIdSet.has(p.id) && !p.imageUrl))
-      )
-    } catch (err) {
-      dropBatch()
-      setError(err instanceof Error ? err.message : t('extender.error.generateProps'))
-    } finally {
-      clearInterval(tickHandle)
-      setPropSetGenerating(false)
-      setPropProgressMsg(null)
-      const elapsed = Math.floor((Date.now() - startedAt) / 1000)
-      // eslint-disable-next-line no-console
-      if (debugMode) console.log(`🌿 Prop batch generated in ${elapsed}s`)
-    }
-  }
-
-  const handleStopPropSet = () => {
-    propStopRef.current = true
-  }
-
-  /** Re-roll a single prop in place — a new decoration matched to the rest of
-   * the library's style (the other props are passed as a reference). */
-  const handleRegenerateProp = async (id: string) => {
-    if (propSetGenerating) return
-    if (!propPrompt.trim()) {
-      setError(t('extender.error.describeBiomeFirst'))
-      return
-    }
-    if (!ensureCanGenerate()) return
-    setError(null)
-    setPropItems((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, generating: true } : p))
-    )
-    setPropProgressMsg(t('extender.progress.rerollProp'))
-    try {
-      const others = propItems.filter((p) => p.id !== id && p.imageUrl)
-      const refImage = await buildPropStyleRefDataUrl(others)
-      // Art director picks ONE fresh kind that isn't already in the library.
-      const ideas = await fetchPropIdeas(1, others)
-      const idea = ideas[0]
-      const data = await studioRequest<{ imageUrl?: string }>(
-        '/api/generate',
-        toWire({
-          kind: 'propMode',
-          prompt: propPrompt,
-          width: PROP_TILE_SIZE,
-          height: PROP_TILE_SIZE,
-          artStyle: artStyle !== 'none' ? artStyle : undefined,
-          apiKey: apiKey || undefined,
-          provider,
-          model: selectedModel,
-          propRole: idea?.description,
-          propRefImage: refImage,
-          sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
-        }),
-        { on401: onNeedsKey, fallbackMessage: t('extender.error.rerollProp') }
-      )
-      if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
-      setPropProgressMsg(t('extender.progress.processing'))
-      const processed = await postProcessProp(data.imageUrl)
-      setPropItems((prev) =>
-        prev.map((p) =>
-          p.id === id
-            ? { ...p, imageUrl: processed, name: idea?.category, generating: false }
-            : p
-        )
-      )
-    } catch (err) {
-      setPropItems((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, generating: false } : p))
-      )
-      setError(err instanceof Error ? err.message : t('extender.error.rerollProp'))
-    } finally {
-      setPropProgressMsg(null)
-    }
-  }
-
-  /** Remove a single prop from the library (curation). */
-  const handleDeleteProp = (id: string) => {
-    setPropItems((prev) => prev.filter((p) => p.id !== id))
-  }
-
-  const handleClearPropSet = () => {
-    setPropItems([])
-    setPropProgressMsg(null)
-    propStopRef.current = false
-  }
-
-  const handleDownloadPropSheet = async () => {
-    try {
-      const sheet = await buildPropAtlasDataUrl()
-      if (!sheet) {
-        setError(t('extender.error.propFirstAtlas'))
-        return
-      }
-      const baseName = (propPrompt.trim().slice(0, 24) || 'props').replace(
-        /[^a-z0-9]+/gi,
-        '_'
-      )
-      downloadUrl(sheet, `${baseName}_props_atlas.png`)
-      downloadText(JSON.stringify(buildPropManifest({ prompt: propPrompt, sceneBrief, items: propItems }), null, 2), `${baseName}_props_manifest.json`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('extender.error.exportAtlas'))
-    }
-  }
-
-  const handleDownloadPropZip = async () => {
-    try {
-      const populated = propItems.filter((p) => p.imageUrl)
-      if (populated.length === 0) {
-        setError(t('extender.error.propFirstZip'))
-        return
-      }
-      const names = resolvePropNames(populated)
-      const entries: ZipEntry[] = populated.map((p, i) => ({ name: names[i].file, dataUrl: p.imageUrl as string }))
-      const sheet = await buildPropAtlasDataUrl()
-      if (sheet) entries.push({ name: 'props_atlas.png', dataUrl: sheet })
-      entries.push({ name: 'manifest.json', text: JSON.stringify(buildPropManifest({ prompt: propPrompt, sceneBrief, items: propItems }), null, 2) })
-
-      const baseName = (propPrompt.trim().slice(0, 24) || 'props').replace(
-        /[^a-z0-9]+/gi,
-        '_'
-      )
-      await downloadZip(`${baseName}_props.zip`, entries)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('extender.error.exportZip'))
-    }
-  }
-
-  // ── Sprite-animation mode handlers ────────────────────────────────────────
-
-  /** Switch the active sprite animation. Replaces the current sheet with a
-   * fresh empty one for the new animation, but PRESERVES the character
-   * anchor so the user can build idle → walk → run → jump → attack for the
-   * same character without re-rolling identity. Also resets FPS to the new
-   * anim's default. */
-  const handleSelectSpriteAnim = (next: SpriteAnimType) => {
-    if (next === spriteAnim) return
-    if (spriteGenerating) return
-    // Persist the current sheet, then restore a previously generated sheet for
-    // the target animation if we have one cached (so the user can flip back and
-    // forth without losing results). Falls back to a fresh empty sheet.
-    spriteSheetCacheRef.current[spriteCacheKey(spriteBodyPlan, spriteAnim)] =
-      spriteSheet
-    const cached = spriteSheetCacheRef.current[spriteCacheKey(spriteBodyPlan, next)]
-    setSpriteAnim(next)
-    setSpriteSheet(cached ?? createEmptySpriteSheet(next))
-    setSpriteFps(cached?.fps ?? SPRITE_ANIMATIONS[next].defaultFps)
-    setSpriteProgressMsg(null)
-  }
-
-  /** Switch body plan. Animations, the pose rig, and the anchor identity are
-   * all plan-specific, so this resets to the plan's default animation, drops
-   * the previous character anchor and cached sheets, and starts clean. */
-  const handleSelectBodyPlan = (next: BodyPlan) => {
-    if (next === spriteBodyPlan) return
-    if (spriteGenerating) return
-    const plan = BODY_PLANS[next]
-    const nextAnim = plan.defaultAnim
-    spriteSheetCacheRef.current = {}
-    setSpriteBodyPlan(next)
-    setSpriteAnim(nextAnim)
-    setSpriteSheet(createEmptySpriteSheet(nextAnim))
-    setSpriteFps(SPRITE_ANIMATIONS[nextAnim].defaultFps)
-    setSpriteAnchor(null)
-    setSpriteProgressMsg(null)
-    setError(null)
-  }
-
-  /**
-   * Internal: generate the character ANCHOR (Pass 1 of the two-pass sprite
-   * pipeline). Produces a single 512×512 neutral standing reference of the
-   * character on a flat magenta key. Returns both the chroma-keyed
-   * thumbnail and the un-keyed magenta version (which is what gets fed
-   * back into the sheet pass).
-   */
-  const runSpriteAnchorPass = async (
-    prompt: string
-  ): Promise<{ imageUrl: string; rawImageUrl: string }> => {
-    const data = await studioRequest<{ imageUrl?: string }>(
-      '/api/generate',
-      toWire({
-        kind: 'spriteAnchor',
-        prompt,
-        width: SPRITE_FRAME_SIZE,
-        height: SPRITE_FRAME_SIZE,
-        artStyle: artStyle !== 'none' ? artStyle : undefined,
-        apiKey: apiKey || undefined,
-        provider,
-        model: selectedModel,
-        spriteBodyPlan,
-        sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
-      }),
-      { on401: onNeedsKey, fallbackMessage: t('extender.error.characterAnchor') }
-    )
-    if (!data.imageUrl) throw new Error(t('extender.error.noAnchorImage'))
-    const rawImageUrl: string = data.imageUrl
-    const keyedImageUrl = await chromaKeyToAlpha(rawImageUrl)
-    return { imageUrl: keyedImageUrl, rawImageUrl }
-  }
-
-  /**
-   * Internal: generate the SHEET (Pass 2 of the two-pass sprite pipeline).
-   *
-   * Before calling the API, this builds a STRUCTURAL GUIDE image: a
-   * 2048×1024 PNG with the anchor pre-composited into each of the 8 grid
-   * cells at pixel-locked position/scale/baseline. The guide is then
-   * passed as the reference image, so the model has a concrete spatial
-   * template to anchor every frame against — not just a loose character
-   * reference. This is the headline fix for position/scale flicker: text
-   * directives alone ("same baseline", "same scale") aren't strong
-   * enough; the model needs to *see* the layout.
-   *
-   * Splits the resulting 4×2 grid into 8 cells, chroma-keys each, and
-   * returns the processed frames.
-   */
-  const runSpriteSheetPass = async (
-    prompt: string,
-    anchorRawUrl: string | null,
-    fixNotes?: string
-  ): Promise<{
-    rawSheetUrl: string
-    keyedCells: string[]
-    keyedSheetUrl: string | null
-  }> => {
-    let guideImage: string | undefined
-    if (anchorRawUrl) {
-      try {
-        guideImage = await buildSpriteSheetGuideDataUrl(anchorRawUrl)
-      } catch (err) {
-        console.warn('Sprite guide build failed; proceeding without it:', err)
-      }
-    }
-    const data = await studioRequest<{ imageUrl?: string }>(
-      '/api/generate',
-      toWire({
-        kind: 'spriteSheet',
-        prompt,
-        width: SPRITE_SHEET_W,
-        height: SPRITE_SHEET_H,
-        artStyle: artStyle !== 'none' ? artStyle : undefined,
-        apiKey: apiKey || undefined,
-        provider,
-        model: selectedModel,
-        spriteAnim,
-        spriteBodyPlan,
-        spriteFrameCount: SPRITE_FRAME_COUNT,
-        spriteGridCols: SPRITE_GRID_COLS,
-        spriteGridRows: SPRITE_GRID_ROWS,
-        spriteFrameSize: SPRITE_FRAME_SIZE,
-        spriteGuideImage: guideImage,
-        // The pose-map guide carries STRUCTURE (correct per-frame poses);
-        // the raw anchor carries IDENTITY (outfit, palette, proportions).
-        // Sending both lets the model skin a known character onto a known
-        // pose instead of inventing either.
-        spritePoseGuide: Boolean(guideImage),
-        spriteIdentityImage: anchorRawUrl ?? undefined,
-        spriteFixNotes: fixNotes,
-        sceneBrief: sceneBrief.trim() ? sceneBrief.trim() : undefined,
-      }),
-      { on401: onNeedsKey, fallbackMessage: t('extender.error.spriteSheet') }
-    )
-    if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
-    const rawSheetUrl: string = data.imageUrl
-    const rawCells = await sliceImageGrid(rawSheetUrl, {
-      cols: SPRITE_GRID_COLS,
-      rows: SPRITE_GRID_ROWS,
-      cellSize: SPRITE_FRAME_SIZE,
-    })
-    const keyedCells = await Promise.all(
-      rawCells.map(async (cellUrl) => {
-        const keyed = await chromaKeyToAlpha(cellUrl)
-        // Strip any dark cell-divider/border line the model painted around the
-        // frame. It isn't magenta, so chroma-keying leaves it as a dark square
-        // outline; this erases full-span border bands at the cell edges.
-        let cleaned = keyed
-        try {
-          cleaned = await removeFrameBorder(cleaned)
-        } catch {
-          cleaned = keyed
-        }
-        // Non-humanoid generations, especially long quadrupeds, can still
-        // duplicate/spill across a hidden cell boundary. Keep the main
-        // connected creature silhouette and erase detached secondary copies
-        // before alignment/playback/export.
-        if (spriteBodyPlan !== 'biped') {
-          try {
-            // Compact bodies (quadruped/blob) can have two creatures fused by a
-            // thin bridge; allow morphological splitting for them. Thin subjects
-            // (serpent/flyer) must NOT be split or erosion would fragment them.
-            const enableSplit =
-              spriteBodyPlan === 'quadruped' || spriteBodyPlan === 'blob'
-            cleaned = await isolatePrimarySpriteComponent(cleaned, { enableSplit })
-          } catch {
-            // Keep the prior cleanup if component isolation fails.
-          }
-        }
-        return cleaned
-      })
-    )
-
-    // Scale normalization — the model redraws the character at a slightly
-    // different size in every cell, so the silhouette "breathes" during
-    // playback. Rescale each frame toward the median silhouette size BEFORE
-    // baseline/horizontal passes re-seat position, so the creature holds one
-    // constant scale frame to frame. Runs for every body plan (humanoid too).
-    let alignedCells = keyedCells
-    try {
-      const scaled = await normalizeSpriteFrameScale(keyedCells, {
-        tolerance: 0.05,
-        maxScaleAdjust: 0.18,
-      })
-      alignedCells = scaled.cells
-      // eslint-disable-next-line no-console
-      console.log('[Sprite] Scale normalization:', {
-        target: scaled.targetSize,
-        sizes: scaled.sizes,
-        scales: scaled.scales,
-      })
-    } catch (err) {
-      console.warn('Sprite scale normalization failed; using raw cells:', err)
-    }
-
-    // Baseline alignment — pixel-level post-process that kills the remaining
-    // y-axis drift the model can't fully suppress. Grounded animations plant
-    // every frame on a fixed in-cell ground line; airborne/flying animations
-    // anchor their most-grounded pose to that same line and rigidly carry the
-    // remaining frames so genuine lifts (jump/run/flight) are preserved.
-    try {
-      const hasAirborne = isAirborneAnim(spriteBodyPlan, spriteAnim)
-      // Fixed in-cell ground line shared by every animation so a walk and a run
-      // of the same creature rest on the SAME floor. Grounded anims plant each
-      // frame to it; airborne anims anchor their most-grounded pose to it and
-      // rigidly carry the rest (preserving the lift).
-      const alignment = await alignSpriteFramesToBaseline(alignedCells, {
-        groundAll: !hasAirborne,
-        targetBaseline: Math.round(SPRITE_FRAME_SIZE * 0.9),
-      })
-      alignedCells = alignment.cells
-      // eslint-disable-next-line no-console
-      console.log('[Sprite] Baseline alignment:', {
-        target: alignment.targetBaseline,
-        detected: alignment.detected,
-        shifted: alignment.shifted,
-      })
-    } catch (err) {
-      console.warn('Sprite baseline alignment failed; using raw cells:', err)
-    }
-
-    // Horizontal centering — pins each frame's center of mass to the cell
-    // center, so the character is centered in-frame and doesn't slide left/
-    // right across cells (kills horizontal "in place" drift on walk/run).
-    try {
-      const centering = await centerSpriteFramesHorizontally(alignedCells, {
-        mode: 'cellCenter',
-      })
-      alignedCells = centering.cells
-      // eslint-disable-next-line no-console
-      console.log('[Sprite] Horizontal centering:', {
-        target: centering.targetCenterX,
-        detected: centering.detected,
-        shifted: centering.shifted,
-      })
-    } catch (err) {
-      console.warn('Sprite horizontal centering failed; using prior cells:', err)
-    }
-
-    const keyedSheetUrl = await composeSpriteGridSheet(alignedCells)
-    return { rawSheetUrl, keyedCells: alignedCells, keyedSheetUrl }
-  }
-
-  /** Deterministic twin/spillover detector. A correct frame is ONE centered
-   * figure → its alpha mass profile is a single hump on both axes. When the
-   * model paints two characters side-by-side OR lets a creature spill from the
-   * row above/below into this sliced cell, the alpha profile splits into two
-   * comparable humps with a clear empty valley. We flag only when the second
-   * hump carries a substantial fraction of the first hump's mass, so an
-   * extended tail/weapon/wing does not trip it. Returns the number of cells
-   * that look duplicated or grid-spilled. Best-effort — returns 0 if anything
-   * fails. */
-  const detectSpriteDuplicateCells = async (cells: string[]): Promise<number> => {
-    const W = 100 // downscaled analysis width — fast, plenty for column stats
-    const H = 100
-    const hasSplitMass = (profile: number[]) => {
-      const peak = Math.max(...profile)
-      if (peak <= 0) return false
-      const occThresh = peak * 0.06
-      // Segment occupied runs; only an empty gap at least 5% of the dimension
-      // separates two figures (bridges tiny internal gaps between legs/tails).
-      const minGap = Math.max(3, Math.round(profile.length * 0.05))
-      const segments: { mass: number }[] = []
-      let cur: number | null = null
-      let gap = 0
-      for (let i = 0; i < profile.length; i++) {
-        if (profile[i] > occThresh) {
-          if (cur === null) {
-            segments.push({ mass: 0 })
-            cur = segments.length - 1
-          }
-          segments[cur].mass += profile[i]
-          gap = 0
-        } else if (cur !== null) {
-          gap++
-          if (gap >= minGap) cur = null
-        }
-      }
-      if (segments.length < 2) return false
-      segments.sort((a, b) => b.mass - a.mass)
-      // Two comparable masses ⇒ a real twin / spillover; a limb/tail is smaller.
-      return segments[1].mass >= segments[0].mass * 0.45
-    }
-    const analyze = (url: string): Promise<boolean> =>
-      new Promise((resolve) => {
-        const img = new Image()
-        img.onload = () => {
-          try {
-            const canvas = document.createElement('canvas')
-            canvas.width = W
-            canvas.height = H
-            const ctx = canvas.getContext('2d')
-            if (!ctx) return resolve(false)
-            ctx.clearRect(0, 0, W, H)
-            ctx.drawImage(img, 0, 0, W, H)
-            const { data } = ctx.getImageData(0, 0, W, H)
-            const colMass = new Array<number>(W).fill(0)
-            const rowMass = new Array<number>(H).fill(0)
-            for (let y = 0; y < H; y++) {
-              for (let x = 0; x < W; x++) {
-                const alpha = data[(y * W + x) * 4 + 3]
-                colMass[x] += alpha
-                rowMass[y] += alpha
-              }
-            }
-            resolve(hasSplitMass(colMass) || hasSplitMass(rowMass))
-          } catch {
-            resolve(false)
-          }
-        }
-        img.onerror = () => resolve(false)
-        img.src = url
-      })
-    try {
-      const flags = await Promise.all(cells.map(analyze))
-      return flags.filter(Boolean).length
-    } catch {
-      return 0
-    }
-  }
-
-  /**
-   * Generate the sprite sheet — orchestrates the two-pass anchor → sheet
-   * workflow. If an anchor exists (from a previous run or a previous
-   * animation type for the same character), the anchor pass is SKIPPED and
-   * we re-use the existing reference; otherwise we run anchor pass first.
-   *
-   * This is the headline frame-consistency fix: by handing the model a
-   * concrete visual reference of the character before asking it to paint 8
-   * keyframes, the cross-frame identity drift ("flicker") drops sharply.
-   * Backed by independent findings from chongdashu/ai-game-spritesheets,
-   * Robotic Ape, Auto-Sprite, and the Google Cloud Nano Banana prompting
-   * guide — all of 2026.
-   */
-  const handleGenerateSpriteSheet = async ({
-    forceNewAnchor = false,
-  }: { forceNewAnchor?: boolean } = {}) => {
-    if (spriteGenerating) return
-    // An uploaded character supplies the identity, so a text prompt is
-    // optional in that case; otherwise we need a description to lock identity.
-    const hasUploadedAnchor = !!spriteAnchor?.uploaded
-    if (!spritePrompt.trim() && !hasUploadedAnchor) {
-      setError(t('extender.error.describeCharacter'))
-      return
-    }
-    if (!ensureCanGenerate()) return
-    setError(null)
-    spriteStopRef.current = false
-    setSpriteGenerating(true)
-    const startedAt = Date.now()
-
-    // Prompt sent to the sheet pass. With an uploaded character the appearance
-    // comes from the reference image, so fall back to a neutral description.
-    const effectivePrompt =
-      spritePrompt.trim() || 'the character shown in the reference image'
-
-    // Reset the sheet up front so the UI reads as "fresh generation in
-    // progress" while we wait for the API.
-    setSpriteSheet((prev) => ({
-      ...prev,
-      anim: spriteAnim,
-      frames: prev.frames.map((f) => ({ ...f, imageUrl: null })),
-      gridSheetUrl: null,
-      rawGridSheetUrl: null,
-      prompt: effectivePrompt,
-    }))
-
-    // Anchor pass — needed if:
-    //   • No anchor exists yet, OR
-    //   • The user explicitly asked to re-roll the character, OR
-    //   • The prompt changed since the existing anchor was made.
-    // Uploaded anchors are never regenerated from the prompt — the image IS
-    // the source of truth for identity.
-    const needsNewAnchor =
-      forceNewAnchor ||
-      !spriteAnchor ||
-      (!spriteAnchor.uploaded &&
-        spriteAnchor.prompt.trim() !== spritePrompt.trim())
-
-    if (needsNewAnchor) {
-      setSpriteAnchor(null)
-      // The character is changing, so previously cached animations belong to
-      // the old identity — drop them to avoid mixing characters across tabs.
-      spriteSheetCacheRef.current = {}
-    }
-
-    // Up to this many extra repaint passes after the first sheet. Each one is
-    // driven by the deterministic duplicate/spillover check below — there is no
-    // model review that could ask for one.
-    const MAX_SPRITE_REPAINT_PASSES = 2
-    let phaseLabel = needsNewAnchor
-      ? t('extender.phase.lockingCharacter')
-      : t('extender.phase.paintingFrames')
-    const tickHandle = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startedAt) / 1000)
-      setSpriteProgressMsg(t('extender.progress.phase', { phase: phaseLabel, seconds: elapsed }))
-    }, 1000)
-
-    try {
-      let anchorRef = spriteAnchor
-      if (needsNewAnchor) {
-        const anchorResult = await runSpriteAnchorPass(effectivePrompt)
-        if (spriteStopRef.current) return
-        anchorRef = {
-          imageUrl: anchorResult.imageUrl,
-          rawImageUrl: anchorResult.rawImageUrl,
-          prompt: effectivePrompt,
-        }
-        setSpriteAnchor(anchorRef)
-      }
-
-      // Pass 2: paint the sheet, then count cells whose alpha mass splits in
-      // two (a duplicate creature, or a spillover from the neighbouring row or
-      // column) and repaint with a fix instruction if any. That check is the
-      // whole critic: the vision art-director pass was removed deliberately
-      // (4a8d674, "fast and predictable"), and /api/sprite-review stays
-      // reachable for anyone who wants it. The anchor identity is reused on
-      // every repaint so the character stays on-model, and the frames stay in
-      // their loading state while the repaint runs.
-      phaseLabel = t('extender.phase.paintingFrames')
-      let sheetResult = await runSpriteSheetPass(
-        effectivePrompt,
-        anchorRef?.rawImageUrl ?? null
-      )
-      if (spriteStopRef.current) return
-
-      for (let pass = 0; pass < MAX_SPRITE_REPAINT_PASSES; pass++) {
-        phaseLabel = t('extender.progress.checkingFrames')
-        setSpriteProgressMsg(t('extender.progress.checkingFrames'))
-
-        const twinCount = await detectSpriteDuplicateCells(sheetResult.keyedCells)
-        if (spriteStopRef.current) return
-        if (twinCount === 0) {
-          if (debugMode) {
-            // eslint-disable-next-line no-console
-            console.log('🎭 no duplicate or spillover cells — keeping this sheet')
-          }
-          break
-        }
-
-        const fixNotes = `CRITICAL DEFECT: ${twinCount} cell(s) contain duplicate/spillover creatures: either two copies in one cell, or a full creature plus a cropped partial creature/body part from a neighbouring row/column. Paint EXACTLY ONE single character per ${SPRITE_FRAME_SIZE}×${SPRITE_FRAME_SIZE} cell, centered and scaled down with a clear magenta gutter; no head, tail, wing, leg, body, fur, shadow, or motion shape may cross a hidden cell boundary. This is the highest-priority fix. `
-        if (debugMode) {
-          // eslint-disable-next-line no-console
-          console.log(`🎭 QA rejected (twins: ${twinCount}), repainting with notes:`, fixNotes)
-        }
-
-        phaseLabel = t('extender.phase.repaintingFrames', { pass: pass + 2 })
-        setSpriteProgressMsg(t('extender.progress.duplicateRepainting'))
-        sheetResult = await runSpriteSheetPass(
-          effectivePrompt,
-          anchorRef?.rawImageUrl ?? null,
-          fixNotes
-        )
-        if (spriteStopRef.current) return
-      }
-
-      setSpriteSheet((prev) => ({
-        ...prev,
-        anim: spriteAnim,
-        frames: sheetResult.keyedCells.map((url, i) => ({
-          index: i,
-          imageUrl: url,
-        })),
-        gridSheetUrl: sheetResult.keyedSheetUrl,
-        rawGridSheetUrl: sheetResult.rawSheetUrl,
-        prompt: effectivePrompt,
-        fps: spriteFps,
-      }))
-    } catch (err) {
-      setSpriteSheet((prev) => ({
-        ...prev,
-        frames: prev.frames.map((f) => ({ ...f, imageUrl: null })),
-      }))
-      setError(
-        err instanceof Error ? err.message : t('extender.error.spriteSheet')
-      )
-    } finally {
-      clearInterval(tickHandle)
-      setSpriteGenerating(false)
-      setSpriteProgressMsg(null)
-      const elapsed = Math.floor((Date.now() - startedAt) / 1000)
-      // eslint-disable-next-line no-console
-      if (debugMode) console.log(`🎭 Sprite sheet generated in ${elapsed}s`)
-    }
-  }
-
-  /** Discard the current anchor + sheet and re-run the full two-pass
-   * pipeline. Use this when you want a completely fresh character (vs.
-   * keeping the same character and only re-rolling poses for the current
-   * animation, which is what the main "Generate" button does). */
-  const handleRerollSpriteCharacter = () => {
-    if (spriteGenerating) return
-    handleGenerateSpriteSheet({ forceNewAnchor: true })
-  }
-
-  /**
-   * Turn an arbitrary uploaded character image into a sprite anchor that
-   * matches what the generation pass produces: the subject is contained inside
-   * a single SPRITE_FRAME_SIZE cell, bottom-aligned with margin, on a magenta
-   * background (the AI reads magenta as background more reliably than alpha).
-   * Returns both the magenta version (for the AI) and a chroma-keyed,
-   * transparent version (for display).
-   */
-  const buildSpriteAnchorFromUpload = async (
-    rawDataUrl: string
-  ): Promise<{ imageUrl: string; rawImageUrl: string }> => {
-    // Strip any baked-in checkerboard / solid backdrop first (no-op for assets
-    // that already have real transparency) so it doesn't get composited as art.
-    let dataUrl = rawDataUrl
-    try {
-      dataUrl = await removeUploadedBackground(rawDataUrl)
-    } catch {
-      dataUrl = rawDataUrl
-    }
-    return new Promise((resolve, reject) => {
+  const loadDataUrlAsImage = useCallback(
+    (dataUrl: string, filename = 'image.png') => {
+      setSelectedImage(dataUrl)
+      setExtendedCandidates([])
+      setCandidateDims([])
+      setSelectedCandidateIdx(0)
+      setError(null)
+      setOriginalFileName(filename)
       const img = new Image()
-      img.onload = async () => {
-        try {
-          const S = SPRITE_FRAME_SIZE
-          const canvas = document.createElement('canvas')
-          canvas.width = S
-          canvas.height = S
-          const ctx = canvas.getContext('2d')
-          if (!ctx) return reject(new Error(t('extender.error.sheetCanvas')))
-          // Magenta backdrop — transparent areas of the upload become magenta,
-          // exactly like a generated anchor.
-          ctx.fillStyle = '#FF00FF'
-          ctx.fillRect(0, 0, S, S)
-          // Contain the character with margin, feet near the bottom (~94%).
-          const maxW = S * 0.84
-          const maxH = S * 0.9
-          const scale = Math.min(maxW / img.width, maxH / img.height)
-          const dw = img.width * scale
-          const dh = img.height * scale
-          const dx = (S - dw) / 2
-          const dy = S * 0.95 - dh
-          ctx.imageSmoothingEnabled = true
-          ctx.drawImage(img, dx, dy, dw, dh)
-          const rawImageUrl = canvas.toDataURL('image/png')
-          const imageUrl = await chromaKeyToAlpha(rawImageUrl)
-          resolve({ imageUrl, rawImageUrl })
-        } catch (err) {
-          reject(err)
-        }
+      img.onload = () => {
+        setCurrentImageDimensions({ width: img.width, height: img.height })
       }
-      img.onerror = () => reject(new Error(t('extender.error.uploadedLoad')))
       img.src = dataUrl
-    })
-  }
-
-  /** Accept a user-supplied character image and lock it in as the anchor so the
-   * sheet pass animates THAT character instead of generating a new one. */
-  const handleUploadSpriteCharacter = async (file: File) => {
-    if (spriteGenerating) return
-    if (!file.type.startsWith('image/')) {
-      setError(t('extender.error.chooseImageFile'))
-      return
-    }
-    setError(null)
-    try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = () => reject(new Error(t('extender.error.readFile')))
-        reader.readAsDataURL(file)
-      })
-      const { imageUrl, rawImageUrl } = await buildSpriteAnchorFromUpload(dataUrl)
-      // A new character → drop cached animations from the previous one and
-      // clear the current sheet so the user starts clean.
-      spriteSheetCacheRef.current = {}
-      setSpriteAnchor({
-        imageUrl,
-        rawImageUrl,
-        prompt: spritePrompt.trim() || 'Uploaded character',
-        uploaded: true,
-      })
-      setSpriteSheet(createEmptySpriteSheet(spriteAnim))
-      setSpriteProgressMsg(null)
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : t('extender.error.uploadedProcess')
-      )
-    }
-  }
-
-  /** Remove the uploaded character so the user can switch back to a starter
-   * preset or their own prompt. Keeps the typed prompt intact; drops the
-   * anchor, the orphaned cached animations, and the current sheet. */
-  const handleRemoveUploadedCharacter = () => {
-    if (spriteGenerating) return
-    spriteSheetCacheRef.current = {}
-    setSpriteAnchor(null)
-    setSpriteSheet(createEmptySpriteSheet(spriteAnim))
-    setSpriteProgressMsg(null)
-    setError(null)
-  }
-
-  const handleStopSpriteSheet = () => {
-    spriteStopRef.current = true
-  }
-
-  /** Toggle a single frame's excluded state. Excluded frames are dropped from
-   * playback and from every export (grid, strip, per-frame ZIP, manifest). */
-  const handleToggleSpriteFrame = (index: number) => {
-    setSpriteSheet((prev) => ({
-      ...prev,
-      frames: prev.frames.map((f) =>
-        f.index === index && f.imageUrl
-          ? { ...f, disabled: !f.disabled }
-          : f
-      ),
-    }))
-  }
-
-  const handleClearSpriteSheet = () => {
-    spriteSheetCacheRef.current = {}
-    setSpriteSheet(createEmptySpriteSheet(spriteAnim))
-    setSpriteAnchor(null)
-    setSpritePrompt('')
-    setSpriteProgressMsg(null)
-    setSpriteFps(SPRITE_ANIMATIONS[spriteAnim].defaultFps)
-    spriteStopRef.current = false
-    setError(null)
-  }
+    },
+    []
+  )
 
   /**
-   * Build the POSE-MAP GUIDE that's fed to the sheet-generation pass.
-   *
-   * The old approach stamped the SAME neutral anchor into all 8 cells and
-   * begged the model (in text) to "ignore that pose and do the walk cycle
-   * instead." That fails: a diffusion model obeys an image guide far more
-   * strongly than text, so the dominant signal said "stand still" in every
-   * cell and the model copied neutral or drifted into random leg phases.
-   *
-   * The new approach renders a deterministic skeletal MANNEQUIN per frame
-   * (see utils/poseRig) in the exact, biomechanically-correct pose that
-   * frame must hold — a from-scratch ControlNet/OpenPose-style pose map.
-   * The motion is now guaranteed correct by code; the model only has to
-   * skin the character onto each pose. Identity/appearance is supplied
-   * separately via the raw anchor image (see runSpriteSheetPass), so the
-   * model gets "what the character looks like" + "what pose to hold."
-   *
-   * We measure the anchor's bounding box so the mannequin matches the
-   * character's height, horizontal center, and foot baseline — keeping the
-   * pose map aligned with the identity reference and the downstream
-   * baseline-alignment pass.
+   * Adopts a fresh set of candidates: stores them, resets selection to the
+   * top (best-blend) variant, and kicks off async dimension reads for each so
+   * the meta row stays accurate as the user cycles.
    */
-  const buildSpriteSheetGuideDataUrl = async (
-    anchorRawImageUrl: string
-  ): Promise<string> => {
-    const subject = await measureAnchorSubject(anchorRawImageUrl)
-    const canvas = document.createElement('canvas')
-    canvas.width = SPRITE_SHEET_W
-    canvas.height = SPRITE_SHEET_H
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error(t('extender.error.spriteGuideCanvas'))
-    ctx.imageSmoothingEnabled = true
-    drawPoseGuideSheet(ctx, {
-      anim: spriteAnim,
-      bodyPlan: spriteBodyPlan,
-      cols: SPRITE_GRID_COLS,
-      rows: SPRITE_GRID_ROWS,
-      cellSize: SPRITE_FRAME_SIZE,
-      frameCount: SPRITE_FRAME_COUNT,
-      subject,
-    })
-    return canvas.toDataURL('image/png')
-  }
-
-  /**
-   * Measure where the character sits inside a single anchor cell (height,
-   * horizontal center, foot baseline) so the rendered pose mannequin matches
-   * the character's body plan. Falls back to sensible defaults if the anchor
-   * can't be measured (e.g. solid/empty frame).
-   */
-  const measureAnchorSubject = async (
-    anchorRawImageUrl: string
-  ): Promise<SubjectBounds> => {
-    const fallback: SubjectBounds = {
-      height: Math.round(SPRITE_FRAME_SIZE * 0.78),
-      centerX: SPRITE_FRAME_SIZE / 2,
-      baseline: Math.round(SPRITE_FRAME_SIZE * 0.92),
-    }
-    try {
-      return await new Promise<SubjectBounds>((resolve) => {
-        const img = new Image()
-        img.crossOrigin = 'anonymous'
-        img.onload = () => {
-          const c = document.createElement('canvas')
-          c.width = SPRITE_FRAME_SIZE
-          c.height = SPRITE_FRAME_SIZE
-          const cx = c.getContext('2d')
-          if (!cx) return resolve(fallback)
-          cx.drawImage(img, 0, 0, SPRITE_FRAME_SIZE, SPRITE_FRAME_SIZE)
-          const { data } = cx.getImageData(
-            0,
-            0,
-            SPRITE_FRAME_SIZE,
-            SPRITE_FRAME_SIZE
-          )
-          const measured = measureSubjectBounds(
-            data,
-            SPRITE_FRAME_SIZE,
-            SPRITE_FRAME_SIZE
-          )
-          resolve(measured ?? fallback)
-        }
-        img.onerror = () => resolve(fallback)
-        img.src = anchorRawImageUrl
-      })
-    } catch {
-      return fallback
-    }
-  }
-
-  /** Stitch keyed cells into a 4×2 grid PNG. Used for manifest export. */
-  const composeSpriteGridSheet = async (
-    cells: string[]
-  ): Promise<string | null> => {
-    if (cells.length === 0) return null
-    const canvas = document.createElement('canvas')
-    canvas.width = SPRITE_SHEET_W
-    canvas.height = SPRITE_SHEET_H
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    ctx.imageSmoothingEnabled = false
-    await Promise.all(
-      cells.map(
-        (url, i) =>
-          new Promise<void>((resolve, reject) => {
-            const r = Math.floor(i / SPRITE_GRID_COLS)
-            const c = i % SPRITE_GRID_COLS
-            const img = new Image()
-            img.onload = () => {
-              ctx.drawImage(
-                img,
-                c * SPRITE_FRAME_SIZE,
-                r * SPRITE_FRAME_SIZE,
-                SPRITE_FRAME_SIZE,
-                SPRITE_FRAME_SIZE
-              )
-              resolve()
-            }
-            img.onerror = () => reject(new Error(t('extender.error.loadFrame', { index: i })))
-            img.src = url
-          })
-      )
-    )
-    return canvas.toDataURL('image/png')
-  }
-
-  /** Stitch keyed cells into a single horizontal strip (1 row × N frames).
-   * Most 2D engines (Phaser, Unity 2D, Godot, Defold) prefer this layout. */
-  const composeSpriteStripSheet = async (
-    cells: string[]
-  ): Promise<string | null> => {
-    if (cells.length === 0) return null
-    const canvas = document.createElement('canvas')
-    // Size to the number of frames actually being exported so excluded frames
-    // don't leave transparent gaps on the right of the strip.
-    canvas.width = cells.length * SPRITE_FRAME_SIZE
-    canvas.height = SPRITE_STRIP_H
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    ctx.imageSmoothingEnabled = false
-    await Promise.all(
-      cells.map(
-        (url, i) =>
-          new Promise<void>((resolve, reject) => {
-            const img = new Image()
-            img.onload = () => {
-              ctx.drawImage(
-                img,
-                i * SPRITE_FRAME_SIZE,
-                0,
-                SPRITE_FRAME_SIZE,
-                SPRITE_FRAME_SIZE
-              )
-              resolve()
-            }
-            img.onerror = () => reject(new Error(t('extender.error.loadFrame', { index: i })))
-            img.src = url
-          })
-      )
-    )
-    return canvas.toDataURL('image/png')
-  }
-
-  const handleDownloadSpriteSheet = async () => {
-    try {
-      const populated = spriteSheet.frames.filter(
-        (f) => !!f.imageUrl && !f.disabled
-      )
-      if (populated.length === 0) {
-        setError(
-          spriteSheet.frames.some((f) => !!f.imageUrl)
-            ? t('extender.error.framesExcludedDownload')
-            : t('extender.error.generateSheetFirstDownload')
-        )
-        return
-      }
-      const cellUrls = populated.map((f) => f.imageUrl as string)
-      // Always recompose from the kept cells (cached gridSheetUrl still
-      // contains excluded frames).
-      const grid = await composeSpriteGridSheet(cellUrls)
-      const strip = await composeSpriteStripSheet(cellUrls)
-      const baseName = `${spriteAnim}_${(
-        spritePrompt.trim().slice(0, 24) || 'sprite'
-      ).replace(/[^a-z0-9]+/gi, '_')}`
-
-      if (grid) {
-        downloadUrl(grid, `${baseName}_grid_${SPRITE_SHEET_W}x${SPRITE_SHEET_H}.png`)
-      }
-      if (strip) {
-        downloadUrl(strip, `${baseName}_strip_${SPRITE_STRIP_W}x${SPRITE_STRIP_H}.png`)
-      }
-      // Manifest as sidecar JSON.
-      downloadText(JSON.stringify(buildSpriteManifest({ anim: spriteAnim, bodyPlan: spriteBodyPlan, fps: spriteFps, prompt: spritePrompt, sheetPrompt: spriteSheet.prompt, sceneBrief, artStyle, frames: populated }), null, 2), `${baseName}_manifest.json`)
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : t('extender.error.exportSpriteSheet')
-      )
-    }
-  }
-
-  const handleDownloadSpriteZip = async () => {
-    try {
-      const populated = spriteSheet.frames.filter(
-        (f) => !!f.imageUrl && !f.disabled
-      )
-      if (populated.length === 0) {
-        setError(
-          spriteSheet.frames.some((f) => !!f.imageUrl)
-            ? t('extender.error.framesExcludedExport')
-            : t('extender.error.generateSheetFirstExport')
-        )
-        return
-      }
-      const cellUrls = populated.map((f) => f.imageUrl as string)
-      // Per-frame PNGs (engines that prefer one file per frame). Reindexed to
-      // contiguous positions so filenames match the repacked manifest/strip.
-      const entries: ZipEntry[] = populated.map((f, i) => ({
-        name: `frame_${String(i + 1).padStart(2, '0')}.png`,
-        dataUrl: f.imageUrl as string,
-      }))
-      const grid = await composeSpriteGridSheet(cellUrls)
-      if (grid) entries.push({ name: 'sheet.png', dataUrl: grid })
-      // Horizontal strip for engines that want one row.
-      const strip = await composeSpriteStripSheet(cellUrls)
-      if (strip) entries.push({ name: 'strip.png', dataUrl: strip })
-      entries.push({ name: 'manifest.json', text: JSON.stringify(buildSpriteManifest({ anim: spriteAnim, bodyPlan: spriteBodyPlan, fps: spriteFps, prompt: spritePrompt, sheetPrompt: spriteSheet.prompt, sceneBrief, artStyle, frames: populated }), null, 2) })
-
-      const baseName = `${spriteAnim}_${(
-        spritePrompt.trim().slice(0, 24) || 'sprite'
-      ).replace(/[^a-z0-9]+/gi, '_')}`
-      await downloadZip(`${baseName}_sprite.zip`, entries)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('extender.error.exportZip'))
-    }
-  }
-
-  // ── Parallax: extend-to-target loop, full-image download, tile export ─────
-
-  /**
-   * Auto-extend rightward, accepting the best variant each time, until the
-   * image reaches `parallaxTargetWidth` (or the safety cap). Skips the
-   * normal candidate-review UI — the user sets a goal and walks away.
-   */
-  const handleAutoExtend = async () => {
-    if (loading || parallaxAutoExtending) return
-    if (!ensureCanGenerate()) return
-    if (!parallaxTargetWidth) return
-
-    // Resolve the right source/role/dims based on mode. In parallax mode
-    // we operate on the active layer's raw image; in extender mode on the
-    // global selectedImage.
-    const { sourceImage, layerRole } = resolveExtendSource()
-    if (!sourceImage) return
-    const startDims =
-      mode === 'parallax' && activeLayer && activeLayer.width && activeLayer.height
-        ? { width: activeLayer.width, height: activeLayer.height }
-        : currentImageDimensions
-    if (!startDims) return
-    if (startDims.width >= parallaxTargetWidth) return
-
-    setError(null)
-    parallaxAutoStopRef.current = false
-    setParallaxAutoExtending(true)
-    setActiveDirection('right')
-    setImageBeforeExtension(sourceImage)
-    setLastExtensionParams({ direction: 'right', customPrompt, artStyle, layerRole })
-    setExtendedCandidates([])
-    setCandidateDims([])
+  const adoptCandidates = useCallback((candidates: Candidate[]) => {
+    setExtendedCandidates(candidates)
     setSelectedCandidateIdx(0)
+    setCandidateDims(new Array(candidates.length).fill(null))
+    candidates.forEach((c, idx) => {
+      const img = new Image()
+      img.onload = () => {
+        setCandidateDims((prev) => {
+          const next = prev.slice()
+          next[idx] = { width: img.width, height: img.height }
+          return next
+        })
+      }
+      img.src = c.imageUrl
+    })
+  }, [])
 
-    let currentSource = sourceImage
-    let currentDims = { ...startDims }
-    let stepCount = 0
-
-    try {
-      while (
-        currentDims.width < parallaxTargetWidth &&
-        stepCount < PARALLAX_MAX_AUTO_STEPS &&
-        !parallaxAutoStopRef.current
-      ) {
-        stepCount++
-        setLoading(true)
-        setProgressMsg(
-          t('extender.progress.step', {
-            step: stepCount,
-            from: currentDims.width,
-            to: parallaxTargetWidth,
-          })
-        )
-
-        const candidates = await runExtend(
-          'right',
-          currentSource,
-          customPrompt,
-          artStyle,
-          layerRole
-        )
-        if (parallaxAutoStopRef.current) break
-        const best = candidates[0]
-
-        // The next loop iteration must feed the un-keyed magenta image back
-        // into the model for keyed layers; for sky / extender mode, raw and
-        // display are the same.
-        const nextSource = best.rawImageUrl ?? best.imageUrl
-        currentSource = nextSource
-        const newDims = await getImageDimensions(best.imageUrl)
-        currentDims = newDims
-
+  const handleFile = useCallback(
+    (file: File) => {
+      const reader = new FileReader()
+      reader.onload = async (e) => {
+        const dataUrl = e.target?.result as string
         if (mode === 'parallax') {
-          patchActiveLayer({
-            imageUrl: best.imageUrl,
-            rawImageUrl: nextSource,
-            width: newDims.width,
-            height: newDims.height,
-          })
+          // Parallax uploads target the active layer, not the global image.
+          // We trust user-supplied alpha (PNG with transparency works as-is).
+          try {
+            await applyImageToActiveLayer(dataUrl, { fromUpload: true })
+            setOriginalFileName(file.name)
+            setError(null)
+          } catch (err) {
+            setError(
+              err instanceof Error ? err.message : t('extender.error.loadImage')
+            )
+          }
+        } else if (mode === 'tile') {
+          // Tile-set mode is generate-only — uploads aren't supported because
+          // each tile has a strict role + magenta layout that an arbitrary
+          // upload can't match. Surface a clear hint instead of silently
+          // ignoring the dropped file.
+          setError(t('extender.error.tilePromptOnly'))
+        } else if (mode === 'sprite') {
+          // Sprite mode is also generate-only — animation sheets need
+          // strict 4×2 keyframe staging on a magenta key that an arbitrary
+          // upload can't match.
+          setError(t('extender.error.spritePromptOnly'))
         } else {
-          setSelectedImage(best.imageUrl)
-          setCurrentImageDimensions(newDims)
+          loadDataUrlAsImage(dataUrl, file.name)
         }
-        setLoading(false)
       }
-    } catch (err) {
-      const e = err as Error & { status?: number }
-      setError(e.message || t('extender.error.autoExtend'))
-    } finally {
-      setLoading(false)
-      setActiveDirection(null)
-      setProgressMsg(null)
-      setParallaxAutoExtending(false)
-      parallaxAutoStopRef.current = false
-    }
-
-    // Make the freshly-extended layer tileable so the renderer's repeat-x
-    // doesn't show a hard discontinuity at the loop point. This is the most
-    // common pain in parallax workflows — the AI generates a beautiful
-    // continuous strip, but its left and right edges were never asked to
-    // match each other, so games that tile the texture see a seam every W
-    // pixels. Auto-applying here means the default output Just Works.
-    // (Manual `Harmonize` is still available for the separate "panel
-    // banding from cumulative AI drift" issue.)
-    if (mode === 'parallax' && !parallaxAutoStopRef.current) {
-      try {
-        setLoading(true)
-        setProgressMsg(t('extender.progress.closingLoop'))
-        await makeLayerTileableByIdx(parallaxActiveIdx)
-      } catch {
-        // Non-fatal — leave the un-tiled result in place.
-      } finally {
-        setLoading(false)
-        setProgressMsg(null)
-      }
-    }
-  }
-
-  const handleStopAutoExtend = () => {
-    parallaxAutoStopRef.current = true
-    setProgressMsg(t('extender.progress.stopping'))
-  }
-
-  /**
-   * Open the text-to-image generator. In parallax mode, pre-fill the
-   * role-specific default dimensions so the user doesn't have to think
-   * about it: Sky is taller (covers the whole sky-to-horizon band), keyed
-   * layers (Far / Mid / Near) are shorter (they only need to cover the
-   * band their elements sit in). Same-role re-generations match the
-   * existing layer's exact dimensions so a regenerate never changes
-   * the canvas size. Prompt is seeded with a role-specific scaffold.
-   */
-  const openGenerateModal = () => {
-    if (mode === 'parallax' && activeLayer) {
-      const spec = LAYER_ROLES[activeLayer.role]
-      // If the SAME layer already has dimensions (e.g. user is regenerating
-      // after extending), keep them so the regenerate is a drop-in replacement.
-      if (activeLayer.width && activeLayer.height) {
-        setGenerateWidth(activeLayer.width)
-        setGenerateHeight(activeLayer.height)
-      } else {
-        setGenerateWidth(spec.defaultWidth)
-        setGenerateHeight(spec.defaultHeight)
-      }
-      if (!generatePrompt.trim()) {
-        setGeneratePrompt(spec.defaultPrompt)
-      }
-    }
-    setShowGenerateModal(true)
-  }
-
-  /**
-   * Download the active layer's PNG (or, in extender mode, the current
-   * canvas). In parallax mode this respects the layer's keyed alpha.
-   */
-  const handleDownloadFull = () => {
-    if (mode === 'parallax') {
-      const layer = activeLayer
-      if (!layer || !layer.imageUrl) return
-      downloadUrl(layer.imageUrl, `parallax_${layer.role}_${layer.width ?? 0}x${layer.height ?? 0}.png`)
-      return
-    }
-    const target = activeCandidate?.imageUrl ?? selectedImage
-    const dims = activeCandidate
-      ? candidateDims[selectedCandidateIdx] ?? null
-      : currentImageDimensions
-    if (!target || !dims) return
-    const baseName = originalFileName.replace(/\.[^/.]+$/, '') || 'parallax'
-    downloadUrl(target, `${baseName}_${dims.width}x${dims.height}.png`)
-  }
-
-  /**
-   * Export the entire parallax project as a ZIP: one PNG per populated
-   * layer plus a `parallax.json` manifest describing depth order, scroll
-   * speeds, and dimensions. The manifest is engine-friendly so Unity /
-   * Godot / Phaser users can wire it straight into a parallax controller.
-   */
-  const handleExportZip = async () => {
-    const populated = parallaxLayers.filter((l) => l.imageUrl)
-    if (populated.length === 0) {
-      setError(t('extender.error.noLayers'))
-      return
-    }
-    setProgressMsg(t('extender.progress.packaging'))
-    try {
-      const entries: ZipEntry[] = []
-      const manifest: {
-        version: number
-        createdAt: string
-        sceneBrief?: string
-        layers: {
-          role: LayerRole
-          file: string
-          width: number | null
-          height: number | null
-          scrollSpeed: number
-          opaque: boolean
-        }[]
-      } = {
-        version: 1,
-        createdAt: new Date().toISOString(),
-        ...(sceneBrief.trim() ? { sceneBrief: sceneBrief.trim() } : {}),
-        layers: [],
-      }
-      for (const layer of parallaxLayers) {
-        if (!layer.imageUrl) continue
-        const filename = `${layer.role}.png`
-        entries.push({ name: filename, dataUrl: layer.imageUrl })
-        manifest.layers.push({
-          role: layer.role,
-          file: filename,
-          width: layer.width,
-          height: layer.height,
-          scrollSpeed: layer.scrollSpeed,
-          opaque: LAYER_ROLES[layer.role].isOpaque,
-        })
-      }
-      entries.push({ name: 'parallax.json', text: JSON.stringify(manifest, null, 2) })
-      await downloadZip(`parallax_project_${Date.now()}.zip`, entries)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('extender.error.buildZip'))
-    } finally {
-      setProgressMsg(null)
-    }
-  }
-
-  /**
-   * Run the horizontal-seam harmonizer on a single parallax layer (or on the
-   * extender canvas) and write the result back. For sky / extender images
-   * we operate on the displayable image directly. For keyed layers we have
-   * to work on the un-keyed magenta source — otherwise alpha=0 regions
-   * dominate the column means, the magenta itself drifts, or both. After
-   * harmonizing the raw we re-apply chroma-keying for the displayable copy.
-   */
-  const harmonizeLayerByIdx = useCallback(
-    async (idx: number, strength = 0.85) => {
-      const layer = parallaxLayers[idx]
-      if (!layer || !layer.imageUrl) return
-      const isKeyed = !LAYER_ROLES[layer.role].isOpaque
-      if (isKeyed && layer.rawImageUrl) {
-        const harmonizedRaw = await harmonizeHorizontalSeams(
-          layer.rawImageUrl,
-          {
-            strength,
-            ignoreKeyColor: { r: 255, g: 0, b: 255, threshold: 80 },
-          }
-        )
-        const harmonizedDisplay = await chromaKeyToAlpha(harmonizedRaw)
-        setParallaxLayers((prev) =>
-          prev.map((l, i) =>
-            i === idx
-              ? { ...l, imageUrl: harmonizedDisplay, rawImageUrl: harmonizedRaw }
-              : l
-          )
-        )
-      } else {
-        const harmonized = await harmonizeHorizontalSeams(layer.imageUrl, {
-          strength,
-        })
-        setParallaxLayers((prev) =>
-          prev.map((l, i) =>
-            i === idx
-              ? { ...l, imageUrl: harmonized, rawImageUrl: harmonized }
-              : l
-          )
-        )
-      }
+      reader.readAsDataURL(file)
     },
-    [parallaxLayers]
+    [mode, applyImageToActiveLayer, loadDataUrlAsImage, t]
   )
 
-  /**
-   * User-triggered harmonize for the active parallax layer. Surfaces a
-   * progress pill while running because the column-mean pass can take a
-   * couple of seconds on long backgrounds.
-   */
-  const handleHarmonizeActiveLayer = async () => {
-    if (mode !== 'parallax') return
-    if (loading || parallaxAutoExtending) return
-    const layer = parallaxLayers[parallaxActiveIdx]
-    if (!layer || !layer.imageUrl) return
-    setError(null)
-    setLoading(true)
-    setProgressMsg(t('extender.progress.harmonizing'))
-    try {
-      await harmonizeLayerByIdx(parallaxActiveIdx)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('extender.error.harmonize'))
-    } finally {
-      setLoading(false)
-      setProgressMsg(null)
-    }
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) handleFile(file)
   }
 
-  /**
-   * Turn the active layer's image into a horizontally tileable texture so
-   * `repeat-x` doesn't show a hard discontinuity at the loop point. For
-   * keyed layers we operate on the un-keyed magenta source and re-key for
-   * display (otherwise the magenta key would get tinted at the seam strip).
-   */
-  const makeLayerTileableByIdx = useCallback(
-    async (idx: number) => {
-      const layer = parallaxLayers[idx]
-      if (!layer || !layer.imageUrl) return
-      const isKeyed = !LAYER_ROLES[layer.role].isOpaque
-      if (isKeyed && layer.rawImageUrl) {
-        const tileableRaw = await makeHorizontallyTileable(
-          layer.rawImageUrl,
-          {
-            ignoreKeyColor: { r: 255, g: 0, b: 255, threshold: 80 },
-          }
-        )
-        const tileableDisplay = await chromaKeyToAlpha(tileableRaw)
-        setParallaxLayers((prev) =>
-          prev.map((l, i) =>
-            i === idx
-              ? { ...l, imageUrl: tileableDisplay, rawImageUrl: tileableRaw }
-              : l
-          )
-        )
-      } else {
-        const tileable = await makeHorizontallyTileable(layer.imageUrl)
-        setParallaxLayers((prev) =>
-          prev.map((l, i) =>
-            i === idx
-              ? { ...l, imageUrl: tileable, rawImageUrl: tileable }
-              : l
-          )
-        )
-      }
-    },
-    [parallaxLayers]
-  )
-
-  const handleMakeActiveLayerTileable = async () => {
-    if (mode !== 'parallax') return
-    if (loading || parallaxAutoExtending) return
-    const layer = parallaxLayers[parallaxActiveIdx]
-    if (!layer || !layer.imageUrl) return
-    setError(null)
-    setLoading(true)
-    setProgressMsg(t('extender.progress.tileable'))
-    try {
-      await makeLayerTileableByIdx(parallaxActiveIdx)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('extender.error.tileable'))
-    } finally {
-      setLoading(false)
-      setProgressMsg(null)
-    }
-  }
 
   // Keyboard shortcuts
   useEffect(() => {
