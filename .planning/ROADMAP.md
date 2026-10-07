@@ -51,8 +51,8 @@ Plans:
 
 Plans:
 
-- [ ] 02-01: `animStrip.ts`：尺寸代数、prompt、cell↔方向映射、面板拟合
-- [ ] 02-02: `animSet.ts`：规格校验、计划、`set.json`、续跑判定、命名与进制
+- [x] 02-01: `animStrip.ts`：尺寸代数、prompt、cell↔方向映射、面板拟合
+- [x] 02-02: `animSet.ts`：规格校验、计划、`set.json`、续跑判定、命名与进制
 
 ### Phase 3: strip → frames 后处理（bridge op `strip-frames`）
 
@@ -160,7 +160,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. 传输探针与精确尺寸透传 | 2/2 | Complete    | 2026-10-07 |
-| 2. 纯核心（animStrip + animSet） | 0/2 | Not started | - |
+| 2. 纯核心（animStrip + animSet） | 2/2 | Executed (verify pending) | 2026-10-07 |
 | 3. strip → frames 后处理 | 0/2 | Not started | - |
 | 4. CLI runner | 0/3 | Not started | - |
 | 5. 库 kind、provenance 诚实性与载荷上限 | 0/2 | Not started | - |

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import sharp from 'sharp'
@@ -241,5 +242,29 @@ describe('nothing is imported here (D-21)', () => {
     // assertion above vacuous.
     expect(source.length).toBeGreaterThan(2000)
     expect(source).toContain('export function fitPanelGrid')
+  })
+})
+
+describe('the probe record this module was built from', () => {
+  const RECORD = '.planning/phases/01-transport-probe/01-PROBE-RECORD.md'
+  /** Phase 1's one paid call. The literal below is the drift anchor: if the record's
+   * prompt is ever rewritten, this test names the exact value it changed from. */
+  const PROBE_PROMPT_SHA = '9d966280493b9530e2271a1775463ea0513d2e50fdedc97d3fcadf92ffcfe8a6'
+
+  it('still holds the prompt the paid call actually sent', () => {
+    const record = readFileSync(RECORD, 'utf8')
+    // `matchAll` returns an iterator, and this repo's es5 target rejects iterating one (TS2802).
+    const fence = /```json\s*([\s\S]*?)```/g
+    const blocks: string[] = []
+    let m: RegExpExecArray | null
+    while ((m = fence.exec(record)) !== null) blocks.push(m[1])
+    expect(blocks.length).toBe(1)
+    const block = JSON.parse(blocks[0]) as { prompt_sha256?: string; prompt_full?: string }
+    expect(block.prompt_sha256).toBe(PROBE_PROMPT_SHA)
+    const prompt = block.prompt_full ?? ''
+    expect(createHash('sha256').update(prompt, 'utf8').digest('hex')).toBe(PROBE_PROMPT_SHA)
+    // `DIRS8.entries()` would need downlevelIteration under this repo's es5 target (TS2802).
+    for (let i = 0; i < DIRS8.length; i++) expect(prompt).toContain(`cell ${i + 1} facing ${DIRS8[i]}`)
+    expect(prompt).toContain('#FF00FF')
   })
 })

@@ -180,7 +180,7 @@ export function validateAnimSetSpec(raw: unknown): { spec: AnimSetSpec; warnings
     else if (stateFrames !== frames) {
       throw new AnimSpecError(
         `every state must have the same frames (spec v2 §5.1): ${name} has ${stateFrames}, earlier states have ${frames}`,
-        'frames'
+        'states'
       )
     }
 
