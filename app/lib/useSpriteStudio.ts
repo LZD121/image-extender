@@ -45,6 +45,7 @@ import {
   createEmptySpriteSheet,
 } from '@/app/lib/sprite'
 import type { ProviderId } from '@/app/lib/providers'
+import type { ReportedCost } from '@/app/lib/libraryTypes'
 import { BODY_PLANS, BodyPlan, isAirborneAnim } from '@/app/lib/bodyPlans'
 import { buildSpriteManifest } from '@/app/lib/sheetManifest'
 import { SubjectBounds, drawPoseGuideSheet, measureSubjectBounds } from '@/app/utils/poseRig'
@@ -152,6 +153,7 @@ export function useSpriteStudio({
   )
   const [spriteGenerating, setSpriteGenerating] = useState(false)
   const [spriteProgressMsg, setSpriteProgressMsg] = useState<string | null>(null)
+  const [lastCost, setLastCost] = useState<ReportedCost | null>(null)
   const spriteStopRef = useRef(false)
 
   /** Switch the active sprite animation. Replaces the current sheet with a
@@ -202,7 +204,7 @@ export function useSpriteStudio({
   const runSpriteAnchorPass = async (
     prompt: string
   ): Promise<{ imageUrl: string; rawImageUrl: string }> => {
-    const data = await studioRequest<{ imageUrl?: string }>(
+    const data = await studioRequest<{ imageUrl?: string; cost?: ReportedCost | null }>(
       '/api/generate',
       toWire({
         kind: 'spriteAnchor',
@@ -219,6 +221,7 @@ export function useSpriteStudio({
       { on401: onNeedsKey, fallbackMessage: t('extender.error.characterAnchor') }
     )
     if (!data.imageUrl) throw new Error(t('extender.error.noAnchorImage'))
+    setLastCost(data.cost ?? null)
     const rawImageUrl: string = data.imageUrl
     const keyedImageUrl = await chromaKeyToAlpha(rawImageUrl)
     return { imageUrl: keyedImageUrl, rawImageUrl }
@@ -256,7 +259,7 @@ export function useSpriteStudio({
         console.warn('Sprite guide build failed; proceeding without it:', err)
       }
     }
-    const data = await studioRequest<{ imageUrl?: string }>(
+    const data = await studioRequest<{ imageUrl?: string; cost?: ReportedCost | null }>(
       '/api/generate',
       toWire({
         kind: 'spriteSheet',
@@ -286,6 +289,7 @@ export function useSpriteStudio({
       { on401: onNeedsKey, fallbackMessage: t('extender.error.spriteSheet') }
     )
     if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
+    setLastCost(data.cost ?? null)
     const rawSheetUrl: string = data.imageUrl
     const rawCells = await sliceImageGrid(rawSheetUrl, {
       cols: SPRITE_GRID_COLS,
@@ -1016,6 +1020,7 @@ export function useSpriteStudio({
 
   return {
     spriteBodyPlan,
+    lastCost,
     spriteAnim,
     spriteSheet,
     setSpriteSheet,

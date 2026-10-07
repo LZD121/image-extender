@@ -39,6 +39,7 @@ import {
   resolvePropNames,
 } from '@/app/lib/props'
 import type { ProviderId } from '@/app/lib/providers'
+import type { ReportedCost } from '@/app/lib/libraryTypes'
 import { buildPropManifest } from '@/app/lib/sheetManifest'
 import { CHROMA_PRESETS } from '@/app/lib/chromaPresets'
 import {
@@ -84,6 +85,7 @@ export function usePropStudio({
   const [propPrompt, setPropPrompt] = useState('')
   const [propSetGenerating, setPropSetGenerating] = useState(false)
   const [propProgressMsg, setPropProgressMsg] = useState<string | null>(null)
+  const [lastCost, setLastCost] = useState<ReportedCost | null>(null)
   const propStopRef = useRef(false)
 
   // Props are colorful (flowers, crystals, mushrooms), so we use a moderate
@@ -285,7 +287,7 @@ export function usePropStudio({
       // CALL #2 — RENDER. The image model paints exactly the art director's
       // list, matched to the style anchor.
       setPropProgressMsg(propBatchStart(0))
-      const data = await studioRequest<{ imageUrl?: string }>(
+      const data = await studioRequest<{ imageUrl?: string; cost?: ReportedCost | null }>(
         '/api/generate',
         toWire({
           kind: 'propSheet',
@@ -306,6 +308,7 @@ export function usePropStudio({
         { on401: onNeedsKey, fallbackMessage: t('extender.error.generateProps') }
       )
       if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
+      setLastCost(data.cost ?? null)
       if (propStopRef.current) {
         dropBatch()
         return
@@ -402,7 +405,7 @@ export function usePropStudio({
       // Art director picks ONE fresh kind that isn't already in the library.
       const ideas = await fetchPropIdeas(1, others)
       const idea = ideas[0]
-      const data = await studioRequest<{ imageUrl?: string }>(
+      const data = await studioRequest<{ imageUrl?: string; cost?: ReportedCost | null }>(
         '/api/generate',
         toWire({
           kind: 'propMode',
@@ -420,6 +423,7 @@ export function usePropStudio({
         { on401: onNeedsKey, fallbackMessage: t('extender.error.rerollProp') }
       )
       if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
+      setLastCost(data.cost ?? null)
       setPropProgressMsg(t('extender.progress.processing'))
       const processed = await postProcessProp(data.imageUrl)
       setPropItems((prev) =>
@@ -494,6 +498,7 @@ export function usePropStudio({
   return {
     propItems,
     setPropItems,
+    lastCost,
     propPrompt,
     setPropPrompt,
     propSetGenerating,

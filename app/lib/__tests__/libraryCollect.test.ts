@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildAssetMeta, collectStudioAsset, slugify } from '@/app/lib/libraryCollect'
+import { isBackendLabel } from '@/app/lib/libraryTypes'
 
 const PNG = 'data:image/png;base64,AAAA'
 
@@ -16,6 +17,7 @@ describe('collectStudioAsset', () => {
   it('collects tiles: one derived PNG per role plus the sheet', () => {
     const out = collectStudioAsset({
       mode: 'tile',
+      backend: 'openrouter',
       prompt: 'mossy stone',
       model: 'google/gemini-3.1-flash-image-preview',
       tileSet: [
@@ -33,6 +35,7 @@ describe('collectStudioAsset', () => {
   it('reports zero derived tiles when only the sheet exists', () => {
     const out = collectStudioAsset({
       mode: 'tile',
+      backend: 'openrouter',
       prompt: null, model: 'm', tileSet: [], tileSheetDataUrl: PNG, manifest: null,
     })
     expect(out?.kind).toBe('tiles')
@@ -42,6 +45,7 @@ describe('collectStudioAsset', () => {
   it('collects props with their file names and the manifest', () => {
     const out = collectStudioAsset({
       mode: 'props',
+      backend: 'openrouter',
       prompt: 'rocks',
       model: 'm',
       propItems: [{ id: 'p1', name: 'Rock', imageUrl: PNG }],
@@ -58,6 +62,7 @@ describe('collectStudioAsset', () => {
     expect(() =>
       collectStudioAsset({
         mode: 'props',
+        backend: 'openrouter',
         prompt: 'r', model: 'm',
         propItems: [{ id: 'p1', name: 'Rock', imageUrl: PNG }],
         propFiles: [],
@@ -71,6 +76,7 @@ describe('collectStudioAsset', () => {
     expect(() =>
       collectStudioAsset({
         mode: 'props',
+        backend: 'openrouter',
         prompt: 'r', model: 'm',
         propItems: [
           { id: 'p1', name: 'Rock', imageUrl: PNG },
@@ -86,6 +92,7 @@ describe('collectStudioAsset', () => {
   it('collects sprite frames reindexed to contiguous names', () => {
     const out = collectStudioAsset({
       mode: 'sprite',
+      backend: 'openrouter',
       prompt: 'knight',
       model: 'm',
       frames: [{ imageUrl: PNG }, { imageUrl: null }, { imageUrl: PNG }],
@@ -98,6 +105,7 @@ describe('collectStudioAsset', () => {
   it('collects a single extender image', () => {
     const out = collectStudioAsset({
       mode: 'extender',
+      backend: 'openrouter',
       prompt: null,
       model: 'm',
       imageUrl: PNG,
@@ -112,6 +120,7 @@ describe('collectStudioAsset', () => {
   it('collects a parallax image', () => {
     const out = collectStudioAsset({
       mode: 'parallax',
+      backend: 'openrouter',
       prompt: 'hills',
       model: 'm',
       imageUrl: PNG,
@@ -126,6 +135,7 @@ describe('collectStudioAsset', () => {
   it('returns null when there is nothing to save', () => {
     expect(collectStudioAsset({
       mode: 'tile',
+      backend: 'openrouter',
       prompt: null, model: 'm', tileSet: [], tileSheetDataUrl: null, manifest: null,
     })).toBeNull()
   })
@@ -135,6 +145,7 @@ describe('buildAssetMeta', () => {
   it('splits raw/ and derived/ and keeps a non-null manifest type', () => {
     const collected = collectStudioAsset({
       mode: 'props',
+      backend: 'openrouter',
       prompt: 'rocks',
       model: 'm',
       propItems: [{ id: 'p1', name: 'Rock', imageUrl: PNG }],
@@ -153,6 +164,7 @@ describe('buildAssetMeta', () => {
   it('falls back to <kind>-set when the manifest has no type', () => {
     const collected = collectStudioAsset({
       mode: 'sprite',
+      backend: 'openrouter',
       prompt: 'knight',
       model: 'm',
       frames: [{ imageUrl: PNG }],
@@ -166,6 +178,7 @@ describe('buildAssetMeta', () => {
   it('produces a meta the route accepts (shape contract)', () => {
     const collected = collectStudioAsset({
       mode: 'tile',
+      backend: 'openrouter',
       prompt: 'stone',
       model: 'm',
       tileSet: [{ role: 'body', imageUrl: PNG }],
@@ -178,5 +191,53 @@ describe('buildAssetMeta', () => {
       expect(meta).toHaveProperty(key)
     }
     expect(typeof meta.provenance.model).toBe('string')
+  })
+})
+
+describe('the facts an asset records', () => {
+  it('carries the producer, the requested canvas and the reported cost to disk', () => {
+    const collected = collectStudioAsset({
+      mode: 'extender',
+      backend: 'apimart',
+      requested: '2048x1024',
+      cost: { usd: 0.04, source: 'apimart' },
+      prompt: 'a cliff',
+      model: 'gpt-image-1',
+      imageUrl: PNG,
+      dimensions: { width: 2048, height: 1024 },
+      manifest: null,
+    })
+    const meta = buildAssetMeta(collected!, { project: 'dungeon', slug: 'cliff' })
+    expect(meta.provenance.backend).toBe('apimart')
+    expect(meta.provenance.requested).toBe('2048x1024')
+    expect(meta.provenance.returned).toBe('2048x1024')
+    expect(meta.provenance.cost).toEqual({ usd: 0.04, source: 'apimart' })
+  })
+
+  it('leaves the optional facts null rather than absent', () => {
+    const collected = collectStudioAsset({
+      mode: 'tile',
+      backend: 'magpie',
+      prompt: 'stone',
+      model: 'm',
+      tileSet: [{ role: 'body', imageUrl: PNG }],
+      tileSheetDataUrl: null,
+      manifest: null,
+    })
+    expect(collected?.provenance).toMatchObject({
+      backend: 'magpie',
+      requested: null,
+      returned: null,
+      cost: null,
+    })
+  })
+
+  it('knows every gateway plus the pixel vendor, and nothing else', () => {
+    for (const label of ['openrouter', 'magpie', 'apimart', 'pixellab']) {
+      expect(isBackendLabel(label)).toBe(true)
+    }
+    expect(isBackendLabel('midjourney')).toBe(false)
+    expect(isBackendLabel('')).toBe(false)
+    expect(isBackendLabel(undefined)).toBe(false)
   })
 })

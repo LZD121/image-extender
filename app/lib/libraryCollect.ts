@@ -1,4 +1,4 @@
-import type { AssetKind, AssetMeta, Provenance } from '@/app/lib/libraryTypes'
+import { type AssetKind, type AssetMeta, type BackendLabel, type Provenance, type ReportedCost } from '@/app/lib/libraryTypes'
 import { TILESET_BY_ROLE, type TileSetRole } from '@/app/lib/tileset'
 
 /**
@@ -16,9 +16,19 @@ import { TILESET_BY_ROLE, type TileSetRole } from '@/app/lib/tileset'
  * invariant, and sharing a collector would put it at risk for no gain.
  */
 
-/** Labels the library route will accept from a client. */
-export const BACKEND_LABELS = ['openrouter', 'pixellab'] as const
-export type BackendLabel = (typeof BACKEND_LABELS)[number]
+/**
+ * What the studio knows about the run that produced an asset, and the collector
+ * must not guess: which gateway painted it, what canvas was asked for, and what
+ * the provider reported spending. Required on every input — the label used to
+ * default to `openrouter` inside the collector, which is how an APIMart save
+ * came to record the wrong producer.
+ */
+export type StudioFacts = {
+  backend: BackendLabel
+  /** Requested canvas, e.g. "2048x1024". */
+  requested?: string | null
+  cost?: ReportedCost | null
+}
 
 export type CollectedAsset = {
   kind: AssetKind
@@ -28,7 +38,8 @@ export type CollectedAsset = {
   provenance: Omit<Provenance, 'toolVersion'> & { backend: BackendLabel }
 }
 
-export type CollectorInput =
+/** What one studio hands over; the facts above travel with every variant. */
+type StudioPayload =
   | {
       mode: 'tile'
       prompt: string | null
@@ -63,6 +74,8 @@ export type CollectorInput =
       manifest: Record<string, unknown> | null
     }
 
+export type CollectorInput = StudioFacts & StudioPayload
+
 export function slugify(input: string): string {
   const slug = (input || '')
     .toLowerCase()
@@ -79,7 +92,7 @@ export function slugify(input: string): string {
  * in the facts they have (a backend id, a cost, a returned size). Every field
  * is written, so a reader never has to tell "absent" from "null".
  */
-export function buildProvenance<Backend extends string>(opts: {
+export function buildProvenance<Backend extends BackendLabel>(opts: {
   backend: Backend
   model: string
   prompt?: string | null
@@ -88,7 +101,7 @@ export function buildProvenance<Backend extends string>(opts: {
   params?: Record<string, unknown>
   requested?: string | null
   returned?: string | null
-  cost?: { usd: number; source: string } | null
+  cost?: ReportedCost | null
 }): Omit<Provenance, 'toolVersion'> & { backend: Backend } {
   return {
     backend: opts.backend,
@@ -104,13 +117,17 @@ export function buildProvenance<Backend extends string>(opts: {
 }
 
 /** The collector's skeleton: everything a browser studio does not know yet. */
-const base = (prompt: string | null, model: string): CollectedAsset['provenance'] => ({
-  ...buildProvenance({ backend: 'openrouter', model, prompt }),
-  backend: 'openrouter',
-})
+const base = (input: StudioFacts, prompt: string | null, model: string): CollectedAsset['provenance'] =>
+  buildProvenance({
+    backend: input.backend,
+    model,
+    prompt,
+    requested: input.requested,
+    cost: input.cost,
+  })
 
 export function collectStudioAsset(input: CollectorInput): CollectedAsset | null {
-  const p = base(input.prompt, input.model)
+  const p = base(input, input.prompt, input.model)
 
   switch (input.mode) {
     case 'tile': {

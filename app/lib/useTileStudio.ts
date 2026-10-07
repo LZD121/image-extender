@@ -20,6 +20,7 @@ import { useRef, useState } from 'react'
 import { useI18n } from '@/app/lib/i18n'
 import { toWire } from '@/app/lib/generateRequest'
 import { skipsArtDirectorReview } from '@/app/lib/models'
+import type { ReportedCost } from '@/app/lib/libraryTypes'
 import { buildTileSetManifest } from '@/app/lib/sheetManifest'
 import { studioRequest } from '@/app/lib/studioRequest'
 import { downloadText, downloadUrl, downloadZip, type ZipEntry } from '@/app/lib/studioDownload'
@@ -93,6 +94,7 @@ export function useTileStudio({
   const [tilePrompt, setTilePrompt] = useState('')
   const [tileSetGenerating, setTileSetGenerating] = useState(false)
   const [tileProgressMsg, setTileProgressMsg] = useState<string | null>(null)
+  const [lastCost, setLastCost] = useState<ReportedCost | null>(null)
   const tileStopRef = useRef(false)
 
   /** Mutate a single tile slot in the set. */
@@ -120,7 +122,7 @@ export function useTileStudio({
 
     try {
       const tileGuideImage = buildTileSheetGuideDataUrl()
-      const data = await studioRequest<{ imageUrl?: string }>(
+      const data = await studioRequest<{ imageUrl?: string; cost?: ReportedCost | null }>(
         '/api/generate',
         toWire({
           kind: 'tileMode',
@@ -137,6 +139,7 @@ export function useTileStudio({
         { on401: onNeedsKey, fallbackMessage: t('extender.error.tileRole', { label: roleLabel }) }
       )
       if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
+      setLastCost(data.cost ?? null)
 
       setTileProgressMsg(
         t('extender.progress.processingPhase', { label: roleLabel })
@@ -277,7 +280,7 @@ export function useTileStudio({
       fixNotes?: string
     ): Promise<Partial<Record<TileSetRole, string>> | null> => {
       const tileGuideImage = buildTileSheetGuideDataUrl()
-      const data = await studioRequest<{ imageUrl?: string }>(
+      const data = await studioRequest<{ imageUrl?: string; cost?: ReportedCost | null }>(
         '/api/generate',
         toWire({
           kind: 'tileSheet',
@@ -295,6 +298,7 @@ export function useTileStudio({
         { on401: onNeedsKey, fallbackMessage: t('extender.error.tileSheet') }
       )
       if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
+      setLastCost(data.cost ?? null)
       if (tileStopRef.current) return null
 
       const finished = await finishTileSheet(data.imageUrl, {
@@ -623,6 +627,7 @@ export function useTileStudio({
     tileSetGenerating,
     tileProgressMsg,
     setTileProgressMsg,
+    lastCost,
     tileStopRef,
     handleGenerateTileSet,
     handleStopTileSet,

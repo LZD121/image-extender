@@ -267,6 +267,7 @@ export default function Home() {
   // The tile studio: state and orchestration live in one module; the page just
   // supplies the settings and the shell callbacks it needs.
   const {
+    lastCost: tileCost,
     tileSet,
     setTileSet,
     tilePrompt,
@@ -297,6 +298,7 @@ export default function Home() {
   // The props studio: state and orchestration live in one module; the page just
   // supplies the settings and the shell callbacks it needs.
   const {
+    lastCost: propCost,
     propItems,
     setPropItems,
     propPrompt,
@@ -789,6 +791,8 @@ export default function Home() {
         tileSet: tileSet.map((s) => ({ role: s.role, imageUrl: s.imageUrl })),
         tileSheetDataUrl: await buildTileSheetDataUrl(),
         manifest: buildTileSetManifest({ prompt: tilePrompt, sceneBrief, artStyle, presentRoles: tileSet.filter((s) => s.imageUrl).map((s) => s.role) }),
+        backend: provider,
+        cost: tileCost,
       })
     }
     if (mode === 'props') {
@@ -801,6 +805,8 @@ export default function Home() {
         propFiles: resolvePropNames(populated).map((n) => n.file),
         propAtlasDataUrl: await buildPropAtlasDataUrl(),
         manifest: buildPropManifest({ prompt: propPrompt, sceneBrief, items: propItems }),
+        backend: provider,
+        cost: propCost,
       })
     }
     if (mode === 'sprite') {
@@ -812,6 +818,8 @@ export default function Home() {
           .filter((f) => f.imageUrl && !f.disabled)
           .map((f) => ({ imageUrl: f.imageUrl })),
         manifest: null,
+        backend: provider,
+        cost: spriteCost,
       })
     }
     return collectStudioAsset({
@@ -823,12 +831,14 @@ export default function Home() {
         ? candidateDims[selectedCandidateIdx] ?? null
         : currentImageDimensions,
       manifest: null,
+      backend: provider,
     })
   }
 
   // The sprite studio: same shape — the two-pass anchor → sheet pipeline and
   // the deterministic repaint loop live in the module, the page keeps the JSX.
   const {
+    lastCost: spriteCost,
     spriteBodyPlan,
     spriteAnim,
     spriteSheet,

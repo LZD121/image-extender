@@ -25,7 +25,7 @@ const SUBCOMMAND_LINES = [
   '  save <project> <kind> <slug> --sheet <raw.png> --derived <a.png,b.png> [--overwrite] [--type <t>] [--meta <json>]',
 ]
 
-const USAGE = 'ie library <list|get|file|delete|save> [args] [flags]'
+const USAGE = 'ie library <list|get|file|delete|save> [args] [flags]  (save: --sheet --derived --type --meta --backend <label>)'
 
 /**
  * Every app module the subcommands need, in one bundle. `libraryPath` is here
@@ -156,6 +156,13 @@ async function save(ctx, lib) {
   }
   for (const rel of Object.keys(files)) checkRel(ctx, lib, rel)
 
+  // `ie library save` imports files the operator already has, so the producer is
+  // what they say it is — checked against the app's own table instead of guessed.
+  // The default keeps the value every existing script already records.
+  const backendLabel = ctx.flags.backend ?? 'openrouter'
+  if (!lib.isBackendLabel(backendLabel)) {
+    ctx.fail('bad_backend', `--backend must be one of ${lib.BACKEND_LABELS.join('|')}, got "${backendLabel}"`)
+  }
   const meta = lib.buildAssetMeta(
     {
       kind,
@@ -163,7 +170,7 @@ async function save(ctx, lib) {
       manifest: null,
       // The full Provenance shape minus toolVersion (stamped below), so
       // meta.json never has holes a reader would have to treat as absent-vs-null.
-      provenance: await ctx.provenance({ backend: 'openrouter', model: '' }),
+      provenance: await ctx.provenance({ backend: backendLabel, model: '' }),
     },
     { project, slug }
   )
@@ -207,6 +214,7 @@ const library = {
     meta: { type: 'string' },
     overwrite: { type: 'boolean' },
     type: { type: 'string' },
+    backend: { type: 'string' },
     out: { type: 'string' },
     help: { type: 'boolean' },
   },
