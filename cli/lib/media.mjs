@@ -4,7 +4,7 @@
  * outputs. Kept boring on purpose — these are the only places the CLI touches
  * the filesystem.
  */
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import sharp from 'sharp'
 import { CliError } from './args.mjs'
@@ -15,12 +15,32 @@ export function isDataUrl(value) {
   return typeof value === 'string' && DATA_URL_RE.test(value)
 }
 
+/**
+ * Write one file so a reader never sees a half-written one: bytes land in a
+ * sibling temp name and are renamed into place (the same shape app/lib/library.ts
+ * uses for a whole asset). R7 is why this exists: the consumer's ledger carries
+ * 17 rows for 16 strips because a truncated PNG used to look finished.
+ */
+export function writeFileAtomic(filePath, buffer) {
+  const target = path.resolve(filePath)
+  mkdirSync(path.dirname(target), { recursive: true })
+  const tmp = path.join(path.dirname(target), `.${path.basename(target)}.tmp-${process.pid}-${Date.now()}`)
+  try {
+    writeFileSync(tmp, buffer)
+    renameSync(tmp, target)
+  } catch (err) {
+    try { rmSync(tmp, { force: true }) } catch { /* nothing left to clean */ }
+    throw err
+  }
+  return target
+}
+
 export function writeDataUrl(dataUrl, outPath) {
   const m = DATA_URL_RE.exec(dataUrl)
   if (!m) throw new CliError('bad_payload', `not a base64 image data URL: ${String(dataUrl).slice(0, 60)}`)
-  mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true })
-  writeFileSync(outPath, Buffer.from(dataUrl.slice(m[0].length), 'base64'))
-  return outPath
+  // Decode before any disk operation — the module's own rule: a bad payload
+  // never leaves a temp file behind.
+  return writeFileAtomic(outPath, Buffer.from(dataUrl.slice(m[0].length), 'base64'))
 }
 
 export function dataUrlFromFile(file) {
