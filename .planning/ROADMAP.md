@@ -7,7 +7,7 @@
 ## Phases
 
 - [x] **Phase 1: 传输探针与精确尺寸透传** - 用一次真实调用把"请求的画布是否原样到达模型"钉成常量，并定下传输路线 (completed 2026-10-07)
-- [ ] **Phase 2: 纯核心（animStrip + animSet）** - 规格校验、计划、prompt、set.json、续跑判定、面板拟合代数，全部无 DOM/网络/磁盘
+- [x] **Phase 2: 纯核心（animStrip + animSet）** - 规格校验、计划、prompt、set.json、续跑判定、面板拟合代数，全部无 DOM/网络/磁盘 (completed 2026-10-07)
 - [ ] **Phase 3: strip → frames 后处理（bridge op `strip-frames`）** - 一张 strip 切成 N 帧并归一化，基线对齐显式关闭，每步可计数
 - [ ] **Phase 4: CLI runner（`ie anim plan` / `run --go`）** - 计划闸门、原子写、按 `(state, frame)` 合并的 ledger、续跑与重跑
 - [ ] **Phase 5: 库 kind、provenance 诚实性与载荷上限** - `animations` kind、backend/cost 一致、raw 不入库
@@ -160,7 +160,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. 传输探针与精确尺寸透传 | 2/2 | Complete    | 2026-10-07 |
-| 2. 纯核心（animStrip + animSet） | 2/2 | Executed (verify pending) | 2026-10-07 |
+| 2. 纯核心（animStrip + animSet） | 2/2 | Complete    | 2026-10-07 |
 | 3. strip → frames 后处理 | 0/2 | Not started | - |
 | 4. CLI runner | 0/3 | Not started | - |
 | 5. 库 kind、provenance 诚实性与载荷上限 | 0/2 | Not started | - |

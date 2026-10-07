@@ -19,9 +19,9 @@
 
 ### GEOM — 几何
 
-- [ ] **GEOM-01**: 面板网格由列质量剖面拟合 `(spacing, phase)`，纯函数、vitest 可测（均匀 / 相位偏移 / 噪声三种合成剖面）
+- [x] **GEOM-01**: 面板网格由列质量剖面拟合 `(spacing, phase)`，纯函数、vitest 可测（均匀 / 相位偏移 / 噪声三种合成剖面）
 - [ ] **GEOM-02**: 每张 strip 断言每条切线落在接近空白的 gutter 列；失败即 `ok:false` 且保留 raw
-- [ ] **GEOM-03**: `set.json` 记录实际拟合值（spacing/phase/residual）与 gutter 判定结果
+- [x] **GEOM-03**: `set.json` 记录实际拟合值（spacing/phase/residual）与 gutter 判定结果
 
 ### GEN — 生成与续跑
 
@@ -31,8 +31,8 @@
 - [ ] **GEN-04**: 续跑判定来自记录（`ok` ∧ raw 可解码 ∧ derived 数量符合预期）；截断 raw 视为未完成并重跑
 - [ ] **GEN-05**: ledger 按 `(state, frame)` 合并并断言唯一（同一 `state:frame` 不出现两行）
 - [ ] **GEN-06**: 失败默认停止；`--keep-going` 继续；`--redo state:frame` 只重跑该条
-- [ ] **GEN-07**: 规格非法（每状态帧数不一致 / `cell×dirs>4096` / 未知 dirs 预设 / 空 states）在**任何调用之前**报错
-- [ ] **GEN-08**: prompt 含逐格方向枚举、格内包含、纯洋红场、禁卡片/文字/网格线；风格文本内联
+- [x] **GEN-07**: 规格非法（每状态帧数不一致 / `cell×dirs>4096` / 未知 dirs 预设 / 空 states）在**任何调用之前**报错
+- [x] **GEN-08**: prompt 含逐格方向枚举、格内包含、纯洋红场、禁卡片/文字/网格线；风格文本内联
 
 ### POST — 一张 strip → N 帧
 
