@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 4
+current_phase: 04
 current_phase_name: CLI runner（ie anim plan / run --go）
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-10-07T15:35:20.655Z"
-last_activity: 2026-10-07
-last_activity_desc: Phase 3 complete, transitioned to Phase 4
-state_head: c93bc8135172f246383ac61d132de70365f37fb2
+stopped_at: Completed 04-01-PLAN.md (ie anim plan|run + --go gate + atomic single-strip pipeline)
+last_updated: "2026-10-07T16:24:42.631Z"
+last_activity: 2026-10-08
+last_activity_desc: Phase 04 execution started
+state_head: 9ba3c027b045bdb961ebcd554c5148e32e307578
 progress:
   total_phases: 7
-  completed_phases: 2
+  completed_phases: 1
   total_plans: 9
-  completed_plans: 6
-  percent: 29
+  completed_plans: 7
+  percent: 14
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** 一个规格产出一整套能直接进游戏的资产（帧文件 + 计时 + provenance），使游戏侧那些一次性脚本永远退役。
-**Current focus:** Phase 1 — 传输探针与精确尺寸透传
+**Current focus:** Phase 04 — CLI runner（ie anim plan / run --go）
 
 ## Current Position
 
-Phase: 4 (CLI runner（ie anim plan / run --go）) — READY TO EXECUTE
-Plan: Not started
+Phase: 04 (CLI runner（ie anim plan / run --go）) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-10-07 — Phase 3 complete, transitioned to Phase 4
+Last activity: 2026-10-08 — Phase 04 execution started
 
-Progress: [███░░░░░░░] 29% (execution; phase verification pending)
+Progress: [█░░░░░░░░░] 14% (execution; phase verification pending)
 
 ## Performance Metrics
 
@@ -56,6 +56,11 @@ Progress: [███░░░░░░░] 29% (execution; phase verification pe
 - Trend: —
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 04 P01 | 8 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -69,6 +74,8 @@ Recent decisions affecting current work:
 - [研究]: 切格必须**拟合网格 + gutter 断言**，均匀切格在 32 条已交付 strip 中有 23 条破坏画面
 - [研究]: raw 永不入库（16 张真实 raw = 363.8M base64 > route 上限 279.6M）
 - [研究]: 复用 `sprite-align` 是错的——它无条件跑基线对齐；改为新 op `strip-frames`
+- [Phase 04]: --keep-going / --redo stay undeclared this wave: strict parse refuses them — a declared-but-ignored flag turns `--redo idle:2` into a silently full-priced run; a usage error is the honest state until 04-02 implements them.
+- [Phase 04]: The ledger merges by state:frame from day one (writeFileAtomic + a keyed Map) — The consumer's 17-rows-for-16-strips duplication came from appending; merging is free here and is what 04-02's uniqueness assertion builds on.
 
 ### Pending Todos
 
@@ -92,6 +99,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-07T13:54:18.953Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-cli-runner/04-CONTEXT.md
+Last session: 2026-10-07T16:24:39.486Z
+Stopped at: Completed 04-01-PLAN.md (ie anim plan|run + --go gate + atomic single-strip pipeline)
+Resume file: None

@@ -25,8 +25,8 @@
 
 ### GEN — 生成与续跑
 
-- [ ] **GEN-01**: `ie anim plan` 打印逐 strip 画布 + 调用数 + 总量 + 输出根，且**零调用**
-- [ ] **GEN-02**: `ie anim run` 不带 `--go` 时零调用（输出与 plan 等价）
+- [x] **GEN-01**: `ie anim plan` 打印逐 strip 画布 + 调用数 + 总量 + 输出根，且**零调用**
+- [x] **GEN-02**: `ie anim run` 不带 `--go` 时零调用（输出与 plan 等价）
 - [ ] **GEN-03**: 每张完成即**原子写** raw（temp+rename），中断不留截断文件
 - [ ] **GEN-04**: 续跑判定来自记录（`ok` ∧ raw 可解码 ∧ derived 数量符合预期）；截断 raw 视为未完成并重跑
 - [ ] **GEN-05**: ledger 按 `(state, frame)` 合并并断言唯一（同一 `state:frame` 不出现两行）
@@ -53,8 +53,8 @@
 
 ### CLI — 命令行面
 
-- [ ] **CLI-01**: `ie anim plan|run` 注册进命令表且有 `ie help anim`
-- [ ] **CLI-02**: 输出为 `okEnvelope`（plan 数组 / run `{written, strips, setJson}`）
+- [x] **CLI-01**: `ie anim plan|run` 注册进命令表且有 `ie help anim`
+- [x] **CLI-02**: 输出为 `okEnvelope`（plan 数组 / run `{written, strips, setJson}`）
 - [ ] **CLI-03**: 入库复用 `ie library save`，不新增命令
 
 ### UI — 界面面

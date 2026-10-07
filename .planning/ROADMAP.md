@@ -89,12 +89,17 @@ Plans:
   3. ledger 里同一 `state:frame` 只有一行（重复计费不可能发生）
   4. 返回比例与请求不符的 strip 被标记失败且未进入切格
 
-**Plans**: 3 plans
+**Plans**: 1/3 plans executed
 
 Plans:
+
+- [x] 04-01-PLAN.md
+- [ ] 04-02-PLAN.md
+- [ ] 04-03-PLAN.md
+
 **Wave 1**
 
-- [ ] 04-01: 命令骨架 + 计划渲染 + `--go` 闸门（零调用可证）
+- [x] 04-01: 命令骨架 + 计划渲染 + `--go` 闸门（零调用可证）
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -173,7 +178,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 1. 传输探针与精确尺寸透传 | 2/2 | Complete    | 2026-10-07 |
 | 2. 纯核心（animStrip + animSet） | 2/2 | Complete    | 2026-10-07 |
 | 3. strip → frames 后处理 | 2/2 | Complete    | 2026-10-07 |
-| 4. CLI runner | 0/3 | Not started | - |
+| 4. CLI runner | 1/3 | In Progress|  |
 | 5. 库 kind、provenance 诚实性与载荷上限 | 0/2 | Not started | - |
 | 6. UI studio | 0/3 | Not started | - |
 | 7. 端到端验收 | 0/1 | Not started | - |
