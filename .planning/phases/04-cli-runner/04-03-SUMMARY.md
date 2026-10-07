@@ -22,7 +22,7 @@ affects: [05, 06]
 actuals:
   tokens: 6090
   tasks: 2
-  commits: 2
+  commits: 7
   plan_head_before: e4de988eb09646542822a48d409b2800e8194767
 
 tech-stack:
@@ -167,8 +167,9 @@ Each task was committed atomically:
 
 1. **Task 1: `decodesAsImage` — full decode, `metadata()` trap pinned** - `6336792` (feat)
 2. **Task 2: `collectFacts` + the aspect gate + `nextPending`-driven pending** - `dd4d730` (feat)
+3. **Plan-text cleanup: the run payload is the plan's shape** - `fe18a0a` (refactor)
 
-**Plan metadata:** `8479c7d` (docs: complete plan)
+**Plan metadata:** `8479c7d` (docs: complete plan), `b256361` (SUMMARY names its commit), `a9a3727` (STATE head)
 
 ## Files Created/Modified
 
@@ -205,10 +206,19 @@ Each task was committed atomically:
 - **Verification:** the file runs 41/41 green
 - **Committed in:** `dd4d730`
 
+**3. [Rule 1 - Bug] The run payload carried a `summary` the plan does not specify**
+
+- **Found during:** Task 2 (self-review before writing the SUMMARY)
+- **Issue:** I had added a `summary` field to `run --go`'s normal return (`anim set — N to do, M/T done · out …`) plus a duplicate `ctx.note` on the complete-set path. The plan names exactly one summary, on the empty-`pending` branch, and specifies that branch's payload as `written: []`, `strips`, `setJson`. Two summaries is a second source for a fact `ie.mjs` already renders from the payload, and it makes the run's stdout say something no acceptance criterion asked for.
+- **Fix:** removed the extra field and the duplicate note; the empty-`pending` `summary` (`anim set complete — 0 to do, N/M done`) stays, with a comment naming it as the human-mode line. `run --go` returns `{ written, strips, setJson }` exactly as specified.
+- **Files modified:** `cli/commands/anim.mjs`
+- **Verification:** both gates re-run green after the removal (`decode facts ok`, `resume plumbing ok` + `reason coverage ok`); 41/41 in the file
+- **Committed in:** `fe18a0a`
+
 ---
 
-**Total deviations:** 2 auto-fixed (2 bugs, both in the test harness; one of them the expected consequence of this wave changing what a second pass means).
-**Impact on plan:** No scope creep and no relaxed assertion. Deviation 1 is the direct, intended effect of the resume gate — 04-01's arm was adapted to the new contract, not weakened.
+**Total deviations:** 3 auto-fixed (3 bugs, none of them a relaxed assertion: two in the test harness, one an unrequested payload field).
+**Impact on plan:** No scope creep. Deviation 1 is the direct, intended effect of the resume gate — 04-01's arm was adapted to the new contract, not weakened. Deviation 3 removes an addition of mine, moving the payload *toward* the plan rather than away from it.
 
 ## Issues Encountered
 
