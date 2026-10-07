@@ -66,38 +66,7 @@ const PAGE_PROGRAM = async (job) => {
     return c
   }
   const toUrl = (c) => c.toDataURL('image/png')
-  /** Re-apply the role mask so a keyed tile keeps only its autotile region. */
-  const roleMask = async (role, durl) => {
-    if (role === 'body') return durl
-    const img = await load(durl)
-    const c = canvasOf(img.width, img.height)
-    const ctx = c.getContext('2d')
-    ctx.drawImage(img, 0, 0)
-    const id = ctx.getImageData(0, 0, img.width, img.height)
-    IE.applyFeatheredRoleMask(id.data, img.width, img.height, role, Math.round(img.width / 4), Math.round(img.height / 4))
-    ctx.putImageData(id, 0, 0)
-    return toUrl(c)
-  }
-  /** The app's tile post-processing, role by role (mirrors page.tsx). */
-  const postTile = async (role, raw, cell) => {
-    if (role === 'body') {
-      const d = await IE.chromaKeyToAlpha(raw, CHROMA.despill)
-      return IE.makeTileable2D(d, {
-        equalizeStrength: 1,
-        blendWidthPx: Math.round(cell * 0.22),
-        verticalBlendHeightPx: Math.round(cell * 0.22),
-      })
-    }
-    if (role === 'top' || role === 'bottom') {
-      const t = await IE.makeHorizontallyTileable(raw)
-      return roleMask(role, await IE.chromaKeyToAlpha(t, CHROMA.tile))
-    }
-    if (role === 'left' || role === 'right') {
-      const t = await IE.makeVerticallyTileable(raw)
-      return roleMask(role, await IE.chromaKeyToAlpha(t, CHROMA.tile))
-    }
-    return roleMask(role, await IE.chromaKeyToAlpha(raw, CHROMA.tile))
-  }
+
   const hasSplitMass = (profile) => {
     const peak = Math.max(...profile)
     if (peak <= 0) return false
@@ -154,7 +123,7 @@ const PAGE_PROGRAM = async (job) => {
   switch (job.op) {
     case 'chroma': {
       let u = await IE.chromaKeyToAlpha(IN[0], CHROMA[opts.preset || 'default'])
-      if (opts.role) u = await roleMask(opts.role, u)
+      if (opts.role) u = await IE.enforceTileRoleMask(opts.role, u)
       out.data.push(u)
       break
     }
@@ -196,81 +165,35 @@ const PAGE_PROGRAM = async (job) => {
       break
     }
     case 'tile-extract': {
-      const cell = opts.cell || IE.TILESET_TILE_SIZE
-      let sheetUrl = IN[0]
-      if (opts.align !== false) {
-        try {
-          sheetUrl = await IE.alignAiOutputToTemplate(sheetUrl)
-        } catch (e) {
-          out.meta.alignFailed = true
-        }
-      }
-      const cells = await IE.sliceImageGrid(sheetUrl, { cols: 8, rows: 8, cellSize: cell })
-      const samples = IE.TILE_TEMPLATE_SAMPLES
-      const byRole = {}
-      for (const role of Object.keys(samples)) {
-        const { col, row } = samples[role]
-        const raw = cells[row * 8 + col]
-        out.files[`raw/${ROLE_FILE[role]}.png`] = raw
-        byRole[role] = opts.post === false ? raw : await postTile(role, raw, cell)
-      }
-      let reconciled = byRole
-      try {
-        reconciled = await IE.reconcileAllCorners(byRole)
-      } catch (e) {
-        out.meta.reconcileFailed = true
-      }
-      for (const [role, url] of Object.entries(reconciled)) out.files[`${ROLE_FILE[role]}.png`] = url
-      out.meta.roles = Object.keys(reconciled).length
+      const finished = await IE.finishTileSheet(IN[0], {
+        cell: opts.cell || IE.TILESET_TILE_SIZE,
+        align: opts.align,
+        post: opts.post,
+      })
+      if (!finished) break
+      if (finished.alignFailed) out.meta.alignFailed = true
+      if (finished.reconcileFailed) out.meta.reconcileFailed = true
+      for (const [role, url] of Object.entries(finished.raw)) out.files[`raw/${ROLE_FILE[role]}.png`] = url
+      for (const [role, url] of Object.entries(finished.byRole)) out.files[`${ROLE_FILE[role]}.png`] = url
+      out.meta.roles = Object.keys(finished.byRole).length
       break
     }
     case 'tile-preview': {
-      // The QA critic's input: the app's own platform preview — the 13 tiles
-      // placed by the autotile role map over a sky gradient, downscaled to 96px
-      // cells (exactly what page.tsx hands /api/tile-review).
-      const CELL = 96
-      const cols = IE.TILE_TEMPLATE_COLS
-      const rows = IE.TILE_TEMPLATE_ROWS
-      const c = canvasOf(cols * CELL, rows * CELL)
-      const ctx = c.getContext('2d')
-      const g = ctx.createLinearGradient(0, 0, 0, c.height)
-      g.addColorStop(0, '#8cc3eb')
-      g.addColorStop(1, '#28466e')
-      ctx.fillStyle = g
-      ctx.fillRect(0, 0, c.width, c.height)
-      ctx.imageSmoothingEnabled = true
-      ctx.imageSmoothingQuality = 'high'
-      const byRole = roleImages()
-      const placed = {}
-      for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols; x++) {
-          const role = IE.templateRoleForCell(x, y)
-          if (!role || !byRole[role] || placed[role]) continue
-          placed[role] = true
-          const img = await load(byRole[role])
-          ctx.drawImage(img, x * CELL, y * CELL, CELL, CELL)
-        }
-      }
-      out.data.push(toUrl(c))
-      out.meta.roles = Object.keys(placed).length
+      // The QA critic's input: the app's own platform preview — the tiles placed
+      // by the autotile role map over a sky gradient at 96px cells (exactly what
+      // page.tsx hands /api/tile-review).
+      const map = roleImages()
+      const preview = await IE.buildTilePreviewComposite(map)
+      if (preview) out.data.push(preview)
+      out.meta.roles = Object.keys(map).length
       break
     }
     case 'tile-sheet': {
       // The raw 4×4 atlas (512px cells) the library stores as raw/sheet.png.
-      const byRole = roleImages()
-      const c = canvasOf(IE.TILESET_SHEET_W, IE.TILESET_SHEET_H)
-      const ctx = c.getContext('2d')
-      ctx.imageSmoothingEnabled = false
-      let placed = 0
-      for (const spec of IE.TILESET_SLOTS) {
-        const url = byRole[spec.role]
-        if (!url) continue
-        const img = await load(url)
-        ctx.drawImage(img, spec.col * IE.TILESET_TILE_SIZE, spec.row * IE.TILESET_TILE_SIZE, IE.TILESET_TILE_SIZE, IE.TILESET_TILE_SIZE)
-        placed++
-      }
-      out.data.push(toUrl(c))
-      out.meta.roles = placed
+      const map = roleImages()
+      const atlas = await IE.buildTileSheetAtlas(map)
+      if (atlas) out.data.push(atlas)
+      out.meta.roles = Object.keys(map).length
       break
     }
     case 'sprite-align': {
@@ -378,10 +301,6 @@ const PAGE_PROGRAM = async (job) => {
     }
     case 'stitch-chunk': {
       out.data.push(await IE.stitchExtendedChunk(IN[0], IN[1], opts.chunkInfo, !!opts.debug))
-      break
-    }
-    case 'measure-seam': {
-      out.meta.score = await IE.measureSeamResidual(IN[0], opts.extensionInfo, IN[1])
       break
     }
     case 'extend-finalize': {

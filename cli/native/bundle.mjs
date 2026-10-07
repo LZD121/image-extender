@@ -15,7 +15,7 @@ import path from 'node:path'
 import { CACHE_DIR, REPO_ROOT, requireFromRepo } from './deps.mjs'
 
 /** What the in-page program may call. Anything else is not bundled. */
-const BROWSER_IMPORTS = ['app/utils/imageProcessor', 'app/utils/poseRig', 'app/lib/tileset', 'app/lib/chromaPresets']
+const BROWSER_IMPORTS = ['app/utils/imageProcessor', 'app/utils/poseRig', 'app/utils/tileFinish', 'app/lib/tileset', 'app/lib/chromaPresets']
 
 /** Bundled modules pull from both source dirs; either changing invalidates. */
 const SOURCE_DIRS = ['app/utils', 'app/lib'].map((p) => path.join(REPO_ROOT, p))

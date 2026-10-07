@@ -25,10 +25,11 @@ import { LAYER_ROLES, PARALLAX_MAX_AUTO_STEPS, ParallaxLayer, WORKFLOW_ORDER, cr
 import { PROP_BATCH, PROP_BATCH_COLS, PROP_BATCH_H, PROP_BATCH_ROWS, PROP_BATCH_W, PROP_TILE_SIZE, PropItem, nextPropId, propAtlasLayout, resolvePropNames } from '@/app/lib/props'
 import { SPRITE_ANIMATIONS, SPRITE_FRAME_COUNT, SPRITE_FRAME_SIZE, SPRITE_GRID_COLS, SPRITE_GRID_ROWS, SPRITE_SHEET_H, SPRITE_SHEET_W, SPRITE_STRIP_H, SPRITE_STRIP_W, SpriteAnimType, SpriteFrame, SpriteSheet, createEmptySpriteSheet } from '@/app/lib/sprite'
 import { BODY_PLANS, BodyPlan, isAirborneAnim } from '@/app/lib/bodyPlans'
-import { CORNER_GRAFTS, ENABLE_CORNER_RECONCILE, TILESET_ATLAS_EXTRUDE_PX, TILESET_BY_ROLE, TILESET_COLS, TILESET_PADDED_SHEET_H, TILESET_PADDED_SHEET_W, TILESET_PADDED_STRIDE, TILESET_ROWS, TILESET_SHEET_H, TILESET_SHEET_W, TILESET_SLOTS, TILESET_TILE_SIZE, TILE_TEMPLATE_CELL, TILE_TEMPLATE_COLS, TILE_TEMPLATE_H, TILE_TEMPLATE_MASK, TILE_TEMPLATE_ROWS, TILE_TEMPLATE_SAMPLES, TILE_TEMPLATE_W, TileSetRole, TileSetSlot, alignAiOutputToTemplate, applyFeatheredRoleMask, buildTileSheetGuideDataUrl, createEmptyTileSet, rebuildCornerTile, reconcileAllCorners, templateRoleForCell } from '@/app/lib/tileset'
-import { alignSpriteFramesToBaseline, applyFullContextResult, centerSpriteFramesHorizontally, chromaKeyToAlpha, createChunkedExtension, createFullContextExtension, getImageDimensions, harmonizeHorizontalSeams, isolatePrimarySpriteComponent, isAiExtensionUnfilled, makeHorizontallyTileable, makeTileable2D, makeVerticallyTileable, measureSeamResidual, normalizeSpriteFrameScale, removeFrameBorder, removeUploadedBackground, sliceImageGrid, stitchExtendedChunk } from '@/app/utils/imageProcessor'
+import { CORNER_GRAFTS, ENABLE_CORNER_RECONCILE, TILESET_ATLAS_EXTRUDE_PX, TILESET_BY_ROLE, TILESET_COLS, TILESET_PADDED_SHEET_H, TILESET_PADDED_SHEET_W, TILESET_PADDED_STRIDE, TILESET_ROWS, TILESET_SHEET_H, TILESET_SHEET_W, TILESET_SLOTS, TILESET_TILE_SIZE, TILE_TEMPLATE_CELL, TILE_TEMPLATE_H, TILE_TEMPLATE_W, TileSetRole, TileSetSlot, buildTileSheetGuideDataUrl, createEmptyTileSet, rebuildCornerTile } from '@/app/lib/tileset'
+import { alignSpriteFramesToBaseline, applyFullContextResult, centerSpriteFramesHorizontally, chromaKeyToAlpha, createChunkedExtension, createFullContextExtension, getImageDimensions, harmonizeHorizontalSeams, isolatePrimarySpriteComponent, isAiExtensionUnfilled, makeHorizontallyTileable, measureSeamResidual, normalizeSpriteFrameScale, removeFrameBorder, removeUploadedBackground, sliceImageGrid, stitchExtendedChunk } from '@/app/utils/imageProcessor'
 import { CHROMA_PRESETS } from '@/app/lib/chromaPresets'
 import { SubjectBounds, drawPoseGuideSheet, measureSubjectBounds } from '@/app/utils/poseRig'
+import { buildTilePreviewComposite, buildTileSheetAtlas, finishTileCell, finishTileSheet } from '@/app/utils/tileFinish'
 import { downloadText, downloadUrl, downloadZip, type ZipEntry } from '@/app/lib/studioDownload'
 
 export default function Home() {
@@ -1040,91 +1041,6 @@ export default function Home() {
     )
   }
 
-  /** Apply role-appropriate post-processing: magenta→alpha for non-body
-   * tiles, plus tileability passes only along the role's loop axis.
-   *
-   * Tile-mode uses an AGGRESSIVE chroma-key tuning (low cast threshold,
-   * wide softness) because the AI tends to render the cut boundaries as
-   * faint pink lines at the 25% mark inside cells. The default tuning is
-   * conservative enough to preserve parallax-layer art that contains warm
-   * reds; tile materials (stone, dirt, brick, ice, etc.) have effectively
-   * zero natural magenta cast, so we can crank the threshold down without
-   * eating real material colors. This kills the "thin pink stripe between
-   * material and transparency" artefact at its source. */
-  const TILE_CHROMA_KEY_OPTS = CHROMA_PRESETS.tile
-  const enforceTileRoleMask = async (
-    role: TileSetRole,
-    imageUrl: string
-  ): Promise<string> => {
-    if (role === 'body') return imageUrl
-
-    return new Promise((resolve, reject) => {
-      const img = new Image()
-      img.crossOrigin = 'anonymous'
-      img.onload = () => {
-        const w = img.width
-        const h = img.height
-        const qx = Math.round(w / 4)
-        const qy = Math.round(h / 4)
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
-          reject(new Error(t('extender.error.tileMaskCanvas')))
-          return
-        }
-
-        ctx.drawImage(img, 0, 0, w, h)
-        const imageData = ctx.getImageData(0, 0, w, h)
-        applyFeatheredRoleMask(imageData.data, w, h, role, qx, qy)
-        ctx.putImageData(imageData, 0, 0)
-        resolve(canvas.toDataURL('image/png'))
-      }
-      img.onerror = () => reject(new Error(t('extender.error.tileMaskLoad')))
-      img.src = imageUrl
-    })
-  }
-  const postProcessTile = async (
-    role: TileSetRole,
-    rawImageUrl: string
-  ): Promise<string> => {
-    if (role === 'body') {
-      // Body cell is fully opaque (no magenta should be there at all), but
-      // the AI sometimes leaks faint pink lines at the cell boundaries that
-      // get sliced into this cell. We run the chroma-key in DESPILL-ONLY
-      // mode (cast threshold above 255 = nothing ever becomes transparent)
-      // to neutralize any pinkish pixels back to neutral material color
-      // before the 2D-tileable pass.
-      const despilled = await chromaKeyToAlpha(rawImageUrl, CHROMA_PRESETS.despill)
-      // Body is repeated many times in the preview, so tiny edge errors and
-      // left/right tonal drift become obvious grid lines. Use a stronger pass
-      // than parallax/background tiling: wide blends hide the loop boundary,
-      // and full equalization removes the "panel" look from a single repeated
-      // dirt/stone cell while preserving local pebbles/roots.
-      return makeTileable2D(despilled, {
-        equalizeStrength: 1,
-        blendWidthPx: Math.round(TILESET_TILE_SIZE * 0.22),
-        verticalBlendHeightPx: Math.round(TILESET_TILE_SIZE * 0.22),
-      })
-    }
-    if (role === 'top' || role === 'bottom') {
-      // Edge tiles loop only along their non-cut axis. We harden the loop
-      // axis BEFORE alpha-keying so the algorithm sees full opaque pixels.
-      const tiled = await makeHorizontallyTileable(rawImageUrl)
-      const keyed = await chromaKeyToAlpha(tiled, TILE_CHROMA_KEY_OPTS)
-      return enforceTileRoleMask(role, keyed)
-    }
-    if (role === 'left' || role === 'right') {
-      const tiled = await makeVerticallyTileable(rawImageUrl)
-      const keyed = await chromaKeyToAlpha(tiled, TILE_CHROMA_KEY_OPTS)
-      return enforceTileRoleMask(role, keyed)
-    }
-    // Corner tiles — no axis loops, just key the magenta to alpha.
-    const keyed = await chromaKeyToAlpha(rawImageUrl, TILE_CHROMA_KEY_OPTS)
-    return enforceTileRoleMask(role, keyed)
-  }
-
   /** Generate a single tile slot. Returns the resolved image URL (already
    * post-processed) so callers can chain or assign as needed. Throws on
    * failure so the caller can surface error state. */
@@ -1161,7 +1077,7 @@ export default function Home() {
       setTileProgressMsg(
         t('extender.progress.processingPhase', { label: roleLabel })
       )
-      const processed = await postProcessTile(role, data.imageUrl)
+      const processed = await finishTileCell(role, data.imageUrl)
 
       // Keep corners reconciled with their edge neighbors after a single
       // regen (the generate-all path reconciles the whole set at once). We
@@ -1230,104 +1146,6 @@ export default function Home() {
     }
   }
 
-  /** Generate the full 13-tile set in ONE AI call as a 4×4 sprite-sheet,
-   * then slice + post-process each cell. This is the consistency win: all
-   * tiles come out of the same diffusion pass so palette, texture detail,
-   * and lighting are locked across the set. The per-tile path (used by
-   * `handleRegenerateTile`) is retained as an escape hatch for individual
-   * failures. */
-  /** Composite the generated tiles into the platform-preview mockup (the same
-   * layout PlatformPreview renders) on a sky backdrop, and return it as a data
-   * URL. This is the image the QA art director inspects for seams / cohesion —
-   * problems show up where tiles meet, not in isolated cells. */
-  const buildTilePreviewCompositeDataUrl = async (
-    map: Partial<Record<TileSetRole, string>>
-  ): Promise<string | null> => {
-    const rows = TILE_TEMPLATE_ROWS
-    const cols = TILE_TEMPLATE_COLS
-    const CELL = 96
-    const canvas = document.createElement('canvas')
-    canvas.width = cols * CELL
-    canvas.height = rows * CELL
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    const g = ctx.createLinearGradient(0, 0, 0, canvas.height)
-    g.addColorStop(0, '#8cc3eb')
-    g.addColorStop(1, '#28466e')
-    ctx.fillStyle = g
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'high'
-
-    const need = new Map<TileSetRole, string>()
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        const role = templateRoleForCell(x, y)
-        if (role && map[role]) need.set(role, map[role] as string)
-      }
-    }
-    const imgByRole = new Map<TileSetRole, HTMLImageElement>()
-    await Promise.all(
-      Array.from(need.entries()).map(
-        ([role, src]) =>
-          new Promise<void>((resolve) => {
-            const img = new Image()
-            img.onload = () => {
-              imgByRole.set(role, img)
-              resolve()
-            }
-            img.onerror = () => resolve()
-            img.src = src
-          })
-      )
-    )
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        const role = templateRoleForCell(x, y)
-        if (!role) continue
-        const img = imgByRole.get(role)
-        if (img) ctx.drawImage(img, x * CELL, y * CELL, CELL, CELL)
-      }
-    }
-    return canvas.toDataURL('image/png')
-  }
-
-  /** Raw tile sheet built directly from a role→url map (state-independent, so
-   * the QA call can run before React state has committed). */
-  const buildSheetFromMapDataUrl = async (
-    map: Partial<Record<TileSetRole, string>>
-  ): Promise<string | null> => {
-    const entries = TILESET_SLOTS.filter((s) => map[s.role])
-    if (entries.length === 0) return null
-    const canvas = document.createElement('canvas')
-    canvas.width = TILESET_SHEET_W
-    canvas.height = TILESET_SHEET_H
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    ctx.imageSmoothingEnabled = false
-    await Promise.all(
-      entries.map(
-        (spec) =>
-          new Promise<void>((resolve) => {
-            const img = new Image()
-            img.onload = () => {
-              ctx.drawImage(
-                img,
-                spec.col * TILESET_TILE_SIZE,
-                spec.row * TILESET_TILE_SIZE,
-                TILESET_TILE_SIZE,
-                TILESET_TILE_SIZE
-              )
-              resolve()
-            }
-            img.onerror = () => resolve()
-            img.src = map[spec.role] as string
-          })
-      )
-    )
-    return canvas.toDataURL('image/png')
-  }
-
   /** Review half of the reverse pipeline — hand the assembled preview + sheet
    * to the QA art director. Returns null (≈ approve) on any failure so a flaky
    * critic never blocks the user. */
@@ -1356,6 +1174,11 @@ export default function Home() {
     }
   }
 
+  /** Generate the full 13-tile set in ONE AI call as a 4×4 sprite-sheet, then
+   * slice + post-process each cell. This is the consistency win: all tiles come
+   * out of the same diffusion pass so palette, texture detail, and lighting are
+   * locked across the set. The per-tile path (used by `handleRegenerateTile`)
+   * is retained as an escape hatch for individual failures. */
   const handleGenerateTileSet = async () => {
     if (tileSetGenerating) return
     if (!tilePrompt.trim()) {
@@ -1410,49 +1233,22 @@ export default function Home() {
       if (!data.imageUrl) throw new Error(t('extender.error.noImage'))
       if (tileStopRef.current) return null
 
-      phase = t('extender.phase.aligning')
-      const aligned = await alignAiOutputToTemplate(data.imageUrl)
-      if (tileStopRef.current) return null
-
-      phase = t('extender.phase.slicing')
-      const cells = await sliceImageGrid(aligned, {
-        cols: TILE_TEMPLATE_COLS,
-        rows: TILE_TEMPLATE_ROWS,
-        cellSize: TILE_TEMPLATE_CELL,
+      const finished = await finishTileSheet(data.imageUrl, {
+        cell: TILE_TEMPLATE_CELL,
+        onStep: (step) => {
+          phase =
+            step === 'align'
+              ? t('extender.phase.aligning')
+              : step === 'slice'
+                ? t('extender.phase.slicing')
+                : step === 'finish'
+                  ? t('extender.phase.processingTiles')
+                  : t('extender.phase.reconciling')
+        },
+        shouldContinue: () => !tileStopRef.current,
       })
-      if (tileStopRef.current) return null
-
-      phase = t('extender.phase.processingTiles')
-      const processed = await Promise.all(
-        TILESET_SLOTS.map(async (spec) => {
-          const sample = TILE_TEMPLATE_SAMPLES[spec.role]
-          const cellIdx = sample.row * TILE_TEMPLATE_COLS + sample.col
-          const raw = cells[cellIdx]
-          if (!raw) return { role: spec.role, imageUrl: null }
-          try {
-            const out = await postProcessTile(spec.role, raw)
-            return { role: spec.role, imageUrl: out }
-          } catch (err) {
-            // eslint-disable-next-line no-console
-            console.warn(`Post-process failed for ${spec.role}:`, err)
-            return { role: spec.role, imageUrl: raw }
-          }
-        })
-      )
-
-      phase = t('extender.phase.reconciling')
-      const byRoleUrl: Partial<Record<TileSetRole, string>> = {}
-      processed.forEach((p) => {
-        if (p.imageUrl) byRoleUrl[p.role] = p.imageUrl
-      })
-      let reconciled = byRoleUrl
-      try {
-        reconciled = await reconcileAllCorners(byRoleUrl)
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn('Corner reconcile failed; using raw corners:', err)
-      }
-      return reconciled
+      if (!finished) return null
+      return finished.byRole
     }
 
     // `reviewing` keeps each populated cell's spinner overlay on while the art
@@ -1515,8 +1311,8 @@ export default function Home() {
         phase = t('extender.progress.reviewing')
         setTileProgressMsg(t('extender.progress.reviewing'))
         const [previewImage, sheetImage] = await Promise.all([
-          buildTilePreviewCompositeDataUrl(reconciled),
-          buildSheetFromMapDataUrl(reconciled),
+          buildTilePreviewComposite(reconciled),
+          buildTileSheetAtlas(reconciled),
         ])
         if (tileStopRef.current) return
 

@@ -258,37 +258,6 @@ function loadImageElement(dataUrl: string): Promise<HTMLImageElement> {
   })
 }
 
-/** Check if the horizontal extension strip is still unfilled after stitching. */
-export async function isChunkExtensionUnfilled(
-  imageDataUrl: string,
-  chunkInfo: ChunkInfo
-): Promise<boolean> {
-  const img = await loadImageElement(imageDataUrl)
-  const canvas = document.createElement('canvas')
-  canvas.width = img.width
-  canvas.height = img.height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return false
-
-  ctx.drawImage(img, 0, 0)
-  const { direction, extensionSize, originalWidth } = chunkInfo
-
-  let x = 0
-  if (direction === 'right') x = originalWidth
-  else if (direction === 'left') x = 0
-  else return false
-
-  const data = ctx.getImageData(x, 0, extensionSize, img.height).data
-  let blankPixels = 0
-  const totalPixels = extensionSize * img.height
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i], g = data[i + 1], b = data[i + 2]
-    if (r > 200 && g > 200 && b > 200) blankPixels++
-    else if (Math.abs(r - 176) < 30 && Math.abs(g - 176) < 30 && Math.abs(b - 176) < 30) blankPixels++
-  }
-  return blankPixels / totalPixels > 0.5
-}
-
 /** Check if the extension region is still mostly unfilled (gray/white). */
 export async function isExtensionRegionUnfilled(
   imageDataUrl: string,
@@ -1351,66 +1320,6 @@ export function getImageDimensions(dataUrl: string): Promise<{ width: number; he
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Parallax mode helpers — split a long horizontal background into game-sized
-// tiles for engine import (Unity, Godot, Phaser, etc.)
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface ParallaxTile {
-  dataUrl: string
-  /** 1-indexed position in the strip, useful for filenames. */
-  index: number
-  width: number
-  height: number
-  /** X offset in the source image where this tile starts. */
-  sourceX: number
-}
-
-/**
- * Slice a wide image into vertical tiles of `tileWidth`, full image height.
- * The last tile is the natural remaining width if the image isn't an exact
- * multiple — game engines handle non-uniform tail tiles fine and padding can
- * introduce false edges.
- */
-export function splitIntoTiles(
-  imageDataUrl: string,
-  tileWidth: number
-): Promise<ParallaxTile[]> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => {
-      const tiles: ParallaxTile[] = []
-      const tileHeight = img.height
-      const numTiles = Math.max(1, Math.ceil(img.width / tileWidth))
-
-      for (let i = 0; i < numTiles; i++) {
-        const sourceX = i * tileWidth
-        const w = Math.min(tileWidth, img.width - sourceX)
-        if (w <= 0) break
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = tileHeight
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
-          reject(new Error('Failed to get canvas context'))
-          return
-        }
-        ctx.drawImage(img, sourceX, 0, w, tileHeight, 0, 0, w, tileHeight)
-        tiles.push({
-          dataUrl: canvas.toDataURL('image/png'),
-          index: i + 1,
-          width: w,
-          height: tileHeight,
-          sourceX,
-        })
-      }
-      resolve(tiles)
-    }
-    img.onerror = () => reject(new Error('Failed to load image'))
-    img.src = imageDataUrl
-  })
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Chroma keying — turns a flat key-color background (default magenta) into
 // real transparency. Used in parallax mode so the foreground / mid / far
 // layers can stack over the sky layer with proper alpha. Includes a soft-
@@ -2273,43 +2182,6 @@ export async function makeTileable2D(
     }
     img.onerror = () => reject(new Error('Failed to load image'))
     img.src = horizontallyTileable
-  })
-}
-
-/**
- * Re-render an image at a target height while preserving its aspect ratio.
- * Used in parallax mode to normalize an uploaded starter frame to a chosen
- * game resolution height — keeps the workflow tidy when the user wants 1080,
- * 720, etc. Returns the original data URL untouched if it already matches.
- */
-export function fitImageToHeight(
-  imageDataUrl: string,
-  targetHeight: number
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => {
-      if (img.height === targetHeight) {
-        resolve(imageDataUrl)
-        return
-      }
-      const scale = targetHeight / img.height
-      const newWidth = Math.round(img.width * scale)
-      const canvas = document.createElement('canvas')
-      canvas.width = newWidth
-      canvas.height = targetHeight
-      const ctx = canvas.getContext('2d')
-      if (!ctx) {
-        reject(new Error('Failed to get canvas context'))
-        return
-      }
-      ctx.imageSmoothingEnabled = true
-      ctx.imageSmoothingQuality = 'high'
-      ctx.drawImage(img, 0, 0, newWidth, targetHeight)
-      resolve(canvas.toDataURL('image/png'))
-    }
-    img.onerror = () => reject(new Error('Failed to load image'))
-    img.src = imageDataUrl
   })
 }
 

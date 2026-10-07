@@ -20,8 +20,6 @@ export const extender: Namespace = {
     'extender.error.unfilledMany':
       'AI failed to fill the extension area after {count} attempts. Try a different direction or model.',
     'extender.error.occurred': 'An error occurred',
-    'extender.error.tileMaskCanvas': 'Failed to get tile mask canvas context',
-    'extender.error.tileMaskLoad': 'Failed to load tile for mask enforcement',
     'extender.error.tileRole': 'Failed to generate {label} tile',
     'extender.error.describeMaterial':
       'Describe the material you want — e.g. mossy stone floor.',
@@ -148,8 +146,6 @@ export const extender: Namespace = {
     'extender.error.unfilledMany':
       'AI 尝试 {count} 次后仍未能填充扩展区域。请尝试其他方向或模型。',
     'extender.error.occurred': '发生错误',
-    'extender.error.tileMaskCanvas': '无法获取瓦片遮罩画布上下文',
-    'extender.error.tileMaskLoad': '无法加载用于遮罩处理的瓦片',
     'extender.error.tileRole': '生成 {label} 瓦片失败',
     'extender.error.describeMaterial': '描述你想要的材质 —— 例如长满苔藓的石地板。',
     'extender.error.tileSheet': '生成瓦片表失败',
