@@ -12,8 +12,6 @@ import path from 'node:path'
 import sharp from 'sharp'
 import { CliError, UsageError, enumFlag, numberFlag } from '../lib/args.mjs'
 
-/** app/lib/pixel.ts PIXEL_KEY_HEADER; the route 401s on any other name. */
-const PIXEL_KEY_HEADER = 'x-pixellab-key'
 
 /** Every place a PixelLab key may come from, in resolution order. */
 const KEY_SOURCES =
@@ -26,22 +24,6 @@ const STATUS_HINTS = {
   429: 'rate limited by PixelLab — retry shortly',
   529: 'PixelLab is overloaded — retry shortly',
 }
-
-/** PixelStudio's poll cadence (POLL_EVERY_MS / POLL_LIMIT_MS), mirrored. */
-const POLL_EVERY_MS = 5000
-const POLL_LIMIT_MS = 10 * 60 * 1000
-
-/** The app's rotation order — clockwise from south; missing urls are dropped. */
-const DIRECTION_ORDER = [
-  'south',
-  'south-east',
-  'east',
-  'north-east',
-  'north',
-  'north-west',
-  'west',
-  'south-west',
-]
 
 const SUBCOMMANDS = ['pixflux', 'character', 'status', 'balance']
 
@@ -104,8 +86,9 @@ function relayFailure(ctx, where, status, text, detail) {
  * message, bodyless vendor rejections get a per-status hint.
  */
 async function vendorPost(ctx, key, body) {
+  const mods = await pixelModules(ctx)
   try {
-    return await ctx.api('pixel', body, { headers: { [PIXEL_KEY_HEADER]: key } })
+    return await ctx.api('pixel', body, { headers: { [mods.PIXEL_KEY_HEADER]: key } })
   } catch (err) {
     if (!(err instanceof CliError) || err.code !== 'route_failed') throw err
     const detail = err.detail
@@ -126,10 +109,11 @@ async function vendorPost(ctx, key, body) {
  */
 async function vendorGet(ctx, key, query) {
   const { url } = await ctx.server()
+  const mods = await pixelModules(ctx)
   let res
   try {
     res = await fetch(`${url}/api/pixel?${query}`, {
-      headers: { [PIXEL_KEY_HEADER]: key },
+      headers: { [mods.PIXEL_KEY_HEADER]: key },
       signal: AbortSignal.timeout(60_000),
     })
   } catch (err) {
@@ -253,10 +237,11 @@ async function finalizeDirections(ctx, mods, images, outDir) {
 
 /** The vendor's character row, mapped the way the app's pollCharacter does. */
 async function characterStatus(ctx, key, id) {
+  const mods = await pixelModules(ctx)
   const body = await vendorGet(ctx, key, `op=characterStatus&id=${encodeURIComponent(id)}`)
   const urls = body && body.rotation_urls
   const images = urls
-    ? DIRECTION_ORDER.map((direction) => urls[direction]).filter((url) => typeof url === 'string' && url.length > 0)
+    ? mods.PIXEL_DIRECTIONS.map((direction) => urls[direction]).filter((url) => typeof url === 'string' && url.length > 0)
     : []
   return {
     status: body && typeof body.status === 'string' ? body.status : null,
@@ -267,6 +252,7 @@ async function characterStatus(ctx, key, id) {
 
 /** Poll until completed; failed/timeout mirror the studio's own messages. */
 async function waitForCharacter(ctx, key, characterId) {
+  const mods = await pixelModules(ctx)
   const started = Date.now()
   for (;;) {
     const job = await characterStatus(ctx, key, characterId)
@@ -277,14 +263,14 @@ async function waitForCharacter(ctx, key, characterId) {
       )
     }
     if (job.status === 'completed' && job.images.length > 0) return job
-    if (Date.now() - started > POLL_LIMIT_MS) {
+    if (Date.now() - started > mods.PIXEL_POLL_LIMIT_MS) {
       ctx.fail(
         'job_timeout',
         `still polling after 10 minutes (character_id=${characterId}) — re-check with \`ie pixel status --id ${characterId} --out <dir>\` instead of resubmitting`,
       )
     }
-    ctx.note(`character ${characterId}: ${job.status ?? 'pending'} — polling again in ${POLL_EVERY_MS / 1000}s`)
-    await new Promise((resolve) => setTimeout(resolve, POLL_EVERY_MS))
+    ctx.note(`character ${characterId}: ${job.status ?? 'pending'} — polling again in ${mods.PIXEL_POLL_EVERY_MS / 1000}s`)
+    await new Promise((resolve) => setTimeout(resolve, mods.PIXEL_POLL_EVERY_MS))
   }
 }
 
@@ -434,7 +420,7 @@ async function character(ctx) {
     }
   }
 
-  ctx.note(`character_id=${characterId} — polling every ${POLL_EVERY_MS / 1000}s …`)
+  ctx.note(`character_id=${characterId} — polling every ${mods.PIXEL_POLL_EVERY_MS / 1000}s …`)
   const job = await waitForCharacter(ctx, key, characterId)
   const { written, directions } = await finalizeDirections(ctx, mods, job.images, ctx.flags.out)
   return {

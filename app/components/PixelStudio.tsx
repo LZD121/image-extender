@@ -9,6 +9,8 @@ import {
   PIXEL_CHARACTER_PRESETS,
   PIXEL_BLOCK_STORAGE,
   PIXEL_CELL_STORAGE,
+  PIXEL_POLL_EVERY_MS,
+  PIXEL_POLL_LIMIT_MS,
   fetchBalance,
   pixellab,
   proxiedImageUrl,
@@ -345,9 +347,6 @@ export function PixelStudio() {
     }
   }, [key, t])
 
-  const POLL_EVERY_MS = 5000
-  const POLL_LIMIT_MS = 10 * 60 * 1000
-
   const generateCharacter = async () => {
     setError(null)
     if (!key) {
@@ -392,12 +391,12 @@ export function PixelStudio() {
           void refreshBalance()
           return
         }
-        if (Date.now() - startedAt > POLL_LIMIT_MS) {
+        if (Date.now() - startedAt > PIXEL_POLL_LIMIT_MS) {
           setError(t('pixel.error.characterPollTimeout', { id: characterId }))
           return
         }
         const { promise, resolve } = Promise.withResolvers<void>()
-        setTimeout(resolve, POLL_EVERY_MS)
+        setTimeout(resolve, PIXEL_POLL_EVERY_MS)
         await promise
       }
     } catch (err) {

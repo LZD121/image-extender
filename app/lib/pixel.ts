@@ -54,6 +54,27 @@ export const PIXEL_KEY_HEADER = 'x-pixellab-key'
  */
 export const PIXEL_IMAGE_HOSTS = ['api.pixellab.ai', 'pixellab.ai']
 
+/**
+ * The vendor's rotation order — clockwise from south. It is the contract that
+ * decides which file `dir_00.png` is, so the studio's character pass and the
+ * CLI both read it from here rather than each keeping a copy.
+ */
+export const PIXEL_DIRECTIONS = [
+  'south',
+  'south-east',
+  'east',
+  'north-east',
+  'north',
+  'north-west',
+  'west',
+  'south-west',
+] as const
+export type PixelDirection = (typeof PIXEL_DIRECTIONS)[number]
+
+/** How often an async character job is polled, and when to stop waiting. */
+export const PIXEL_POLL_EVERY_MS = 5000
+export const PIXEL_POLL_LIMIT_MS = 10 * 60 * 1000
+
 export const PIXEL_KEY_STORAGE = 'extender:pixelKey'
 export const PIXEL_BLOCK_STORAGE = 'extender:pixelBlock'
 export const PIXEL_CELL_STORAGE = 'extender:pixelCell'
@@ -220,8 +241,9 @@ export const pixellab: PixelGenerator = {
     }>('characterStatus', key, { query: `&id=${encodeURIComponent(id)}` })
     const urls = data.rotation_urls
     const images = urls
-      ? [urls.south, urls['south-east'], urls.east, urls['north-east'], urls.north, urls['north-west'], urls.west, urls['south-west']]
-          .filter((u): u is string => typeof u === 'string' && u.length > 0)
+      ? PIXEL_DIRECTIONS.map((direction) => urls[direction]).filter(
+          (u): u is string => typeof u === 'string' && u.length > 0
+        )
       : []
     return {
       status: data.status,
