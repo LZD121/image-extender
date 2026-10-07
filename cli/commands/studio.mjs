@@ -22,6 +22,7 @@ const APP_MODULES = [
   'app/lib/models',
   'app/lib/bodyPlans',
   'app/lib/stylePrompt',
+  'app/lib/sheetManifest',
   'app/lib/llmServer',
 ]
 
@@ -387,6 +388,15 @@ const tiles = {
       tool: TOOL_VERSION,
       command: 'tiles',
       params: { prompt, style: style ?? null, cell: mods.TILESET_TILE_SIZE, sheetPx: `${mods.TILE_TEMPLATE_W}x${mods.TILE_TEMPLATE_H}` },
+      // The same sheet manifest the browser exports (app/lib/sheetManifest), so
+      // an importer reads one shape whoever produced the PNGs. `roles` below is
+      // this run's count; this is the layout.
+      sheet: mods.buildTileSetManifest({
+        prompt,
+        sceneBrief: '',
+        artStyle: style ?? 'none',
+        presentRoles: roleFiles.map((r) => r.role),
+      }),
       provider: backend.provider,
       profile: backend.profile,
       model: backend.model,

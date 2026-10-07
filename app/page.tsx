@@ -23,13 +23,14 @@ import { DEFAULT_PROVIDER, PROVIDERS, isProviderId, type ProviderId } from '@/ap
 import { LAYER_ORDER, type LayerRole } from '@/app/lib/layerRoles'
 import { LAYER_ROLES, PARALLAX_MAX_AUTO_STEPS, ParallaxLayer, WORKFLOW_ORDER, createDefaultLayers, getRecommendedLayerIndex, getWorkflowPrerequisite } from '@/app/lib/parallax'
 import { PROP_BATCH, PROP_BATCH_COLS, PROP_BATCH_H, PROP_BATCH_ROWS, PROP_BATCH_W, PROP_TILE_SIZE, PropItem, nextPropId, propAtlasLayout, resolvePropNames } from '@/app/lib/props'
-import { SPRITE_ANIMATIONS, SPRITE_FRAME_COUNT, SPRITE_FRAME_SIZE, SPRITE_GRID_COLS, SPRITE_GRID_ROWS, SPRITE_SHEET_H, SPRITE_SHEET_W, SPRITE_STRIP_H, SPRITE_STRIP_W, SpriteAnimType, SpriteFrame, SpriteSheet, createEmptySpriteSheet } from '@/app/lib/sprite'
+import { SPRITE_ANIMATIONS, SPRITE_FRAME_COUNT, SPRITE_FRAME_SIZE, SPRITE_GRID_COLS, SPRITE_GRID_ROWS, SPRITE_SHEET_H, SPRITE_SHEET_W, SPRITE_STRIP_H, SPRITE_STRIP_W, SpriteAnimType, SpriteSheet, createEmptySpriteSheet } from '@/app/lib/sprite'
 import { BODY_PLANS, BodyPlan, isAirborneAnim } from '@/app/lib/bodyPlans'
-import { CORNER_GRAFTS, ENABLE_CORNER_RECONCILE, TILESET_ATLAS_EXTRUDE_PX, TILESET_BY_ROLE, TILESET_COLS, TILESET_PADDED_SHEET_H, TILESET_PADDED_SHEET_W, TILESET_PADDED_STRIDE, TILESET_ROWS, TILESET_SHEET_H, TILESET_SHEET_W, TILESET_SLOTS, TILESET_TILE_SIZE, TILE_TEMPLATE_CELL, TILE_TEMPLATE_H, TILE_TEMPLATE_W, TileSetRole, TileSetSlot, buildTileSheetGuideDataUrl, createEmptyTileSet, rebuildCornerTile } from '@/app/lib/tileset'
+import { CORNER_GRAFTS, ENABLE_CORNER_RECONCILE, TILESET_ATLAS_EXTRUDE_PX, TILESET_BY_ROLE, TILESET_PADDED_SHEET_H, TILESET_PADDED_SHEET_W, TILESET_PADDED_STRIDE, TILESET_SHEET_H, TILESET_SHEET_W, TILESET_TILE_SIZE, TILE_TEMPLATE_CELL, TILE_TEMPLATE_H, TILE_TEMPLATE_W, TileSetRole, TileSetSlot, buildTileSheetGuideDataUrl, createEmptyTileSet, rebuildCornerTile } from '@/app/lib/tileset'
 import { alignSpriteFramesToBaseline, applyFullContextResult, centerSpriteFramesHorizontally, chromaKeyToAlpha, createChunkedExtension, createFullContextExtension, getImageDimensions, harmonizeHorizontalSeams, isolatePrimarySpriteComponent, isAiExtensionUnfilled, makeHorizontallyTileable, measureSeamResidual, normalizeSpriteFrameScale, removeFrameBorder, removeUploadedBackground, sliceImageGrid, stitchExtendedChunk } from '@/app/utils/imageProcessor'
 import { CHROMA_PRESETS } from '@/app/lib/chromaPresets'
 import { SubjectBounds, drawPoseGuideSheet, measureSubjectBounds } from '@/app/utils/poseRig'
 import { buildTilePreviewComposite, buildTileSheetAtlas, finishTileCell, finishTileSheet } from '@/app/utils/tileFinish'
+import { buildPropManifest, buildSpriteManifest, buildTileSetManifest } from '@/app/lib/sheetManifest'
 import { downloadText, downloadUrl, downloadZip, type ZipEntry } from '@/app/lib/studioDownload'
 
 export default function Home() {
@@ -1497,49 +1498,6 @@ export default function Home() {
     return canvas.toDataURL('image/png')
   }
 
-  /** Build the engine-friendly manifest describing every tile's grid cell
-   * and role. Engine importers (Phaser, Tiled, Godot, custom) can map cell
-   * coords → role with this. */
-  const buildTileSetManifest = () => ({
-    version: 1,
-    tileSize: TILESET_TILE_SIZE,
-    cols: TILESET_COLS,
-    rows: TILESET_ROWS,
-    sheetWidth: TILESET_SHEET_W,
-    sheetHeight: TILESET_SHEET_H,
-    productionAtlas: {
-      fileName: 'sheet_padded.png',
-      tileSize: TILESET_TILE_SIZE,
-      extrudePx: TILESET_ATLAS_EXTRUDE_PX,
-      stride: TILESET_PADDED_STRIDE,
-      sheetWidth: TILESET_PADDED_SHEET_W,
-      sheetHeight: TILESET_PADDED_SHEET_H,
-      importNote:
-        'Use each tile source rect at paddedX/paddedY with width/height tileSize. Keep the surrounding extruded pixels in the atlas to prevent filtering seams.',
-    },
-    prompt: tilePrompt,
-    sceneBrief: sceneBrief.trim() || null,
-    artStyle: artStyle !== 'none' ? artStyle : null,
-    tiles: TILESET_SLOTS.map((spec) => {
-      const slot = tileSet.find((s) => s.role === spec.role)
-      return {
-        role: spec.role,
-        label: spec.label,
-        col: spec.col,
-        row: spec.row,
-        index: spec.row * TILESET_COLS + spec.col,
-        fileName: `${spec.fileName}.png`,
-        present: !!slot?.imageUrl,
-        sourceX: spec.col * TILESET_TILE_SIZE,
-        sourceY: spec.row * TILESET_TILE_SIZE,
-        paddedX:
-          spec.col * TILESET_PADDED_STRIDE + TILESET_ATLAS_EXTRUDE_PX,
-        paddedY:
-          spec.row * TILESET_PADDED_STRIDE + TILESET_ATLAS_EXTRUDE_PX,
-      }
-    }),
-  })
-
   const handleDownloadTileSheet = async () => {
     try {
       const sheet = await buildTileSheetDataUrl()
@@ -1559,7 +1517,7 @@ export default function Home() {
       }
 
       // Also offer the manifest as a sidecar JSON in a second click.
-      downloadText(JSON.stringify(buildTileSetManifest(), null, 2), `${baseName}_manifest.json`)
+      downloadText(JSON.stringify(buildTileSetManifest({ prompt: tilePrompt, sceneBrief, artStyle, presentRoles: tileSet.filter((s) => s.imageUrl).map((s) => s.role) }), null, 2), `${baseName}_manifest.json`)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('extender.error.exportSheet'))
     }
@@ -1582,7 +1540,7 @@ export default function Home() {
       if (sheet) entries.push({ name: 'sheet.png', dataUrl: sheet })
       const paddedSheet = await buildPaddedTileSheetDataUrl()
       if (paddedSheet) entries.push({ name: 'sheet_padded.png', dataUrl: paddedSheet })
-      entries.push({ name: 'manifest.json', text: JSON.stringify(buildTileSetManifest(), null, 2) })
+      entries.push({ name: 'manifest.json', text: JSON.stringify(buildTileSetManifest({ prompt: tilePrompt, sceneBrief, artStyle, presentRoles: tileSet.filter((s) => s.imageUrl).map((s) => s.role) }), null, 2) })
 
       const baseName = (tilePrompt.trim().slice(0, 24) || 'tileset').replace(
         /[^a-z0-9]+/gi,
@@ -1744,34 +1702,6 @@ export default function Home() {
     return canvas.toDataURL('image/png')
   }
 
-  /** Engine-friendly manifest describing the packed atlas + per-prop rects. */
-  const buildPropManifest = () => {
-    const populated = propItems.filter((p) => p.imageUrl)
-    const layout = propAtlasLayout(populated.length)
-    const names = resolvePropNames(populated)
-    return {
-      type: 'prop-atlas',
-      generator: 'AI Image Extender — Props',
-      prompt: propPrompt.trim() || null,
-      sceneBrief: sceneBrief.trim() || null,
-      sheet: { width: layout.width, height: layout.height },
-      grid: { cols: layout.cols, rows: layout.rows, cellSize: PROP_TILE_SIZE },
-      count: populated.length,
-      props: populated.map((p, i) => {
-        const r = layout.rect(i)
-        return {
-          id: p.id,
-          name: names[i].name,
-          file: names[i].file,
-          x: r.x,
-          y: r.y,
-          width: r.width,
-          height: r.height,
-        }
-      }),
-    }
-  }
-
   /**
    * Snapshot of what the current studio would hand to the library. Reads the
    * same state the ZIP exporters read; never mutates it. Deliberately NOT
@@ -1789,7 +1719,7 @@ export default function Home() {
         model: selectedModel,
         tileSet: tileSet.map((s) => ({ role: s.role, imageUrl: s.imageUrl })),
         tileSheetDataUrl: await buildTileSheetDataUrl(),
-        manifest: buildTileSetManifest(),
+        manifest: buildTileSetManifest({ prompt: tilePrompt, sceneBrief, artStyle, presentRoles: tileSet.filter((s) => s.imageUrl).map((s) => s.role) }),
       })
     }
     if (mode === 'props') {
@@ -1801,7 +1731,7 @@ export default function Home() {
         propItems: populated.map((p) => ({ id: p.id, name: p.name ?? '', imageUrl: p.imageUrl })),
         propFiles: resolvePropNames(populated).map((n) => n.file),
         propAtlasDataUrl: await buildPropAtlasDataUrl(),
-        manifest: buildPropManifest(),
+        manifest: buildPropManifest({ prompt: propPrompt, sceneBrief, items: propItems }),
       })
     }
     if (mode === 'sprite') {
@@ -2061,7 +1991,7 @@ export default function Home() {
         '_'
       )
       downloadUrl(sheet, `${baseName}_props_atlas.png`)
-      downloadText(JSON.stringify(buildPropManifest(), null, 2), `${baseName}_props_manifest.json`)
+      downloadText(JSON.stringify(buildPropManifest({ prompt: propPrompt, sceneBrief, items: propItems }), null, 2), `${baseName}_props_manifest.json`)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('extender.error.exportAtlas'))
     }
@@ -2078,7 +2008,7 @@ export default function Home() {
       const entries: ZipEntry[] = populated.map((p, i) => ({ name: names[i].file, dataUrl: p.imageUrl as string }))
       const sheet = await buildPropAtlasDataUrl()
       if (sheet) entries.push({ name: 'props_atlas.png', dataUrl: sheet })
-      entries.push({ name: 'manifest.json', text: JSON.stringify(buildPropManifest(), null, 2) })
+      entries.push({ name: 'manifest.json', text: JSON.stringify(buildPropManifest({ prompt: propPrompt, sceneBrief, items: propItems }), null, 2) })
 
       const baseName = (propPrompt.trim().slice(0, 24) || 'props').replace(
         /[^a-z0-9]+/gi,
@@ -2879,59 +2809,6 @@ export default function Home() {
     return canvas.toDataURL('image/png')
   }
 
-  /** Engine-friendly manifest describing both grid and strip layouts plus
-   * per-frame timing data so importers can wire up an Animation directly. */
-  // `activeFrames` are the kept (non-excluded) frames. They are repacked
-  // contiguously in row-major order, so the manifest coordinates describe the
-  // EXPORTED sheets (which also only contain the kept frames) rather than the
-  // original 8-cell layout. `sourceIndex` preserves the original slot for
-  // reference.
-  const buildSpriteManifest = (activeFrames: SpriteFrame[]) => {
-    const spec = SPRITE_ANIMATIONS[spriteAnim]
-    const count = activeFrames.length
-    const stripCols = Math.max(1, count)
-    return {
-      version: 1,
-      bodyPlan: spriteBodyPlan,
-      bodyPlanLabel: BODY_PLANS[spriteBodyPlan].label,
-      anim: spriteAnim,
-      label: spec.label,
-      frameCount: count,
-      frameSize: SPRITE_FRAME_SIZE,
-      fps: spriteFps,
-      frameDurationMs: Math.round(1000 / spriteFps),
-      loop: spec.loop,
-      grid: {
-        fileName: 'sheet.png',
-        cols: SPRITE_GRID_COLS,
-        rows: SPRITE_GRID_ROWS,
-        sheetWidth: SPRITE_SHEET_W,
-        sheetHeight: SPRITE_SHEET_H,
-      },
-      strip: {
-        fileName: 'strip.png',
-        cols: stripCols,
-        rows: 1,
-        sheetWidth: stripCols * SPRITE_FRAME_SIZE,
-        sheetHeight: SPRITE_STRIP_H,
-      },
-      prompt: spriteSheet.prompt || spritePrompt,
-      sceneBrief: sceneBrief.trim() || null,
-      artStyle: artStyle !== 'none' ? artStyle : null,
-      frames: activeFrames.map((f, i) => ({
-        index: i,
-        sourceIndex: f.index,
-        fileName: `frame_${String(i + 1).padStart(2, '0')}.png`,
-        gridCol: i % SPRITE_GRID_COLS,
-        gridRow: Math.floor(i / SPRITE_GRID_COLS),
-        gridX: (i % SPRITE_GRID_COLS) * SPRITE_FRAME_SIZE,
-        gridY: Math.floor(i / SPRITE_GRID_COLS) * SPRITE_FRAME_SIZE,
-        stripX: i * SPRITE_FRAME_SIZE,
-        stripY: 0,
-      })),
-    }
-  }
-
   const handleDownloadSpriteSheet = async () => {
     try {
       const populated = spriteSheet.frames.filter(
@@ -2961,7 +2838,7 @@ export default function Home() {
         downloadUrl(strip, `${baseName}_strip_${SPRITE_STRIP_W}x${SPRITE_STRIP_H}.png`)
       }
       // Manifest as sidecar JSON.
-      downloadText(JSON.stringify(buildSpriteManifest(populated), null, 2), `${baseName}_manifest.json`)
+      downloadText(JSON.stringify(buildSpriteManifest({ anim: spriteAnim, bodyPlan: spriteBodyPlan, fps: spriteFps, prompt: spritePrompt, sheetPrompt: spriteSheet.prompt, sceneBrief, artStyle, frames: populated }), null, 2), `${baseName}_manifest.json`)
     } catch (err) {
       setError(
         err instanceof Error ? err.message : t('extender.error.exportSpriteSheet')
@@ -2994,7 +2871,7 @@ export default function Home() {
       // Horizontal strip for engines that want one row.
       const strip = await composeSpriteStripSheet(cellUrls)
       if (strip) entries.push({ name: 'strip.png', dataUrl: strip })
-      entries.push({ name: 'manifest.json', text: JSON.stringify(buildSpriteManifest(populated), null, 2) })
+      entries.push({ name: 'manifest.json', text: JSON.stringify(buildSpriteManifest({ anim: spriteAnim, bodyPlan: spriteBodyPlan, fps: spriteFps, prompt: spritePrompt, sheetPrompt: spriteSheet.prompt, sceneBrief, artStyle, frames: populated }), null, 2) })
 
       const baseName = `${spriteAnim}_${(
         spritePrompt.trim().slice(0, 24) || 'sprite'
