@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 04
 current_phase_name: CLI runner（ie anim plan / run --go）
-status: executing
-stopped_at: Completed 04-02-PLAN.md (retry only the generation call, three walk modes, ledger merge uniqueness)
-last_updated: "2026-10-07T17:04:42.726Z"
+status: verifying
+stopped_at: Completed 04-03-PLAN.md (resume facts, the aspect gate, nextPending as the only judgement)
+last_updated: "2026-10-07T17:12:51.776Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 04 execution started
-state_head: f0fea9465b83f27497ae4f18e6418bd865610fda
+state_head: dd4d7305c770439f72812aed453d35a47f5a7328
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
   percent: 14
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 Phase: 04 (CLI runner（ie anim plan / run --go）) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-08 — Phase 04 execution started
 
 Progress: [█░░░░░░░░░] 14% (execution; phase verification pending)
@@ -62,6 +62,7 @@ Progress: [█░░░░░░░░░] 14% (execution; phase verification pe
 |------|----------|-------|-------|
 | Phase 04 P01 | 8 min | 3 tasks | 5 files |
 | Phase 04 P02 | 4 min | 2 tasks | 4 files |
+| Phase 04 P03 | 6 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,9 @@ Recent decisions affecting current work:
 - [Phase 04]: --keep-going / --redo stay undeclared this wave: strict parse refuses them — a declared-but-ignored flag turns `--redo idle:2` into a silently full-priced run; a usage error is the honest state until 04-02 implements them.
 - [Phase 04]: The ledger merges by state:frame from day one (writeFileAtomic + a keyed Map) — The consumer's 17-rows-for-16-strips duplication came from appending; merging is free here and is what 04-02's uniqueness assertion builds on.
 - [Phase 04]: Failing strips stop the round by default; --keep-going continues, --redo redoes one strip, and the ledger merges by stripKey with duplicate_ledger/bad_ledger as loud refusals — D-30: one permanent failure must not silently keep spending; the retry wraps only the generation call because each retry is another paid image
+- [Phase 04]: `decodesAsImage` full-decodes rather than reading the header (`metadata()` reports 2048x246 for a 60%-truncated PNG), so resume facts cannot mistake half an image for a finished one — the trap is pinned as an assertion on the same truncated file
+- [Phase 04]: `ASPECT_TOLERANCE = 0.05` refuses shapes, not drift: the pipeline's own normal output (3.977% probe, 4.065% fixture) must pass, while 1:1 (87.50%) and 21:9 (70.83%) are refused before the cutter keeps a wrong ratio out of derived/
+- [Phase 04]: The CLI collects facts and `nextPending` judges — the --go loop walks pending[] with the five reasons, and an empty pending returns zero calls with `0 to do, N/M done`; the CLI has no second completion rule to drift looser
 
 ### Pending Todos
 
@@ -101,6 +105,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-07T17:04:42.710Z
-Stopped at: Completed 04-02-PLAN.md (retry only the generation call, three walk modes, ledger merge uniqueness)
+Last session: 2026-10-07T17:12:47.819Z
+Stopped at: Completed 04-03-PLAN.md (resume facts, the aspect gate, nextPending as the only judgement)
 Resume file: None
