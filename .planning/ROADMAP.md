@@ -92,9 +92,16 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 04-01: 命令骨架 + 计划渲染 + `--go` 闸门（零调用可证）
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 04-02: 生成循环：原子写、记账、重试、停止/继续/重跑
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 04-03: 续跑判定 + 比例校验 + ledger 合并唯一性
 
 ### Phase 5: 库 kind、provenance 诚实性与载荷上限
