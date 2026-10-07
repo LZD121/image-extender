@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { modelOrDefault } from '@/app/lib/llmServer'
-import { generateKind, type GenerateBody } from '@/app/lib/generateRequest'
+import { generateKind, imageUrlPart, type GenerateBody } from '@/app/lib/generateRequest'
 import { generateImage } from '@/app/lib/imageGeneration'
 import { buildGeneratePrompt } from '@/app/lib/generatePrompt'
 import { supportedAspectRatioForSize } from '@/app/lib/aspectRatio'
@@ -40,58 +40,26 @@ export async function POST(request: NextRequest) {
     const fullPrompt = buildGeneratePrompt({ ...body, prompt })
 
     const messageContent: any[] = []
-    if (
-      kind === 'tileSheet' &&
-      typeof tileGuideImage === 'string' &&
-      tileGuideImage.startsWith('data:image/')
-    ) {
-      messageContent.push({
-        type: 'image_url',
-        image_url: { url: tileGuideImage },
-      })
-    }
-    // Props style reference — the existing library, so new batches / re-rolls
-    // match palette + lighting while painting different decorations.
-    if (
-      (kind === 'propSheet' || kind === 'propMode') &&
-      typeof propRefImage === 'string' &&
-      propRefImage.startsWith('data:image/')
-    ) {
-      messageContent.push({
-        type: 'image_url',
-        image_url: { url: propRefImage },
-      })
-    }
-    // Sprite-sheet pass references, attached IN ORDER so the prompt's
-    // "IMAGE 1 / IMAGE 2" labels line up:
-    //   IMAGE 1 = identity reference (the anchor) — what the character looks
+    // Guide / reference images, attached IN ORDER:
+    //   tile  — the guide the repair pass repaints onto.
+    //   props — the existing library, so new batches / re-rolls match palette + lighting.
+    //   IMAGE 1 = sprite identity reference (the anchor) — what the character looks
     //             like. Carries outfit/palette/proportions.
-    //   IMAGE 2 = pose map — a grid of skeletal mannequins, one correct pose
+    //   IMAGE 2 = sprite pose map — a grid of skeletal mannequins, one correct pose
     //             per frame. Carries the motion/structure.
     // Splitting identity from structure is the core of the pose-map fix: the
     // model skins a known character onto known-correct poses instead of
     // inventing either. (Legacy non-pose mode falls back to a single
     // structural guide image.)
-    if (
-      kind === 'spriteSheet' &&
-      spritePoseGuide === true &&
-      typeof spriteIdentityImage === 'string' &&
-      spriteIdentityImage.startsWith('data:image/')
-    ) {
-      messageContent.push({
-        type: 'image_url',
-        image_url: { url: spriteIdentityImage },
-      })
-    }
-    if (
-      kind === 'spriteSheet' &&
-      typeof spriteGuideImage === 'string' &&
-      spriteGuideImage.startsWith('data:image/')
-    ) {
-      messageContent.push({
-        type: 'image_url',
-        image_url: { url: spriteGuideImage },
-      })
+    const references = [
+      kind === 'tileSheet' ? tileGuideImage : null,
+      kind === 'propSheet' || kind === 'propMode' ? propRefImage : null,
+      kind === 'spriteSheet' && spritePoseGuide === true ? spriteIdentityImage : null,
+      kind === 'spriteSheet' ? spriteGuideImage : null,
+    ]
+    for (const ref of references) {
+      const part = imageUrlPart(ref)
+      if (part) messageContent.push(part)
     }
     messageContent.push({
       type: 'text',

@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
-import { chatCompletion } from '@/app/lib/llmChat'
-import { messageText, parseReviewJson } from '@/app/lib/llmResponse'
+import { runVisionReview } from '@/app/lib/visionReview'
 import { buildSpriteReviewPrompt } from '@/app/lib/qaRubric'
 
 // QA ART DIRECTOR for sprite sheets — the review half of the sprite pipeline.
@@ -14,10 +12,10 @@ import { buildSpriteReviewPrompt } from '@/app/lib/qaRubric'
 // fringe, and whether they read as a coherent animation for the requested
 // action. If clean it approves; otherwise it returns a fix report the image
 // model uses to repaint the sheet (the locked anchor identity is preserved).
-
+//
 // The rubric — per-body-plan animation expectations, anatomy, facing, and the
-// acceptance criteria — lives in lib/qaRubric. This route only supplies the
-// images and the verdict translation.
+// acceptance criteria — lives in lib/qaRubric; the mechanics of the call live
+// in lib/visionReview, shared with the tile reviewer.
 export async function POST(request: NextRequest) {
   try {
     const { prompt, anim, bodyPlan, sceneBrief, apiKey, model, sheetImage, anchorImage, provider, profile } =
@@ -27,48 +25,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing sprite sheet image' }, { status: 400 })
     }
 
-    const target = llmTarget({
-      provider,
-      profile,
-      apiKey,
-      referer: request.headers.get('referer'),
-      title: 'AI Image Extender - Sprite QA',
-    })
-    if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
-
-    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa' })
-
     const hasAnchor =
       typeof anchorImage === 'string' && anchorImage.startsWith('data:image/')
 
-    const { system, user } = buildSpriteReviewPrompt({ prompt, anim, bodyPlan, sceneBrief, hasAnchor })
+    const review = buildSpriteReviewPrompt({ prompt, anim, bodyPlan, sceneBrief, hasAnchor })
 
-    const content: Array<Record<string, unknown>> = [
-      { type: 'image_url', image_url: { url: sheetImage } },
-    ]
-    if (hasAnchor) {
-      content.push({ type: 'image_url', image_url: { url: anchorImage } })
-    }
-    content.push({ type: 'text', text: user })
-
-    const reply = await chatCompletion({
-      target,
-      model: modelId,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content },
-      ],
-      maxTokens: 600,
-      temperature: 0.2,
+    const result = await runVisionReview({
+      provider,
+      apiKey,
+      profile,
+      model,
+      referer: request.headers.get('referer'),
+      title: 'AI Image Extender - Sprite QA',
+      images: hasAnchor ? [sheetImage, anchorImage] : [sheetImage],
+      prompt: review,
     })
-    if (!reply.ok) return NextResponse.json({ error: reply.error }, { status: reply.status })
-
-    const review = parseReviewJson(messageText(reply.message.content))
-    if (!review) {
-      // Don't block the user on a parse failure — treat as approved.
-      return NextResponse.json({ ok: true, issues: [], fix: '' })
-    }
-    return NextResponse.json(review)
+    if ('error' in result) return NextResponse.json({ error: result.error }, { status: result.status })
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error in sprite-review route:', error)
     return NextResponse.json(

@@ -93,3 +93,10 @@ export function generateKind(body: GenerateBody): GenerateKind {
   if (typeof body.layerRole === 'string' && (LAYER_ORDER as readonly string[]).includes(body.layerRole)) return 'parallax'
   return 'plain'
 }
+
+/** The message part for one data-URL image; null when the field is absent or not an image data URL. */
+export function imageUrlPart(value: unknown): { type: 'image_url'; image_url: { url: string } } | null {
+  return typeof value === 'string' && value.startsWith('data:image/')
+    ? { type: 'image_url', image_url: { url: value } }
+    : null
+}

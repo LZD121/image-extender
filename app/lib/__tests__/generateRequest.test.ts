@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateKind, toWire, type GenerateBody, type GenerateRequest } from '@/app/lib/generateRequest'
+import { generateKind, imageUrlPart, toWire, type GenerateBody, type GenerateRequest } from '@/app/lib/generateRequest'
 
 const SAMPLES: GenerateRequest[] = [
   { kind: 'plain', prompt: 'a mossy stone', width: 512, height: 512 },
@@ -43,5 +43,18 @@ describe('the /api/generate wire contract', () => {
     expect(generateKind({ layerRole: 'mid' })).toBe('parallax')
     // A raw HTTP caller can put any string here; only a known role is parallax.
     expect(generateKind({ layerRole: 'sideways' } as unknown as GenerateBody)).toBe('plain')
+  })
+})
+
+describe('imageUrlPart', () => {
+  const PNG = 'data:image/png;base64,iVBORw0KGgo='
+
+  it('turns a data-URL image into an image_url part', () => {
+    expect(imageUrlPart(PNG)).toEqual({ type: 'image_url', image_url: { url: PNG } })
+  })
+
+  it('refuses a remote URL or an absent field', () => {
+    expect(imageUrlPart('https://example.com/a.png')).toBeNull()
+    expect(imageUrlPart(undefined)).toBeNull()
   })
 })

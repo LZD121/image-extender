@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { llmTarget, modelOrDefault } from '@/app/lib/llmServer'
-import { chatCompletion } from '@/app/lib/llmChat'
-import { messageText, parseReviewJson } from '@/app/lib/llmResponse'
+import { runVisionReview } from '@/app/lib/visionReview'
 import { buildTileReviewPrompt } from '@/app/lib/qaRubric'
 
 // QA ART DIRECTOR — the review half of the reverse two-call tile pipeline.
@@ -15,6 +13,9 @@ import { buildTileReviewPrompt } from '@/app/lib/qaRubric'
 // tiles? If it's clean it APPROVES; otherwise it returns a concise fix report
 // that the image model uses to repaint. This catches the cohesion problems a
 // single blind generation can't see.
+//
+// What a review call consists of — target, QA model, images, verdict, fail-open
+// — is shared with the sprite reviewer in lib/visionReview.
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,47 +32,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const target = llmTarget({
+    const hasSheet = typeof sheetImage === 'string' && sheetImage.startsWith('data:image/')
+    const review = buildTileReviewPrompt({ prompt, sceneBrief, hasSheet })
+
+    const result = await runVisionReview({
       provider,
-      profile,
       apiKey,
+      profile,
+      model,
       referer: request.headers.get('referer'),
       title: 'AI Image Extender - Tile QA',
+      images: hasSheet ? [previewImage, sheetImage] : [previewImage],
+      prompt: review,
     })
-    if ('error' in target) return NextResponse.json({ error: target.error }, { status: 401 })
-
-    const modelId = modelOrDefault({ model, provider, profile, kind: 'qa' })
-
-    const hasSheet = typeof sheetImage === 'string' && sheetImage.startsWith('data:image/')
-    const { system, user } = buildTileReviewPrompt({ prompt, sceneBrief, hasSheet })
-
-    const content: Array<Record<string, unknown>> = [
-      { type: 'image_url', image_url: { url: previewImage } },
-    ]
-    if (hasSheet) {
-      content.push({ type: 'image_url', image_url: { url: sheetImage } })
-    }
-    content.push({ type: 'text', text: user })
-
-    const reply = await chatCompletion({
-      target,
-      model: modelId,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content },
-      ],
-      maxTokens: 600,
-      // Low temperature: this is a judgment call, we want consistency.
-      temperature: 0.2,
-    })
-    if (!reply.ok) return NextResponse.json({ error: reply.error }, { status: reply.status })
-
-    const review = parseReviewJson(messageText(reply.message.content))
-    if (!review) {
-      // Don't block the user on a parse failure — treat as approved.
-      return NextResponse.json({ ok: true, issues: [], fix: '' })
-    }
-    return NextResponse.json(review)
+    if ('error' in result) return NextResponse.json({ error: result.error }, { status: result.status })
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error in tile-review route:', error)
     return NextResponse.json(

@@ -5,8 +5,9 @@
  * `parallax.ts` is a client module (`'use client'`), so a route handler cannot
  * call anything on it — Next replaces the module with a client proxy and
  * `LAYER_ORDER.includes(...)` throws. `generateRequest.ts` needs this list to
- * tell a parallax body from a plain one, so the role list lives here and
- * `parallax.ts` re-exports it for the studio.
+ * tell a parallax body from a plain one, so the role list lives in this
+ * server-safe module; the studio imports it from here too, not through the
+ * parallax model.
  */
 
 export type LayerRole = 'sky' | 'far' | 'mid' | 'near'

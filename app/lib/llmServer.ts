@@ -35,12 +35,6 @@ export function serverProvider(raw: unknown): Provider {
   return { ...PROVIDERS.magpie, baseUrl }
 }
 
-/** The browser's key wins; the env var is the self-hosted fallback. */
-export function providerKey(provider: Provider, bodyKey: unknown): string {
-  if (typeof bodyKey === 'string' && bodyKey.trim()) return bodyKey.trim()
-  return (process.env[provider.keyEnv] || '').trim()
-}
-
 export type LlmTarget = {
   provider: Provider
   url: string

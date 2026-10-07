@@ -1,10 +1,5 @@
 import { LAYER_ORDER, type LayerRole } from '@/app/lib/layerRoles'
 
-// The role list and its type live in a server-readable module; re-exported here
-// so the studio keeps importing them from the parallax model.
-export { LAYER_ORDER }
-export type { LayerRole }
-
 export const PARALLAX_TARGET_PRESETS: { value: number; label: string; hint: string }[] = [
   { value: 3840, label: '3840 px', hint: '2 × 1080p screens' },
   { value: 5120, label: '5120 px', hint: '4 × 720p screens' },

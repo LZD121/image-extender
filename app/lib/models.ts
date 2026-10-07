@@ -93,8 +93,3 @@ export function maskKey(key: string): string {
   const tail = key.slice(-4)
   return `${'•'.repeat(Math.max(4, Math.min(20, key.length - 4)))}${tail}`
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Art styles — flat list with optional grouping for the dropdown
-// ─────────────────────────────────────────────────────────────────────────────
-
