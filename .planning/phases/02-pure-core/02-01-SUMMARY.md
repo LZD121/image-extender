@@ -21,7 +21,7 @@ requirements: [GEOM-01, GEN-08]
 - `02-01` 三条 `<automated>` 全绿（exit 0）：结构 + 尺寸代数 + prompt 重建（`buildStripPrompt` 重建出的 prompt 与 `01-PROBE-RECORD.md` 的 `prompt_full` **逐字节一致**，sha256 `9d966280…cfe8a6` 复现）
 - 拟合**是搜索**：源码扫描拒收任何写死的 360/253（行注释同样命中）
 - 纯度（D-21）：`import` 行恰 1 条（`@/app/lib/animStrip` 侧无外部依赖），浏览器打包产物无 `require(`/`node:`
-- `tsc --noEmit` 退出 0；`npm test` 全量绿（361 passed）
+- `tsc --noEmit` 退出 0；`npm test` 全量绿（362 passed）
 
 ## 偏离与说明
 

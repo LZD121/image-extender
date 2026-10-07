@@ -102,3 +102,85 @@
 **复审（2026-10-06T17:00:51Z，`f6cf83f`）**：首审的非阻断项里，`/tmp/probe-1.json` 残留**已清理**（§6）；另两项维持——**studio 画布清单硬编码**（加固见 §2 末，属测试严格性问题，非安全面）、**`apiKeyEnv` 出网行为未行使**（§3）。该 commit 只改了 4 个文件（1 个测试 + 3 个 .md 数字），**未触碰 `aspectRatio.ts` / `route.ts` / `probe-config.json` / `.ie/config.json` / evidence / fixture**，故本安全审阅的结论不变。
 
 **未验证项 6 条**（§7）维持不变，其中第 1 条是 Phase 1 核心事实的推断性质，值得后续补一个只记 `image_config` 的钩子。
+
+---
+
+# Security Review — Phase 2（纯核心 `animStrip.ts` + `animSet.ts`）
+
+**范围:** 只审本 phase 实际改动的东西。逐条对照两个 phase-2 代码 commit（`6bac853`、`94001b3`）的 diff。
+**审阅者:** generic agent（替身 GSD 的 security 步骤）。本 phase 的执行者是 orchestrator，我未参与实现；下面每条都是自己在磁盘上重跑的。
+**基线:** 同 Phase 1——`.planning/PROJECT.md` 的威胁模型是 **BYOK + 只防"自己误操作"**，不按公网多租户标准评。
+
+## P2-1. 改动面（exactly 这些，别的没有）
+
+| 文件 | 性质 | 敏感面 |
+|---|---|---|
+| `app/lib/animStrip.ts`（新增 300 行） | 纯代数：尺寸、拟合搜索、prompt 模板、方向常量表 | **决定每个生成请求要什么画面**（见 P2-2）；零 import |
+| `app/lib/animSet.ts`（新增 476 行） | 纯契约：规格校验、计划、`set.json`、续跑判定、命名进制 | **`out` 是本模块唯一未被约束的字符串**（见 P2-3）；唯一 import 是 `animStrip` |
+| `app/lib/__tests__/animStrip.test.ts`（新增 270 行） | GEOM-01/GEN-08 断言 + 探针 sha 漂移锚点 | 读 `.ie/probe/`（gitignored）与 `01-PROBE-RECORD.md`；**测试文件可 import node**（非产品面） |
+| `app/lib/__tests__/animSet.test.ts`（新增 236 行） | GEN-07/GEOM-03 断言 | 无 |
+| `.planning/phases/02-pure-core/*.md`、`ROADMAP.md`、`REQUIREMENTS.md` | 计划、两份 SUMMARY、状态翻牌 | 无 |
+
+**未触碰**：`app/lib/aspectRatio.ts` 与 `app/api/generate/route.ts`（Phase 1 的 invariant）——`git log 6bac853^..HEAD -- <两者>` 输出**为空**。`package.json` / `package-lock.json` 相对 Phase 1 结束时 `git diff --stat 59d5acd..HEAD` **为空**：本 phase **零新依赖**。
+
+## P2-2. 真正的边界：prompt 模板决定模型画什么
+
+- **本 phase 把"要什么画面"从散文变代码。** `buildStripPrompt()` 生成的文本直接进 Phase 4 的出网请求体。它是**唯一**构造该文本的地方，且与 Phase 1 真花过钱的那段**逐字节相同**（sha256 `9d966280…cfe8a6`，我实跑复现）。
+- **为什么这是安全面而不是纯功能面**：prompt 里的"约束句"（格内包含、纯洋红场、禁卡片/文字/网格线）是**防模型画错东西**的护栏。护栏被删 = 花真钱换回不可用的图（消费端 `remove_card`/`keep_main_blob` 的抠底会失败）。护栏由**常量串**给出（`STRIP_CONSTRAINTS`，`animStrip.ts:263`），并有断言钉住四条短语——我实跑确认四条都在 prompt 文本里。
+- **方向顺序即契约**：`DIRS8` 的顺序错位会让消费端 `enemy.gd` 的行映射整体偏移，**渲染出错误朝向且无任何报错**（`.planning/research/PITFALLS.md:507`）。顺序由 `DIRS8`/`DIRS4` 常量表唯一持有（`grep -rln "DIRS8 = \[" app/ scripts/` → **仅** `animStrip.ts` 一个文件），并有精确到逗号分隔串的断言。
+- **不引入输入面**：`buildStripPrompt` 的三个字符串入参（`subject`/`motion`/`styleText`）来自 spec，而 spec 由 `validateAnimSetSpec` 白名单重建（P2-4）；`styleText` 内联进 prompt 是**产品要求**（"闭集风格表无法表达某个游戏自己的风格"，`animStrip.ts:277`），不是注入缺陷——它的消费者是图像模型，不是 shell/SQL/HTML。
+- **残余风险（非阻断）**：`styleText`/`subject` 无长度上限。一个异常长的 `styleText` 会撑大请求体（Phase 4 的载荷约束在 spec v2 §8 另有闸门）。加固方式：在 `requireString` 上加一个上限（例如 2000 字符），或在 Phase 4 的出网前加总长断言。
+
+## P2-3. `out` 是唯一未被约束的字符串 —— 本 phase 最实的一处发现
+
+- **实测**：`validateAnimSetSpec` 对 `out` 只调 `requireString`（非空字符串），因此 `{ out: "../../../../tmp/evil" }` **被接受并原样返回**（我实跑打印确认：`spec.out === "../../../../tmp/evil"`）。
+- **为什么这不是本 phase 的缺口**：(a) plan 第 4 条与 spec v2 §5.1 的校验清单**都只要求** `out` 是非空字符串，把它做成路径约束是本 phase 范围内的**未要求加固**；(b) `out` **不进入** `set.json`——我实读 `buildSetJson` 的返回体（:365-386），九个字段里没有它；(c) `out` 的**唯一消费者**是 Phase 4 的 runner（写盘根），而 Phase 4 的威胁模型里"用户给自己的工具指一个写盘目录"不是攻击面（BYOK + 单人）。
+- **但它确实是这个模块里唯一"任意字符串 → 未来的文件系统调用"的通道**，所以记在这里供 Phase 4 收口：runner 落盘前应把 `out` 约束在项目工作区内（`path.resolve` 后与 cwd 做前缀检查，或干脆在 CLI 层解析而非从 spec 直取）。**现在不做**，因为这个模块**不碰文件系统**——`animStrip.ts` 与 `animSet.ts` 的纯度是 D-21 硬保证（我实跑浏览器打包，产物无 `require(`/`node:`）。
+- **生成的文件名是安全的**：`stripFile()`/`frameFile()` 的文件名由**已校验**的 `state`（`/^[a-z0-9][a-z0-9-]{0,31}$/`）与固定字面量拼出，无路径分隔符可注入。我实跑四个非法名（`../../etc`、`a/b`、`../x`、`a.b`）**全部被拒**，且 `stripFile`/`frameFile` 的输出经 plan 闸门 2 的 `FILE_RE` 正则逐条验证为 `raw/<name>_f<n>_8dir.png` / `derived/<name>_f<n>_<dir>.png`。
+
+## P2-4. 规格校验：白名单重建，未知键进 warning 而非 spec
+
+- **`validateAnimSetSpec` 返回的是重建的新对象**，不是 `{ spec: raw as AnimSetSpec }`。**实跑**：注入 `{ futureKnob: 1, isAdmin: true }` → 两条 warning、返回对象 `Object.keys` **恰为九个白名单字段**，`'futureKnob' in spec === false`、`'isAdmin' in spec === false`。这堵住了 mass assignment：一个前向兼容的未知键**无法**变成下游会读的字段。
+- **原型污染实测无面**：`JSON.parse('{…"__proto__":{"polluted":true}}')` 走完整条校验 → `Object.prototype.polluted` 为 `undefined`；未知键 `__proto__` 只产出一条 warning。原因是没有 `Object.assign(target, raw)` 之类的合并路径，且未知键被丢弃而不是拷贝。
+- **类型混淆守卫实测**：`states: null`、`states: {}`、`cell: "512"`、`loop: 1`、`frames: 1.5` **全部被拒**（`isRecord`/`Number.isInteger`/`requireBoolean` 各自把关）。`frames: 1.5` 走 `requireInteger` 抛而非静默截断——消费端的 `frame = row * FRAMES + col` 寻址靠这个。
+- **"一个调用都不发"是结构性的，不是承诺**：`validateAnimSetSpec` 是纯函数，模块零 I/O（`grep -nE "from '(node:|next|react)"` 0 命中；浏览器打包无 `node:`）。15 条硬错逐条断言，其中 11 条有 label 计数（plan 闸门 3 的 `= "11"` 硬计数，我实跑通过，且实测 label 无重复——`grep` 是逐行计数而清单里没有任何 label 是另一条的子串）。
+
+## P2-5. 续跑判定：把"文件存在"从完成判据里剔除
+
+- **`nextPending` 的完成来自 `记录 + 运行器事实`，不是文件系统。** 我实跑四条：`ok:true` + `rawDecodable:false` → `'raw-unreadable'`；facts 里**缺**该键 → 仍待办（**沉默不等于成功**）；`derivedCount 7 < 8` → `'derived-short'`；重复 `(state,frame)` → 进 `duplicates` 且 `done` 不被虚增。
+- **为什么这是安全面**：消费端账本里"17 行 / 16 条 strip"的**重复计费**已付过一次（spec v2 §8，`animSet.ts:428` 注释）。一个把截断 PNG 当完成的判据会让 runner **跳过**重做，而跳过意味着**已经花掉的钱白花**（不是省钱）。`duplicates` 是给 Phase 4 断言"账本没被写重"的钩子。
+- **模块本身不识别文件系统**：`StripFacts` 是**入参**（`{ rawDecodable, derivedCount }`），注释 :391 明写 "passed in — never inspected here"。所以"截断的 PNG 算不算完成"这个判断**不可能**因为漏了一个 fs 调用而消失——它必须被显式传进来。
+- **残余风险（非阻断，属 Phase 4）**：`facts` 的**填充方**（Phase 4 runner 实际去 `stat`/解码的那些代码）还不存在，所以"运行器确实采了 rawDecodable 而不是恒传 `true`"这一段行为**未行使**。本 phase 只保证判据的形状正确；`rawDecodable: true` 的**来源**要等 Phase 4 落地后才能审。
+
+## P2-6. 仓库卫生：scratch、探针原文、跟踪状态
+
+- **`.ie/scratch/phase2-planner/`**（planner 自验留下的实现，4 个文件）**实测被 `.gitignore:59` 的 `.ie/` 覆盖**（`git check-ignore -v` 命中；`git ls-files .ie/` → 0 条）。密钥扫描 `sk-…`/`Bearer …`/`apiKey` **0 命中**。我逐文件 diff 到 shipped 版本：`animStrip.ts` 与 `animSet.test.ts` **逐字节相同**，`animSet.ts` 差 1 行、`animStrip.test.ts` 差 25 行（即两个被修的缺陷）。**无泄漏、无未跟踪的敏感产物。**
+- **`.ie/probe/chaser_idle_f1_8dir.png`**（1480226 B = 1.48 MB，模型真实返回的条带）仍在 `.ie/`（gitignored），符合"raw 不进仓库"的既定政策。它**未被**本次 commit 触碰。
+- **`tests/fixtures/anim/` 未被本次 commit 触碰**（Phase 1 入库的 945309 B 下采样）。
+- **gate 临时文件已清理**：六个闸门各自带 `trap 'rm -f …' EXIT`；我跑完后仓库根**没有** `.p1-gate-entry.ts` / `.p2-gate-entry.ts`（`ls -a | grep -i gate-entry` → 无），也没有 `.log` 残留。这是"闸门用完即走"的可复核证据（`1ae5bcd` 专门为此装了 trap）。
+- **`git status` 无未提交的 phase 工作**：`--untracked-files=no` 输出为空。未跟踪项恰为 `.omp/` 与 `.planning/state.json`（harness 自己写的状态，预期内）。
+- **仓库里没有新增的 MB 级被跟踪二进制**：本 phase 只新增两个 `.ts` 源码与两个测试文件。
+
+## P2-7. 我**没有**验证的（明确列出，不假装）
+
+1. **Phase 4/6 的实际消费者不存在。** 本 phase 交付的是**纯函数与契约**；"CLI 拿去用"、"UI 拿去用"这一段**未行使**。导出面由本 phase 的测试完整行使，但下游的接法在后续 phase 才可审。
+2. **`out` 落盘路径**（P2-3）：本模块不碰 fs，故没有可测的越界行为；真实风险在 Phase 4。
+3. **`facts` 的填充方**（P2-5）：`rawDecodable` 恒为 `true` 的错误实现在本 phase **测不出来**（本 phase 只消费它）。
+4. **prompt 里的自由文本注入到图像模型**的行为（P2-2）：`styleText` 是否真能诱导模型产出越格/场景化结果，需要真实付费调用才能观测——超出本 phase（零调用）的范围。
+5. **未做依赖/供应链审计。** 本 phase **零新依赖**（`package.json`/`package-lock.json` 相对 Phase 1 结束**未变**，由 `git diff --stat` 证明），但既有 `sharp`/Next/Playwright 版本的 CVE 我没查（同 Phase 1 §7.3）。
+6. **未验证消费端**（`~/repos/dark-black`）如何寻址这些帧；那里的 `enemy.gd`/`build_handpainted_sheets.py` 读取路径不在本 phase 范围内——本 phase 只保证**顺序与命名**与那里已记录的约定一致。
+
+## 结论
+
+本 phase 没有引入**新的**秘密暴露面（零网络、零文件系统、零新依赖、零跟踪的敏感产物）。真正的边界有两处：
+
+1. **prompt 模板**（决定模型画什么）——由常量护栏 + 与付费调用逐字节相同的 sha 锚点守住，方向顺序由单一常量表持有。
+2. **规格校验**（决定"钱花之前"是否拦住坏输入）——白名单重建、未知键降级为 warning 且不进 spec、原型污染与类型混淆实测无面。
+
+**新发现的非阻断项 1 条**：`out` 是唯一未被约束的字符串（P2-3），已移交 Phase 4 收口。
+**行为未行使项 2 条**：`facts` 的填充方（P2-5）、`out` 的落盘路径（P2-3）——两者都在后续 phase，本 phase 只保证判据与校验的形状正确。
+**Phase 1 的 6 条未验证项维持不变**（见上）；其中"studio 画布清单硬编码"与本 phase 无关。
+
+---
+
+*Phase 2 审阅：2026-10-07T03:57:34Z。对照 commit `6bac853`（4 个新文件，1257 行）与 `94001b3`（1 行产品改动 + 25 行测试 + 3 个 .md）。*
