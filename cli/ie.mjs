@@ -26,6 +26,7 @@ const COMMAND_MODULES = [
   './commands/studio.mjs',
   './commands/pixel.mjs',
   './commands/library.mjs',
+  './commands/anim.mjs',
   './commands/config.mjs',
 ]
 

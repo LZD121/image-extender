@@ -266,6 +266,24 @@ Studio commands also take `--library <project>/<slug>` (or
 `--overwrite` to replace an existing asset. Without `--overwrite` the CLI stops
 *before* spending an API call when the target already exists.
 
+Animation sets (server + cost only under `--go`):
+
+| Command | Notes |
+| --- | --- |
+| `ie anim plan --spec <file.json>` | per-strip canvas + call count + total + output root; **zero calls** |
+| `ie anim run --spec <file.json> [--go]` | without `--go` only previews (byte-identical to `plan`); `--go` generates serially and atomically writes `raw/` `derived/` `set.json` |
+
+The spec comes from `--spec <file.json>` (primary) or inline flags (secondary:
+`--actor --subject/--subject-file --states <json> --dirs dirs8|dirs4 --cell --style/--style-file --out`);
+both go through the same `validateAnimSetSpec`, so the hard errors are identical and
+happen before any call. `--states` takes the spec's own `states` array as JSON, e.g.
+`'[{"name":"idle","motion":"a calm breathing idle","frames":4,"fps":4,"loop":true}]'`.
+`--out` is the only field that may accompany `--spec`; any other inline field is a
+usage error. `<out>/set.json` is the ledger — rewritten atomically as each strip
+completes, and what a resumed run reads. `--model` / `--profile` / `--base-url` are
+the global flags, and the profile rides in the request **body** (a global `--profile`
+alone is ignored by the gateway).
+
 Asset library (no server):
 
 | Command | Notes |
