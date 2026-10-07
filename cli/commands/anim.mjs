@@ -403,8 +403,9 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
 
   // Everything done: the acceptance shape of a resumed run is ZERO calls — not
   // a log line claiming it skipped. Nothing is written and nothing is asked.
+  // `summary` is what human mode prints first, so the operator is not left
+  // guessing why a run ended before it started.
   if (!pending.length) {
-    ctx.note(`nothing to do — ${done}/${total} strips complete, zero calls`)
     return {
       summary: `anim set complete — 0 to do, ${done}/${total} done`,
       written: [],
@@ -413,7 +414,6 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
     }
   }
 
-  const summary = `anim set — ${pending.length} to do, ${done}/${total} done · out ${outRoot}`
   let ok = 0
   let failed = 0
 
@@ -542,7 +542,7 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
   if (failed) ctx.note(`${ok} ok, ${failed} failed`)
   if (redo) ctx.note(`--redo: ${pending.length} strip(s) re-done, the other rows are untouched`)
 
-  return { summary, written, strips: plan.map((p) => merged.get(mods.stripKey(p.state, p.frame))).filter(Boolean), setJson: setFile }
+  return { written, strips: plan.map((p) => merged.get(mods.stripKey(p.state, p.frame))).filter(Boolean), setJson: setFile }
 }
 
 const anim = {
