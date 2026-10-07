@@ -103,20 +103,21 @@
 由 roadmap 创建时填充。
 
 | Requirement | Phase | Status |
-| TRAN-01 | Phase 4 | Pending |
-| TRAN-02 | Phase 4 | Pending |
+|:--|:--|:--|
+| TRAN-01 | Phase 4 | Complete |
+| TRAN-02 | Phase 4 | Complete |
 | TRAN-03 | Phase 1 | Complete |
 | TRAN-04 | Phase 1 | Complete |
 | TRAN-05 | Phase 1 | Complete |
 | GEOM-01 | Phase 2 | Complete |
 | GEOM-02 | Phase 3 | Complete |
 | GEOM-03 | Phase 2 | Complete |
-| GEN-01 | Phase 4 | Pending |
-| GEN-02 | Phase 4 | Pending |
-| GEN-03 | Phase 4 | Pending |
-| GEN-04 | Phase 4 | Pending |
-| GEN-05 | Phase 4 | Pending |
-| GEN-06 | Phase 4 | Pending |
+| GEN-01 | Phase 4 | Complete |
+| GEN-02 | Phase 4 | Complete |
+| GEN-03 | Phase 4 | Complete |
+| GEN-04 | Phase 4 | Complete |
+| GEN-05 | Phase 4 | Complete |
+| GEN-06 | Phase 4 | Complete |
 | GEN-07 | Phase 2 | Complete |
 | GEN-08 | Phase 2 | Complete |
 | POST-01 | Phase 3 | Complete |
@@ -130,8 +131,8 @@
 | LIB-04 | Phase 5 | Pending |
 | LIB-05 | Phase 5 | Pending |
 | LIB-06 | Phase 5 | Pending |
-| CLI-01 | Phase 4 | Pending |
-| CLI-02 | Phase 4 | Pending |
+| CLI-01 | Phase 4 | Complete |
+| CLI-02 | Phase 4 | Complete |
 | CLI-03 | Phase 5 | Pending |
 | UI-01 | Phase 6 | Pending |
 | UI-02 | Phase 6 | Pending |
