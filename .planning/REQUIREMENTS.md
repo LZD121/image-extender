@@ -20,7 +20,7 @@
 ### GEOM — 几何
 
 - [x] **GEOM-01**: 面板网格由列质量剖面拟合 `(spacing, phase)`，纯函数、vitest 可测（均匀 / 相位偏移 / 噪声三种合成剖面）
-- [ ] **GEOM-02**: 每张 strip 断言每条切线落在接近空白的 gutter 列；失败即 `ok:false` 且保留 raw
+- [x] **GEOM-02**: 每张 strip 断言每条切线落在接近空白的 gutter 列；失败即 `ok:false` 且保留 raw
 - [x] **GEOM-03**: `set.json` 记录实际拟合值（spacing/phase/residual）与 gutter 判定结果
 
 ### GEN — 生成与续跑
@@ -36,11 +36,11 @@
 
 ### POST — 一张 strip → N 帧
 
-- [ ] **POST-01**: 链路 = panel-fit → chroma（按实测场色、二值）→ removeFrameBorder → isolate → 套固定 cell 居中；**不含基线对齐**
-- [ ] **POST-02**: 每个 best-effort 步骤返回计数器并写入 `set.json.steps`
-- [ ] **POST-03**: 每帧断言角点透明、内容 bbox 留边 ≥ 阈值
+- [x] **POST-01**: 链路 = panel-fit → chroma（按实测场色、二值）→ removeFrameBorder → isolate → 套固定 cell 居中；**不含基线对齐**
+- [x] **POST-02**: 每个 best-effort 步骤返回计数器并写入 `set.json.steps`
+- [x] **POST-03**: 每帧断言角点透明、内容 bbox 留边 ≥ 阈值
 - [ ] **POST-04**: 同一条链在 CLI（bridge op `strip-frames`）与 UI（同名函数）各调一次，无私有副本
-- [ ] **POST-05**: `node --test` 用已交付 `chaser` strip 对真实 PNG 字节跑通冒烟
+- [x] **POST-05**: `node --test` 用已交付 `chaser` strip 对真实 PNG 字节跑通冒烟
 
 ### LIB — 库与 provenance
 
