@@ -250,6 +250,18 @@ const PAGE_PROGRAM = async (job) => {
       }
       break
     }
+    case 'strip-frames': {
+      // One strip -> N frames, through the app's own chain. Deliberately NOT
+      // `sprite-align`: that op unconditionally runs a baseline alignment plus an
+      // interpolated rescale — the first plants top-down and bottom-up cells on a
+      // common floor (losing content), the second smears pixel art. The chain
+      // lives in the app module so the UI calls the identical one (spec §4).
+      const r = await IE.planStripFrames(IN[0], { ...opts, dirs: opts.dirs })
+      out.meta = r.meta                    // why it failed must reach the CLI either way
+      if (!r.meta.ok) break               // no half a set: spec §8 keeps the raw
+      out.data = r.frames
+      break
+    }
     case 'pose-guide': {
       // The app's deterministic skeletal pose map: measure the subject in the
       // anchor frame, then draw one mannequin per frame via the body-plan rig.

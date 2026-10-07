@@ -243,7 +243,7 @@ Post-processing (no server, no cost):
 
 | Command | Notes |
 | --- | --- |
-| `ie chroma <in> <out> [--preset default\|tile\|prop\|despill] [--role <role>]` | key flat magenta to alpha |
+| `ie chroma <in> <out> [--preset default\|tile\|prop\|despill\|binary] [--role <role>]` | key flat magenta to alpha |
 | `ie slice <in> <outdir> --cols N --rows N [--cell N]` | one PNG per cell |
 | `ie tileable <in> <out> [--axis both\|horizontal\|vertical] [--key-magenta]` | seamless tiling |
 | `ie tile-guide <out.png>` | the 8×8 template guide (4096²) |

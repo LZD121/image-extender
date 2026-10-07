@@ -54,4 +54,16 @@ export const CHROMA_PRESETS = {
   prop: { castThreshold: 70, castSoftness: 30, despill: 1, despillGreenBoost: 0.5 },
   /** An opaque cell: never transparent, only neutralizes a magenta cast. */
   despill: { castThreshold: 256, castSoftness: 0, despill: 1, despillGreenBoost: 0.6 },
+  /** An 8-direction strip's field: saturated magenta, and the model paints a
+   *  magenta WASH behind some cells. Measured on the real strips, the creature's
+   *  own cast tops out at 99 (11 or less at the p99.9 after a 6px erode) while the
+   *  wash runs 132..219, so 128 splits them. Softness 0 is the point: a ramp would
+   *  leave a translucent film across every cell -- measured 2595 partial-alpha
+   *  pixels for `default` on the committed fixture, 0 here. Despill stays on; the
+   *  wash's RGB really is magenta and has to come off the surviving edge pixels.
+   *
+   *  The field itself is sampled per strip (`sampleFieldRgb`), never assumed: the
+   *  two real strips measure #FD05FA (cast 245) and #FC06FA (cast 244), and this
+   *  threshold sits below both while staying above the creature. */
+  binary: { castThreshold: 128, castSoftness: 0, despill: 1, despillGreenBoost: 0.5 },
 } as const satisfies Record<string, ChromaPreset>

@@ -11,13 +11,13 @@ const AXIS_TO_BRIDGE = { both: undefined, horizontal: 'h', vertical: 'v' }
 
 const chroma = {
   summary: 'key a flat magenta background out of an image (alpha)',
-  usage: 'ie chroma <in.png> <out.png> [--preset default|tile|prop|despill] [--role <tileRole>]',
+  usage: 'ie chroma <in.png> <out.png> [--preset default|tile|prop|despill|binary] [--role <tileRole>]',
   options: { preset: { type: 'string' }, role: { type: 'string' } },
   async run(ctx) {
     const input = positional(ctx.args, 0, 'in.png', ctx.spec)
     const out = positional(ctx.args, 1, 'out.png', ctx.spec)
     ensureFile(input)
-    const preset = enumFlag(ctx.flags, 'preset', ['default', 'tile', 'prop', 'despill'], 'default', ctx.spec)
+    const preset = enumFlag(ctx.flags, 'preset', ['default', 'tile', 'prop', 'despill', 'binary'], 'default', ctx.spec)
     const result = ctx.bridge({
       op: 'chroma',
       opts: { preset, ...(ctx.flags.role ? { role: ctx.flags.role } : {}) },
