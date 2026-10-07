@@ -11,7 +11,7 @@
 
 ### TRANSPORT — 尺寸与传输
 
-- [ ] **TRAN-01**: 每张 strip 都记录 `requested` 尺寸，并在返回后**从实际字节**计算 `returned` 尺寸
+- [x] **TRAN-01**: 每张 strip 都记录 `requested` 尺寸，并在返回后**从实际字节**计算 `returned` 尺寸
 - [ ] **TRAN-02**: `returned` 宽高比 ≠ `requested` 时该条 `ok:false` 且不进入切格
 - [x] **TRAN-03**: 一次真实探针（一次付费调用）记录 returned 尺寸 / 拟合间距 / 场色，结论固化成常量或 profile 配置
 - [x] **TRAN-04**: 若探针证明现有通路送不出 8:1/4:1，比例表按 spec §9.3 放宽，且六个既有 studio 请求的档位不变（回归断言）
@@ -27,10 +27,10 @@
 
 - [x] **GEN-01**: `ie anim plan` 打印逐 strip 画布 + 调用数 + 总量 + 输出根，且**零调用**
 - [x] **GEN-02**: `ie anim run` 不带 `--go` 时零调用（输出与 plan 等价）
-- [ ] **GEN-03**: 每张完成即**原子写** raw（temp+rename），中断不留截断文件
+- [x] **GEN-03**: 每张完成即**原子写** raw（temp+rename），中断不留截断文件
 - [ ] **GEN-04**: 续跑判定来自记录（`ok` ∧ raw 可解码 ∧ derived 数量符合预期）；截断 raw 视为未完成并重跑
-- [ ] **GEN-05**: ledger 按 `(state, frame)` 合并并断言唯一（同一 `state:frame` 不出现两行）
-- [ ] **GEN-06**: 失败默认停止；`--keep-going` 继续；`--redo state:frame` 只重跑该条
+- [x] **GEN-05**: ledger 按 `(state, frame)` 合并并断言唯一（同一 `state:frame` 不出现两行）
+- [x] **GEN-06**: 失败默认停止；`--keep-going` 继续；`--redo state:frame` 只重跑该条
 - [x] **GEN-07**: 规格非法（每状态帧数不一致 / `cell×dirs>4096` / 未知 dirs 预设 / 空 states）在**任何调用之前**报错
 - [x] **GEN-08**: prompt 含逐格方向枚举、格内包含、纯洋红场、禁卡片/文字/网格线；风格文本内联
 

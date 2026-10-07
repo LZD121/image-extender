@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 04
 current_phase_name: CLI runner（ie anim plan / run --go）
 status: executing
-stopped_at: Completed 04-01-PLAN.md (ie anim plan|run + --go gate + atomic single-strip pipeline)
-last_updated: "2026-10-07T16:24:42.631Z"
+stopped_at: Completed 04-02-PLAN.md (retry only the generation call, three walk modes, ledger merge uniqueness)
+last_updated: "2026-10-07T17:04:42.726Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 04 execution started
-state_head: 9ba3c027b045bdb961ebcd554c5148e32e307578
+state_head: 5c1c4a300d6f40452079433dffe96c1b911597b7
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
   percent: 14
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 04 (CLI runner（ie anim plan / run --go）) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 04 execution started
 
@@ -61,6 +61,7 @@ Progress: [█░░░░░░░░░] 14% (execution; phase verification pe
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 04 P01 | 8 min | 3 tasks | 5 files |
+| Phase 04 P02 | 4 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,7 @@ Recent decisions affecting current work:
 - [研究]: 复用 `sprite-align` 是错的——它无条件跑基线对齐；改为新 op `strip-frames`
 - [Phase 04]: --keep-going / --redo stay undeclared this wave: strict parse refuses them — a declared-but-ignored flag turns `--redo idle:2` into a silently full-priced run; a usage error is the honest state until 04-02 implements them.
 - [Phase 04]: The ledger merges by state:frame from day one (writeFileAtomic + a keyed Map) — The consumer's 17-rows-for-16-strips duplication came from appending; merging is free here and is what 04-02's uniqueness assertion builds on.
+- [Phase 04]: Failing strips stop the round by default; --keep-going continues, --redo redoes one strip, and the ledger merges by stripKey with duplicate_ledger/bad_ledger as loud refusals — D-30: one permanent failure must not silently keep spending; the retry wraps only the generation call because each retry is another paid image
 
 ### Pending Todos
 
@@ -99,6 +101,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-07T16:24:39.486Z
-Stopped at: Completed 04-01-PLAN.md (ie anim plan|run + --go gate + atomic single-strip pipeline)
+Last session: 2026-10-07T17:04:42.710Z
+Stopped at: Completed 04-02-PLAN.md (retry only the generation call, three walk modes, ledger merge uniqueness)
 Resume file: None
