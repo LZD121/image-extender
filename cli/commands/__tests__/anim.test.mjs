@@ -24,7 +24,8 @@ import sharp from 'sharp'
 import { nodeBundle } from '../../native/bundle.mjs'
 import { CliError, parseCommand } from '../../lib/args.mjs'
 import { dataUrlFromFile } from '../../lib/media.mjs'
-import commands from '../anim.mjs'
+import { routeError } from '../../lib/server.mjs'
+import commands, { generateWithRetry, isRetryable } from '../anim.mjs'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const FIXTURE = path.join(REPO, 'tests/fixtures/anim/chaser_idle_f1_8dir.png')
@@ -170,13 +171,13 @@ async function ctxFor(args, flags = {}, seams = {}) {
   return {
     args,
     flags,
-    spec: commands.anim,
+    spec: seams.retryDelays ? { ...commands.anim, retryDelays: seams.retryDelays } : commands.anim,
     json: true,
     profile: seams.profile,
     model: seams.model,
     config,
     baseUrl: 'http://127.0.0.1:1',
-    note() {},
+    note: seams.note || (() => {}),
     fail(code, message, detail) {
       throw new CliError(code, message, detail)
     },
@@ -205,6 +206,110 @@ const tree = (dir) => (existsSync(dir) ? readdirSync(dir, { recursive: true }).m
 const tempsIn = (dir) => tree(dir).filter((name) => name.includes('.tmp-'))
 const derivedNames = (out) => (existsSync(path.join(out, 'derived')) ? readdirSync(path.join(out, 'derived')).sort() : [])
 const DIRS8 = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east']
+
+/** A sleeping table that records what it was asked to wait, in milliseconds. */
+function sleepLog() {
+  const sleeps = []
+  return { sleeps, sleep: (ms) => { sleeps.push(ms); return Promise.resolve() } }
+}
+
+/** The shape `routeError` produces: the code, and the HTTP status on the error. */
+const routeFailed = (status) => routeError('generate', { status, ok: false, body: { error: 'upstream unavailable' } })
+
+describe('ie anim — the retry boundary', () => {
+  it('retries a network failure once, and only after 2s', async () => {
+    const { sleeps, sleep } = sleepLog()
+    const attempts = []
+    const { value, attempts: count } = await generateWithRetry(async () => {
+      attempts.push(1)
+      if (attempts.length < 2) throw Object.assign(new Error('connect reset'), { code: 'request_failed' })
+      return 'img'
+    }, { sleep })
+
+    expect(value).toBe('img')
+    expect(count).toBe(2)
+    expect(sleeps).toEqual([2000])
+  })
+
+  it('gives a 5xx two retries and then throws with every attempt on it', async () => {
+    const { sleeps, sleep } = sleepLog()
+    const seen = []
+    let thrown = null
+    try {
+      await generateWithRetry(async () => { seen.push(1); throw routeFailed(503) }, { sleep })
+    } catch (err) { thrown = err }
+
+    expect(thrown).toBeTruthy()
+    expect(seen.length).toBe(3)
+    expect(sleeps).toEqual([2000, 8000])
+    expect(thrown.attempts).toEqual(['route_failed', 'route_failed', 'route_failed'])
+  })
+
+  it('does not retry a 4xx and does not even wait', async () => {
+    for (const status of [400, 413]) {
+      const { sleeps, sleep } = sleepLog()
+      let seen = 0
+      try {
+        await generateWithRetry(async () => { seen++; throw routeFailed(status) }, { sleep })
+      } catch { /* the point is the attempt count */ }
+      expect(seen).toBe(1)
+      expect(sleeps).toEqual([])
+    }
+  })
+
+  it('makes a first-try success cost one attempt and zero waits', async () => {
+    const { sleeps, sleep } = sleepLog()
+    const { value, attempts } = await generateWithRetry(async () => 'img', { sleep })
+    expect(value).toBe('img')
+    expect(attempts).toBe(1)
+    expect(sleeps).toEqual([])
+  })
+
+  // The class the CLI's own classification must not read again: route bodies are
+  // `{error: …}`, so a status only visible in `detail` is a status nothing can
+  // see. `routeError` is the throw point and owns it.
+  it('makes routeError own the status, not the route body', () => {
+    const err503 = routeError('generate', { status: 503, ok: false, body: { error: 'upstream unavailable' } })
+    expect(err503.status).toBe(503)
+    expect(err503.detail.status).toBeUndefined()
+    expect(isRetryable(err503)).toBe(true)
+
+    const err400 = routeError('generate', { status: 400, ok: false, body: { error: 'bad request' } })
+    expect(err400.status).toBe(400)
+    expect(isRetryable(err400)).toBe(false)
+
+    expect(isRetryable(Object.assign(new Error('boom'), { code: 'request_failed' }))).toBe(true)
+    expect(isRetryable(Object.assign(new Error('nope'), { code: 'no_image' }))).toBe(false)
+    expect(isRetryable(null)).toBe(false)
+  })
+
+  // The whole path, not a hand-built CliError: the stub gateway answers the way
+  // a route really does (`{error}` + a 503), the real `routeError` throws, and
+  // the pipeline retries twice. The defect this arm exists for (classifying by
+  // `detail.status`) reads `apiCalls === 1` here and reddens.
+  it('retries twice through the pipeline when a live route answer is a 503', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(spec({ out, states: ONE_STATE }), 'one.json')
+    const apiCalls = { count: 0 }
+    const bridgeCalls = { count: 0 }
+    const notes = []
+    const api = async () => {
+      apiCalls.count++
+      throw routeError('generate', { status: 503, ok: false, body: { error: 'upstream unavailable' } })
+    }
+    const bridge = () => { bridgeCalls.count++; return { ok: true, data: [], meta: fixtureMeta(), written: [] } }
+
+    await expect(
+      runCli(['run', '--spec', file, '--go'], { api, bridge, note: (m) => notes.push(m), retryDelays: [0, 0] })
+    ).rejects.toMatchObject({ code: 'route_failed' })
+    expect(apiCalls.count).toBe(3)
+    expect(notes.filter((m) => m.includes('retry')).length).toBe(2)
+    expect(bridgeCalls.count).toBe(0)
+    // Nothing was cut, and nothing but the ledger was written: the failure paid
+    // for no image (the reply never came) and left no derived frame behind.
+    expect(existsSync(path.join(out, 'raw/idle_f1_8dir.png'))).toBe(false)
+  })
+})
 
 describe('ie anim — the dry path', () => {
   it('plans without a single seam invocation and without a single write', async () => {

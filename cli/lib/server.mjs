@@ -189,5 +189,10 @@ export async function apiCall(baseUrl, route, body, { headers } = {}) {
 export function routeError(route, result) {
   const message = result?.body?.error
   const detail = typeof message === 'string' ? message : JSON.stringify(result?.body || {}).slice(0, 400)
-  return new CliError('route_failed', `${route} → HTTP ${result.status}: ${detail}`, result?.body)
+  const err = new CliError('route_failed', `${route} → HTTP ${result.status}: ${detail}`, result?.body)
+  // The status belongs to the ERROR, not to the route body: bodies are
+  // `{error: …}`, so classifying by `detail.status` made every live 5xx look
+  // permanent and the retry never ran. One owner, read directly.
+  err.status = typeof result?.status === 'number' ? result.status : null
+  return err
 }

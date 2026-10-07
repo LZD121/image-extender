@@ -48,6 +48,48 @@ const SUBCOMMAND_LINES = [
 
 const MODULES = ['app/lib/animSet', 'app/lib/animStrip']
 
+/** 2s then 8s: enough for the gateway's ~15s ceiling to clear, ~10s total when it never does. */
+const RETRY_DELAYS_MS = [2000, 8000]
+
+/**
+ * The POST, retried. Retrying means paying again, so this wraps ONE call and
+ * never the pipeline around it: a failure after the image arrived must not
+ * buy a second image, and a failure *of* the image is the only thing worth
+ * waiting out.
+ */
+export async function generateWithRetry(call, opts = {}) {
+  const delays = opts.delays || RETRY_DELAYS_MS
+  const sleep = opts.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)))
+  const attempts = []
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return { value: await call(), attempts: attempts.length + 1 }
+    } catch (err) {
+      attempts.push(err)
+      const retryable = isRetryable(err)
+      if (!retryable || attempt >= delays.length) {
+        err.attempts = attempts.map((e) => e.code || e.name)
+        throw err
+      }
+      if (opts.onRetry) opts.onRetry(attempt + 1, delays[attempt], err)
+      await sleep(delays[attempt])
+    }
+  }
+}
+
+/** Network trouble and 5xx are worth another try; a 4xx answer to the same body never is. */
+export function isRetryable(err) {
+  if (!err) return false
+  if (err.code === 'request_failed') return true // fetch threw: DNS/reset/timeout
+  if (err.code !== 'route_failed') return false
+  // The HTTP status lives on the error itself (set by routeError). It used to
+  // be read from `err.detail`, which is the route body — and every route body
+  // is `{error: …}`, so a live 503 arrived with `detail.status === undefined`
+  // and spec §8's retry silently did not exist.
+  const status = err.status
+  return typeof status === 'number' && (status === 429 || status >= 500)
+}
+
 /** Inline flags that conflict with `--spec` — `--out` is the one legal override. */
 const INLINE_FLAGS = ['actor', 'subject', 'subject-file', 'states', 'dirs', 'cell', 'style', 'style-file']
 
@@ -248,15 +290,21 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
     ctx.note(`[${i + 1}/${plan.length}] ${item.state} f${item.frame + 1} → ${item.width}x${item.height}`)
 
     const started = Date.now()
-    const res = await ctx.api('generate', {
-      prompt: item.prompt,
-      width: item.width,
-      height: item.height,
-      model,
-      // profile/model ride in the BODY: a global `--profile` is ignored by the
-      // gateway (Phase 1 measured it). `llmFields()` is the only implementation.
-      ...ctx.llmFields(),
-    })
+    // `<spec>.retryDelays` is the test seam: the four unit arms assert the real
+    // 2s/8s table, while the pipeline arms inject ~0ms so a run that retries
+    // does not cost ten seconds of wall clock per suite.
+    const { value: res, attempts } = await generateWithRetry(
+      () => ctx.api('generate', {
+        prompt: item.prompt,
+        width: item.width,
+        height: item.height,
+        model,
+        // profile/model ride in the BODY: a global `--profile` is ignored by the
+        // gateway (Phase 1 measured it). `llmFields()` is the only implementation.
+        ...ctx.llmFields(),
+      }),
+      { delays: ctx.spec && ctx.spec.retryDelays, onRetry: (n, ms, e) => ctx.note(`  retry ${n}/2 after ${ms / 1000}s: ${e.message}`) }
+    )
     if (!res || !res.imageUrl) {
       ctx.fail('no_image', `generate answered without an imageUrl for ${item.state} f${item.frame + 1}`)
     }
@@ -289,7 +337,7 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
       written.push(writeDataUrl(op.data[cell], path.join(outRoot, mods.frameFile(item.state, item.frame, dir))))
     })
     commit(recordFor(mods, item, spec, { ok: true, seconds, size, meta }))
-    ctx.note(`ok ${seconds}s`)
+    ctx.note(`ok ${seconds}s${attempts > 1 ? ` (${attempts} attempts)` : ''}`)
   }
 
   return { written, strips: [...strips.values()], setJson: setFile }
