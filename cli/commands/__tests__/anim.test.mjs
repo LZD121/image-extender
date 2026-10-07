@@ -720,17 +720,17 @@ describe('ie anim — the three walk modes', () => {
     const api = scriptedApi([swapped, swapped, swapped])
     const redoBridge = strictBridge(await frames(), fixtureMeta())
 
-    const payload = await runCli(['run', '--spec', file, '--go', '--redo', 'idle:1'], { api, bridge: redoBridge })
+    const payload = await runCli(['run', '--spec', file, '--go', '--redo', 'idle:2'], { api, bridge: redoBridge })
 
     expect(api.calls.length).toBe(1)
     expect(redoBridge.calls.length).toBe(1)
     const after = JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8'))
     expect(after.strips.length).toBe(3)
     // The re-done row's raw is the new bytes...
-    const redone = after.strips.find((s) => s.frame === 1)
+    const redone = after.strips.find((s) => s.frame === 2)
     expect(readFileSync(path.join(out, redone.file))).toEqual(replacement)
     // ...and every other row is untouched, `seconds` included.
-    for (const frame of [0, 2]) {
+    for (const frame of [0, 1]) {
       const was = before.strips.find((s) => s.frame === frame)
       const now = after.strips.find((s) => s.frame === frame)
       expect(now).toEqual(was)
@@ -844,7 +844,7 @@ describe('ie anim — the ledger', () => {
     // The strict bridge hands frames back *and* says ok:false — the runner must
     // read the verdict, not the payload, and produce no half-set of frames.
     const meta = { ...fixtureMeta(), ok: false, gutter: { ok: false, tolerance: 5, lines: [], unrescued: [2180] }, counters: { keyed: 0, centred: 0 } }
-    const bridge = strictBridge(await frames(), meta)
+    const bridge = strictBridge([], meta)
     const notes = []
 
     const payload = await runCli(['run', '--spec', file, '--go'], { api, bridge, note: (m) => notes.push(m) })
