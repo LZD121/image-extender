@@ -71,6 +71,22 @@ export async function imageSize(file) {
 }
 
 /**
+ * Does this file decode as a whole image? `metadata()` only reads the header —
+ * measured: a PNG truncated to 60% still reports 2048x246 there, while a full
+ * decode throws `pngload: libspng read error`. Resume decisions need the full
+ * decode, because "the file exists" (or worse, "the header parses") is exactly
+ * how the consumer's ledger got 17 rows for 16 strips.
+ */
+export async function decodesAsImage(file) {
+  try {
+    await sharp(file).raw().toBuffer()
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * The real pixel size of what a model returned — worth recording, because a
  * gateway may answer a 4096² request with a 1024² image (the app's own
  * provenance has `returned` for exactly this reason).

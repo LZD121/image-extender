@@ -23,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import sharp from 'sharp'
 import { nodeBundle } from '../../native/bundle.mjs'
 import { CliError, parseCommand } from '../../lib/args.mjs'
-import { dataUrlFromFile } from '../../lib/media.mjs'
+import { dataUrlFromFile, decodesAsImage, imageSize } from '../../lib/media.mjs'
 import { routeError } from '../../lib/server.mjs'
 import commands, { generateWithRetry, isRetryable } from '../anim.mjs'
 
@@ -606,6 +606,32 @@ describe('ie anim — the write path', () => {
     expect(tempsIn(out)).toEqual([])
     expect(derivedNames(out).length).toBe(before)
     expect(existsSync(path.join(out, 'raw/idle_f1_8dir.png'))).toBe(true)
+  })
+})
+
+describe('ie anim — resume facts', () => {
+  // `metadata()` reads the header; a truncated PNG still parses there. A resume
+  // decision built on it counts half an image as finished — R7's 17-rows-for-16
+  // ledger exactly. Both halves are asserted on the SAME file, so this arm
+  // records the trap rather than accidentally seeing `false`.
+  it('fully decodes a whole file, and refuses a truncated one that metadata() still reads', async () => {
+    expect(await decodesAsImage(FIXTURE)).toBe(true)
+
+    const bytes = readFileSync(FIXTURE)
+    const trunc = path.join(root, 'truncated.png')
+    writeFileSync(trunc, bytes.subarray(0, Math.floor(bytes.length * 0.6)))
+
+    expect(await decodesAsImage(trunc)).toBe(false)
+    // If `metadata()` ever learns to see the truncation, this line reddens as
+    // "the trap no longer exists" — which is the signal to revisit the docblock
+    // and the resume facts' cost discussion, not to delete the assertion.
+    expect((await imageSize(trunc)).width).toBe(2048)
+  })
+
+  it('answers false for an empty file instead of throwing', async () => {
+    const empty = path.join(root, 'empty.png')
+    writeFileSync(empty, Buffer.alloc(0))
+    expect(await decodesAsImage(empty)).toBe(false)
   })
 })
 
