@@ -1011,6 +1011,88 @@ describe('ie anim — the three walk modes', () => {
   })
 })
 
+// CR-01. The failure class that is neither generation nor cutting: the reply
+// arrived (the money is spent) but nothing can decode it. Two post-generation
+// steps can throw — `toDataUrl` and `dataUrlSize` — and both sit after the paid
+// POST, so a run that dies there loses the ledger row for a strip it bought.
+// The money invariant is the second arm: a paid-for failure is never re-bought.
+describe('ie anim — a paid-for strip that cannot be decoded is booked, not lost', () => {
+  /** A gateway reply whose bytes are not an image: the money was already spent. */
+  const UNDECODABLE = 'data:image/png;base64,' + Buffer.from('<html>gateway error page</html>').toString('base64')
+  const TWO_FRAMES = [{ name: 'idle', motion: 'a calm breathing idle', frames: 2, fps: 4, loop: true }]
+  const twoFrameSpec = (out) => spec({ out, states: TWO_FRAMES })
+
+  it('books an ok:false row for strip 2, keeps its raw, and costs nothing on the next run', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(twoFrameSpec(out), 'two.json')
+    const good = dataUrlFromFile(FIXTURE)
+
+    // Run 1: strip 2 is paid for and answers with bytes nothing can decode. It
+    // must be booked — the ledger is what tells the next run not to buy it.
+    const api1 = scriptedApi([good, UNDECODABLE])
+    const notes1 = []
+    const payload = await runCli(['run', '--spec', file, '--go', '--keep-going'], {
+      api: api1,
+      bridge: strictBridge(await frames(), fixtureMeta()),
+      note: (m) => notes1.push(m),
+    })
+
+    expect(api1.calls.length).toBe(2)
+    const set = JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8'))
+    expect(set.strips.length).toBe(2)
+    expect(set.strips[0].ok).toBe(true)
+    expect(set.strips[1].ok).toBe(false)
+    expect(set.strips[1].state).toBe('idle')
+    expect(set.strips[1].frame).toBe(1)
+    // The failure message names the strip key, so the operator knows which one
+    // the money went to.
+    expect(notes1.some((m) => m.includes('idle:1') && /undecodable|cannot be decoded|unsupported image/i.test(m))).toBe(true)
+    expect(payload.strips.length).toBe(2)
+
+    // Run 2: the whole point. Strip 2 was paid for and is booked `ok:false`, so
+    // the resume decision must read it as a *recorded* failure (`not-ok`) and
+    // buy exactly one strip — never as `missing`, an unrecorded strip nothing
+    // remembers paying for. Without the booking, `set.strips[1]` does not exist,
+    // the reason is `missing`, and the money is gone with no trace.
+    const api2 = scriptedApi([good])
+    const notes2 = []
+    const payload2 = await runCli(['run', '--spec', file, '--go'], {
+      api: api2,
+      bridge: strictBridge(await frames(), fixtureMeta()),
+      note: (m) => notes2.push(m),
+    })
+
+    expect(api2.calls.length).toBe(1)
+    expect(notes2.some((m) => m.includes('idle:1') && m.includes('not-ok'))).toBe(true)
+    expect(notes2.some((m) => m.includes('idle:0'))).toBe(false)
+    expect(payload2.strips.find((s) => s.frame === 1).ok).toBe(true)
+  })
+
+  it('honours the default stop when a decode fails, and names the strip in the note', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(twoFrameSpec(out), 'two.json')
+    const good = dataUrlFromFile(FIXTURE)
+    const api = scriptedApi([UNDECODABLE])
+    const bridgeCalls = { count: 0 }
+    const notes = []
+
+    const payload = await runCli(['run', '--spec', file, '--go'], {
+      api,
+      bridge: strictBridge(await frames(), fixtureMeta()),
+      bridgeCalls,
+      note: (m) => notes.push(m),
+    })
+
+    expect(api.calls.length).toBe(1)
+    // The strip was never cut, and its row is booked.
+    expect(bridgeCalls.count).toBe(0)
+    const set = JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8'))
+    expect(set.strips[0].ok).toBe(false)
+    expect(notes.some((m) => m.includes('idle:0') && m.includes('stopped after'))).toBe(true)
+    expect(payload.strips.length).toBe(1)
+  })
+})
+
 describe('ie anim — the ledger', () => {
   it('keys every row once, and keeps the failed strip in frames[]', async () => {
     const out = path.join(root, 'out')

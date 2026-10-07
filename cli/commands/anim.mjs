@@ -463,14 +463,50 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
     if (!res || !res.imageUrl) {
       ctx.fail('no_image', `generate answered without an imageUrl for ${key}`)
     }
-    const dataUrl = await toDataUrl(res.imageUrl)
+
+    // Both steps below run AFTER the money is spent, so both are booked the way
+    // the retry-exhausted and `meta.ok:false` branches are. A throw here used to
+    // escape the loop entirely: no ledger row for a strip that was paid for, the
+    // run dead even under `--keep-going`, and the next run re-buying it as
+    // `missing`. The note names the key, because the key is what the money
+    // bought.
+    let dataUrl
+    try {
+      dataUrl = await toDataUrl(res.imageUrl)
+    } catch (err) {
+      const seconds = Number(((Date.now() - started) / 1000).toFixed(3))
+      failed++
+      ctx.note(`${key} failed: ${err.message}`)
+      commit(recordFor(mods, item, spec, { ok: false, seconds, size: null, meta: null }))
+      if (!keepGoing) {
+        ctx.note(`stopped after ${key} — pass --keep-going to run the rest`)
+        break
+      }
+      continue
+    }
 
     // raw lands BEFORE anything that could refuse the strip: it is the only
     // paid-for evidence, and every failure line in spec §8 keeps it.
     const rawPath = writeDataUrl(dataUrl, path.join(outRoot, mods.stripFile(item.state, item.frame, spec.dirs)))
     written.push(rawPath)
 
-    const size = await dataUrlSize(dataUrl)
+    // The bytes landed, so this failure keeps its raw (spec §8) — and the row
+    // that says `ok:false` is what stops the next run from reading the strip as
+    // `missing` and paying for it a second time.
+    let size
+    try {
+      size = await dataUrlSize(dataUrl)
+    } catch (err) {
+      const seconds = Number(((Date.now() - started) / 1000).toFixed(3))
+      failed++
+      ctx.note(`${key} has undecodable bytes: ${err.message}`)
+      commit(recordFor(mods, item, spec, { ok: false, seconds, size: null, meta: null }))
+      if (!keepGoing) {
+        ctx.note(`stopped after ${key} — pass --keep-going to run the rest`)
+        break
+      }
+      continue
+    }
     const seconds = Number(((Date.now() - started) / 1000).toFixed(3))
 
     // The ratio gate sits between "the bytes are safe" and "the cutter runs".
