@@ -161,11 +161,12 @@ status: complete
 
 Each task was committed atomically:
 
-1. **Task 1: `generateWithRetry` + the throw point owning the status** - `7c28b06` (feat)
-2. **Task 2: the three walk modes + ledger merge uniqueness** - `cf0cfad` (feat)
-3. **Plan-text fix: the gate's fixture spellings (see Deviations, Rule 1)** - `c7482cb` (docs)
+1. **Plan-text fix: the gate's fixture spellings (see Deviations, Rule 1)** - `c7482cb` (docs)
+2. **Task 1: `generateWithRetry` + the throw point owning the status** - `7c28b06` (feat)
+3. **Task 2: the three walk modes + ledger merge uniqueness** - `cf0cfad` (feat)
+4. **Arm spellings aligned with the plan's text (`--redo idle:2`, `data: []`)** - `bc82d8a` (test)
 
-**Plan metadata:** (this commit) (docs: complete plan)
+**Plan metadata:** `f0fea94` (docs: complete plan), `65ba421` + `35acf49` (docs: STATE/ROADMAP)
 
 ## Files Created/Modified
 
