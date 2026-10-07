@@ -4,8 +4,11 @@
  * Two subcommands and one gate. `plan` renders what a run would do; `run`
  * without `--go` renders the *same* plan (literally the same function, so the
  * two can never drift) and `--go` is the only switch that spends. Nothing on
- * the dry path touches `ctx.server()`, `ctx.api` or the filesystem: a preview
- * that costs a request, or a file, is a preview nobody dares run twice.
+ * the dry path touches `ctx.server()`, `ctx.api` or any output path: a preview
+ * that costs a request, or writes into the run directory, is a preview nobody
+ * dares run twice. The one file a cold `plan` may write is the esbuild bundle
+ * cache under `.ie/` (`ctx.modules` builds it before any subcommand can be
+ * dispatched); the zero-write arms cover the output root and the seams, not it.
  *
  * Everything that decides *what* the set is — validation, the plan, the file
  * names, the prompt, the ledger shape — lives in `app/lib/animSet.ts` +
@@ -202,7 +205,14 @@ function resolveSpec(ctx, mods) {
   for (const warning of validated.warnings) ctx.note('warning: ' + warning)
 
   const spec = validated.spec
-  return { spec, outRoot: path.resolve(ctx.flags.out || spec.out), model: ctx.model || spec.model }
+  // The ledger records the model the run actually asks for. `--model` must not
+  // be invisible to `set.json`: Phase 5's library save and Phase 6's UI read it
+  // as the only provenance source (R6), and a resumed ledger must not re-state a
+  // model the POST did not use. Neither `planStrips` nor `buildStripPrompt`
+  // reads this field — only the POST body and the ledger do.
+  const model = ctx.model || spec.model
+  spec.model = model
+  return { spec, outRoot: path.resolve(ctx.flags.out || spec.out), model }
 }
 
 /**
@@ -327,7 +337,7 @@ function recordFor(mods, item, spec, { ok, seconds, size, meta }) {
  * Read-only and network-free, so it may run over the whole plan; the cost is
  * the filesystem, which is the point — "the file exists" is not the fact.
  */
-async function collectFacts(spec, outRoot, record, mods) {
+async function collectFacts(spec, outRoot, mods) {
   const dirs = mods.dirsForPreset(spec.dirs)
   const facts = new Map()
   for (const item of mods.planStrips(spec)) {
@@ -381,22 +391,37 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
 
   const commit = (record) => {
     merged.set(mods.stripKey(record.state, record.frame), record)
-    // Row order is the plan's order, never the Map's insertion history.
-    const rows = plan.map((p) => merged.get(mods.stripKey(p.state, p.frame))).filter(Boolean)
-    const setJson = mods.buildSetJson({ spec, strips: rows, provider })
+    const setJson = mods.buildSetJson({ spec, strips: ledgerRows(), provider })
     const file = writeFileAtomic(setFile, Buffer.from(JSON.stringify(setJson, null, 2) + '\n'))
     if (!written.includes(file)) written.push(file)
     return record
+  }
+
+  // A shrunk spec must not eat the ledger: any row whose `(state, frame)` the
+  // current plan no longer names still has its bytes on disk, and `set.json` is
+  // the only provenance Phase 5 reads. Dropping it here would publish a set that
+  // silently omits strips that were paid for. Row order stays the plan's order,
+  // never the Map's insertion history.
+  const ledgerRows = () => {
+    const inPlan = new Set(plan.map((p) => mods.stripKey(p.state, p.frame)))
+    const planned = plan.map((p) => merged.get(mods.stripKey(p.state, p.frame))).filter(Boolean)
+    const orphans = [...merged.values()].filter((row) => !inPlan.has(mods.stripKey(row.state, row.frame)))
+    return [...planned, ...orphans]
   }
 
   // The record says what happened last time; the filesystem says what is there
   // now. `nextPending` is the only thing allowed to combine the two into "still
   // to do" — the CLI must not grow a second completion rule (T-04-15), because
   // two rules drift and the drifting one is always the looser.
-  const facts = await collectFacts(spec, outRoot, load.strips, mods)
-  const { pending, done, total, duplicates } = mods.nextPending(spec, load.strips, facts, {
-    redo: redo ? [...redo] : [],
-  })
+  const facts = await collectFacts(spec, outRoot, mods)
+  const result = mods.nextPending(spec, load.strips, facts, { redo: redo ? [...redo] : [] })
+  const { done, total, duplicates } = result
+  // `--redo k` means k and nothing else: the flag's docblock, docs/agent-api.md
+  // and the 04-02 implementation all say so. `nextPending` returns a union of the
+  // named keys and everything else still pending — right for the reason
+  // machinery, wrong as a work list — so the CLI narrows it here rather than
+  // letting a redo of one strip quietly spend on the rest.
+  const pending = redo ? result.pending.filter((p) => redo.has(mods.stripKey(p.state, p.frame))) : result.pending
   if (duplicates.length) {
     ctx.fail('duplicate_ledger', `two rows for ${duplicates.join(', ')} in ${setFile} — merge them before re-running`)
   }
@@ -578,7 +603,7 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
   if (failed) ctx.note(`${ok} ok, ${failed} failed`)
   if (redo) ctx.note(`--redo: ${pending.length} strip(s) re-done, the other rows are untouched`)
 
-  return { written, strips: plan.map((p) => merged.get(mods.stripKey(p.state, p.frame))).filter(Boolean), setJson: setFile }
+  return { written, strips: ledgerRows(), setJson: setFile }
 }
 
 const anim = {

@@ -384,15 +384,19 @@ describe('ie anim — the --go gate', () => {
     expect(existsSync(out)).toBe(false)
   })
 
-  it('declares --keep-going / --redo on run, and refuses them on plan', () => {
+  it('declares the run-only flags, and lets the strict parse accept them on run', async () => {
     const file = specFile(spec())
     // 04-01 asserted these were usage errors because they were undeclared
-    // (strict parse refused them). This wave implements them, so the honest
-    // assertion is that `run` accepts them and the preview still refuses them.
+    // (strict parse refused them). 04-02 implements them, so the parser accepts
+    // them on `run`; the *refusal* on the dry path lives in the handler.
     expect(() => parseCommand(['run', '--spec', file, '--keep-going'], commands.anim)).not.toThrow()
     expect(() => parseCommand(['run', '--spec', file, '--redo', 'idle:0'], commands.anim)).not.toThrow()
-    expect(() => parseCommand(['plan', '--spec', file, '--keep-going'], commands.anim)).not.toThrow()
     expect(() => parseCommand(['run', '--spec', file, '--frobnicate'], commands.anim)).toThrow(/frobnicate/)
+    // IN-01: the refusal itself used to redden nothing at all — this arm only
+    // asserted the parser. A dropped guard in the handler now fails here.
+    await expect(runCli(['plan', '--spec', file, '--keep-going'])).rejects.toThrow(/plan never continues/)
+    await expect(runCli(['run', '--spec', file, '--keep-going'])).rejects.toThrow(/only apply to a run/)
+    await expect(runCli(['plan', '--spec', file, '--redo', 'idle:0'])).rejects.toThrow(/never redoes|never continues/)
   })
 
   it('spends on run --go, one generation call per strip', async () => {
@@ -781,21 +785,6 @@ describe('ie anim — the aspect gate', () => {
     return 'data:image/png;base64,' + buf.toString('base64')
   }
 
-  async function one(out, extra = {}) {
-    const file = specFile(spec({ out, states: ONE_STATE }), 'one.json')
-    const apiCalls = { count: 0 }
-    const bridgeCalls = { count: 0 }
-    const notes = []
-    const payload = await runCli(['run', '--spec', file, '--go', ...(extra.flags || [])], {
-      api: extra.api || scriptedApi([dataUrlFromFile(FIXTURE)]),
-      bridge: extra.bridge || strictBridge(await frames(), fixtureMeta()),
-      apiCalls,
-      bridgeCalls,
-      note: (m) => notes.push(m),
-    })
-    return { payload, apiCalls, bridgeCalls, notes, out }
-  }
-
   // TRAN-02, the core arm: a square answer to an 8:1 request is refused BEFORE
   // the cut, because cutting would "fix" it — 8 normal-looking cells out of a
   // square — and the mistake would land in derived/ for Phase 5/6 to trust.
@@ -1009,6 +998,37 @@ describe('ie anim — the three walk modes', () => {
     expect(bridgeCalls.count).toBe(0)
     expect(existsSync(out)).toBe(false)
   })
+  // CR-02. The arm above starts from a COMPLETE set, where `pending` collapses to
+  // the one redo key — so the union `nextPending` returns is invisible to it.
+  // This is the shape a default-stopped run actually leaves behind: strip 0 done,
+  // strip 1 booked ok:false, strip 2 never reached. A redo of strip 1 must not
+  // quietly spend on strip 2.
+  it('does not quietly run the other strips still pending when a redo names one', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    const good = dataUrlFromFile(FIXTURE)
+    const undecodable = 'data:image/png;base64,' + Buffer.from('<html>gateway error page</html>').toString('base64')
+
+    // Pass 1 (default stop): strip 1 cannot be decoded, so it is booked ok:false
+    // and the run stops before strip 2.
+    const api1 = scriptedApi([good, undecodable])
+    await runCli(['run', '--spec', file, '--go'], { api: api1, bridge: strictBridge(await frames(), fixtureMeta()) })
+    expect(api1.calls.length).toBe(2)
+    expect(JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8')).strips.length).toBe(2)
+
+    // Pass 2: redo the one strip the operator named.
+    const api2 = scriptedApi([good])
+    const notes2 = []
+    await runCli(['run', '--spec', file, '--go', '--redo', 'idle:1'], {
+      api: api2,
+      bridge: strictBridge(await frames(), fixtureMeta()),
+      note: (m) => notes2.push(m),
+    })
+
+    expect(api2.calls.length).toBe(1)
+    expect(notes2.some((m) => m.includes('idle:1'))).toBe(true)
+    expect(notes2.some((m) => m.includes('idle:2'))).toBe(false)
+  })
 })
 
 // CR-01. The failure class that is neither generation nor cutting: the reply
@@ -1044,6 +1064,10 @@ describe('ie anim — a paid-for strip that cannot be decoded is booked, not los
     expect(set.strips[1].ok).toBe(false)
     expect(set.strips[1].state).toBe('idle')
     expect(set.strips[1].frame).toBe(1)
+    // The bytes landed, so the paid-for evidence stays (spec §8) — and the row
+    // records no size, because nothing could read one.
+    expect(existsSync(path.join(out, 'raw/idle_f2_8dir.png'))).toBe(true)
+    expect(set.strips[1].returned).toBe('')
     // The failure message names the strip key, so the operator knows which one
     // the money went to.
     expect(notes1.some((m) => m.includes('idle:1') && /undecodable|cannot be decoded|unsupported image/i.test(m))).toBe(true)
@@ -1194,5 +1218,87 @@ describe('ie anim — the ledger', () => {
     expect(set.strips[0].field.preset).toBe('binary')
     expect(set.strips[0].returned).toBe('2048x246')
     expect(notes.some((m) => m.includes('stopped after'))).toBe(true)
+  })
+})
+
+// CR-03. `--model` must not be invisible to the ledger: Phase 5's library save and
+// Phase 6's UI read `set.json` as the only provenance source (R6), so a resumed
+// ledger that names a model the POST never used is a lie with downstream readers.
+describe('ie anim — the ledger records the model the run actually asked for', () => {
+  it('writes the resolved model, not the spec default', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(spec({ out, states: ONE_STATE }))
+    const api = stubApi(dataUrlFromFile(FIXTURE))
+
+    await runCli(['run', '--spec', file, '--go'], {
+      api,
+      bridge: strictBridge(await frames(), fixtureMeta()),
+      model: 'OVERRIDE-MODEL',
+    })
+
+    const set = JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8'))
+    expect(api.bodies[0].body.model).toBe('OVERRIDE-MODEL')
+    expect(set.backend.model).toBe('OVERRIDE-MODEL')
+  })
+})
+
+// WR-04. A shrunk spec must not eat the ledger. The rows it no longer names still
+// have their bytes on disk, and `set.json` is what Phase 5 saves from — dropping
+// them publishes a set that silently omits strips that were paid for.
+describe('ie anim — the ledger survives a shrunk spec', () => {
+  it('keeps the rows a smaller plan no longer names', async () => {
+    const out = path.join(root, 'out')
+    const full = specFile(threeFrameSpec(out), 'three.json')
+    const good = dataUrlFromFile(FIXTURE)
+
+    const first = scriptedApi([good, good, good])
+    await runCli(['run', '--spec', full, '--go'], { api: first, bridge: strictBridge(await frames(), fixtureMeta()) })
+    expect(JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8')).strips.length).toBe(3)
+
+    // Truncate strip 0's raw so the next pass has real work to do — that is what
+    // makes it rewrite the ledger at all (an all-complete set writes nothing).
+    const rawPath = path.join(out, 'raw/idle_f1_8dir.png')
+    const bytes = readFileSync(rawPath)
+    writeFileSync(rawPath, bytes.subarray(0, Math.floor(bytes.length / 2)))
+
+    const one = specFile(spec({ out, states: ONE_STATE }), 'one.json')
+    await runCli(['run', '--spec', one, '--go'], { api: scriptedApi([good]), bridge: strictBridge(await frames(), fixtureMeta()) })
+
+    const set = JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8'))
+    expect(set.strips.length).toBe(3)
+    expect(set.strips.map((s) => s.frame)).toEqual([0, 1, 2])
+    expect(set.strips.find((s) => s.frame === 0).ok).toBe(true)
+  })
+})
+
+// CLI-01 (Nyquist gap). The registration in cli/ie.mjs is the only thing that
+// makes the command exist, and deleting it used to leave every test green.
+describe('ie — the anim command is registered', () => {
+  it('lists anim in the command table, through the real CLI', async () => {
+    const { execFileSync } = await import('node:child_process')
+    const ie = path.join(REPO, 'cli', 'ie.mjs')
+    const help = execFileSync(process.execPath, [ie, 'help'], { encoding: 'utf8' })
+    expect(help).toMatch(/anim/)
+    const animHelp = execFileSync(process.execPath, [ie, 'help', 'anim'], { encoding: 'utf8' })
+    expect(animHelp).toContain('ie anim plan')
+    expect(animHelp).toContain('ie anim run')
+  })
+})
+
+// GEN-06 (Nyquist gap). "The retry wraps the generation call only" had no
+// behavioural reverse arm: an extra paid `ctx.api('generate')` injected after an
+// op-level `ok:false` survived the whole suite. One strip, one strip refused by
+// the op, one POST — and the money invariant is the count, not the wording.
+describe('ie anim — an op failure buys nothing more', () => {
+  it('asks the gateway exactly once when the op refuses the strip', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(spec({ out, states: ONE_STATE }))
+    const api = stubApi(dataUrlFromFile(FIXTURE))
+    const meta = { ...fixtureMeta(), ok: false, gutter: { ok: false, tolerance: 5, lines: [], unrescued: [2180] } }
+
+    const payload = await runCli(['run', '--spec', file, '--go'], { api, bridge: strictBridge(await frames(), meta) })
+
+    expect(payload.strips[0].ok).toBe(false)
+    expect(api.bodies.length).toBe(1)
   })
 })
