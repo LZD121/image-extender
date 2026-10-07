@@ -271,7 +271,16 @@ Animation sets (server + cost only under `--go`):
 | Command | Notes |
 | --- | --- |
 | `ie anim plan --spec <file.json>` | per-strip canvas + call count + total + output root; **zero calls** |
-| `ie anim run --spec <file.json> [--go]` | without `--go` only previews (byte-identical to `plan`); `--go` generates serially and atomically writes `raw/` `derived/` `set.json` |
+| `ie anim run --spec <file.json> [--go] [--keep-going] [--redo state:frame]…` | without `--go` only previews (byte-identical to `plan`); `--go` generates serially and atomically writes `raw/` `derived/` `set.json` |
+
+A run stops at the first strip it cannot finish (after two backoff retries on
+network/5xx, booked `ok:false` with its raw kept); `--keep-going` continues to the
+end of the plan, and `--redo state:frame` re-does only the named strip (replacing
+its ledger row, leaving every other row untouched). `--redo` keys are resolved
+against the plan before anything is called: a key the plan does not contain, or
+one that is not `state:frame`, is a usage error. The ledger `<out>/set.json`
+merges rows by `state:frame` — two rows for one key are refused
+(`duplicate_ledger`), as is a ledger that will not parse (`bad_ledger`).
 
 The spec comes from `--spec <file.json>` (primary) or inline flags (secondary:
 `--actor --subject/--subject-file --states <json> --dirs dirs8|dirs4 --cell --style/--style-file --out`);

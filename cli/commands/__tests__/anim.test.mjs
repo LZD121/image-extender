@@ -285,8 +285,9 @@ describe('ie anim — the retry boundary', () => {
 
   // The whole path, not a hand-built CliError: the stub gateway answers the way
   // a route really does (`{error}` + a 503), the real `routeError` throws, and
-  // the pipeline retries twice. The defect this arm exists for (classifying by
-  // `detail.status`) reads `apiCalls === 1` here and reddens.
+  // the pipeline retries twice before booking the strip failed. The defect this
+  // arm exists for (classifying by `detail.status`) reads `apiCalls === 1` here
+  // and reddens.
   it('retries twice through the pipeline when a live route answer is a 503', async () => {
     const out = path.join(root, 'out')
     const file = specFile(spec({ out, states: ONE_STATE }), 'one.json')
@@ -299,14 +300,19 @@ describe('ie anim — the retry boundary', () => {
     }
     const bridge = () => { bridgeCalls.count++; return { ok: true, data: [], meta: fixtureMeta(), written: [] } }
 
-    await expect(
-      runCli(['run', '--spec', file, '--go'], { api, bridge, note: (m) => notes.push(m), retryDelays: [0, 0] })
-    ).rejects.toMatchObject({ code: 'route_failed' })
+    const payload = await runCli(['run', '--spec', file, '--go'], {
+      api,
+      bridge,
+      note: (m) => notes.push(m),
+      retryDelays: [0, 0],
+    })
+
     expect(apiCalls.count).toBe(3)
     expect(notes.filter((m) => m.includes('retry')).length).toBe(2)
     expect(bridgeCalls.count).toBe(0)
-    // Nothing was cut, and nothing but the ledger was written: the failure paid
-    // for no image (the reply never came) and left no derived frame behind.
+    // Nothing was cut and nothing was paid for twice: the strip is a failed
+    // ledger row, and the reply never arrived so there is no raw either.
+    expect(payload.strips[0].ok).toBe(false)
     expect(existsSync(path.join(out, 'raw/idle_f1_8dir.png'))).toBe(false)
   })
 })
@@ -378,10 +384,15 @@ describe('ie anim — the --go gate', () => {
     expect(existsSync(out)).toBe(false)
   })
 
-  it('rejects a flag this wave has not implemented instead of ignoring it', () => {
+  it('declares --keep-going / --redo on run, and refuses them on plan', () => {
     const file = specFile(spec())
-    expect(() => parseCommand(['run', '--spec', file, '--keep-going'], commands.anim)).toThrow(/keep-going/)
-    expect(() => parseCommand(['run', '--spec', file, '--redo', 'idle:2'], commands.anim)).toThrow(/redo/)
+    // 04-01 asserted these were usage errors because they were undeclared
+    // (strict parse refused them). This wave implements them, so the honest
+    // assertion is that `run` accepts them and the preview still refuses them.
+    expect(() => parseCommand(['run', '--spec', file, '--keep-going'], commands.anim)).not.toThrow()
+    expect(() => parseCommand(['run', '--spec', file, '--redo', 'idle:0'], commands.anim)).not.toThrow()
+    expect(() => parseCommand(['plan', '--spec', file, '--keep-going'], commands.anim)).not.toThrow()
+    expect(() => parseCommand(['run', '--spec', file, '--frobnicate'], commands.anim)).toThrow(/frobnicate/)
   })
 
   it('spends on run --go, one generation call per strip', async () => {
@@ -595,5 +606,257 @@ describe('ie anim — the write path', () => {
     expect(tempsIn(out)).toEqual([])
     expect(derivedNames(out).length).toBe(before)
     expect(existsSync(path.join(out, 'raw/idle_f1_8dir.png'))).toBe(true)
+  })
+})
+
+/**
+ * A scriptable gateway: `script[i]` decides what call `i` does — an image
+ * (a data URL) or a route-shaped rejection thrown by the real `routeError`.
+ * Nothing here invents an error shape; the stub answers the way a route does.
+ */
+function scriptedApi(script) {
+  const calls = []
+  const fn = async (route, body) => {
+    const step = script[Math.min(calls.length, script.length - 1)]
+    calls.push({ route, body, step })
+    if (typeof step === 'function') return step(calls.length)
+    if (step && step.status) {
+      throw routeError('generate', { status: step.status, ok: false, body: { error: step.error || 'upstream unavailable' } })
+    }
+    return { imageUrl: step }
+  }
+  fn.calls = calls
+  return fn
+}
+
+/** The three-frame plan Task 2's arms are written against (1 state × 3 frames). */
+const THREE_FRAMES = [{ name: 'idle', motion: 'a calm breathing idle', frames: 3, fps: 4, loop: true }]
+const threeFrameSpec = (out) => spec({ out, states: THREE_FRAMES })
+
+describe('ie anim — the three walk modes', () => {
+  it('stops after the first strip that cannot be finished', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    const good = dataUrlFromFile(FIXTURE)
+    // Frame 2's rejection is permanent: the script answers its three attempts
+    // (1 + 2 retries) with the same 503, then frame 3 is never asked for —
+    // the default is to stop and let a human decide.
+    const api = scriptedApi([good, { status: 503 }, { status: 503 }, { status: 503 }, good])
+    const bridge = strictBridge(await frames(), fixtureMeta())
+    const notes = []
+
+    const payload = await runCli(['run', '--spec', file, '--go'], {
+      api,
+      bridge,
+      note: (m) => notes.push(m),
+      retryDelays: [0, 0],
+    })
+
+    // 1 call for frame 1 + 3 attempts for frame 2 (the first try + the 2
+    // retries Task 1 mandates). The plan's arm text said 3 here, but that
+    // contradicts its own Task 1 (a persistent 5xx costs three attempts) and
+    // its keep-going arm (which counts the same failure as 3 calls).
+    expect(api.calls.length).toBe(4)
+    expect(bridge.calls.length).toBe(1)
+    const set = JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8'))
+    expect(set.strips.length).toBe(2)
+    expect(set.strips[0].ok).toBe(true)
+    expect(set.strips[1].ok).toBe(false)
+    expect(set.strips[1].state).toBe('idle')
+    expect(set.strips[1].frame).toBe(1)
+    expect(existsSync(path.join(out, 'raw/idle_f3_8dir.png'))).toBe(false)
+    expect(payload.written.some((p) => p.includes('idle_f3'))).toBe(false)
+    expect(notes.some((m) => m.includes('stopped after'))).toBe(true)
+    expect(existsSync(path.join(out, 'derived/idle_f1_east.png'))).toBe(true)
+    expect(existsSync(path.join(out, 'derived/idle_f2_east.png'))).toBe(false)
+  })
+
+  it('runs the plan to its end under --keep-going', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    const good = dataUrlFromFile(FIXTURE)
+    const api = scriptedApi([good, { status: 503 }, { status: 503 }, { status: 503 }, good])
+    const bridge = strictBridge(await frames(), fixtureMeta())
+    const notes = []
+
+    const payload = await runCli(['run', '--spec', file, '--go', '--keep-going'], {
+      api,
+      bridge,
+      note: (m) => notes.push(m),
+      retryDelays: [0, 0],
+    })
+
+    expect(api.calls.length).toBe(5) // 1 + 3 + 1
+    expect(bridge.calls.length).toBe(2)
+    const set = JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8'))
+    expect(set.strips.length).toBe(3)
+    expect(set.strips.filter((s) => s.ok === false).length).toBe(1)
+    expect(set.strips[0].ok).toBe(true)
+    expect(set.strips[1].ok).toBe(false)
+    expect(set.strips[2].ok).toBe(true)
+    // The third strip is complete: eight derived frames are on disk.
+    const third = DIRS8.map((d) => `idle_f3_${d}.png`)
+    for (const name of third) expect(existsSync(path.join(out, 'derived', name))).toBe(true)
+    expect(notes.some((m) => m.includes('ok, 1 failed'))).toBe(true)
+    expect(payload.strips.length).toBe(3)
+  })
+
+  it('redoes exactly the named strip and leaves the other rows byte-identical', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    const good = dataUrlFromFile(FIXTURE)
+    const bridge = strictBridge(await frames(), fixtureMeta())
+
+    // First pass: all three ok.
+    await runCli(['run', '--spec', file, '--go'], { api: scriptedApi([good]), bridge })
+    const before = JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8'))
+    expect(before.strips.length).toBe(3)
+
+    // A different reply for the redo, so the raw bytes prove the second pass.
+    const replacement = await sharp({
+      create: { width: 2048, height: 246, channels: 4, background: { r: 9, g: 9, b: 9, alpha: 1 } },
+    }).png().toBuffer()
+    const swapped = 'data:image/png;base64,' + replacement.toString('base64')
+    const api = scriptedApi([swapped, swapped, swapped])
+    const redoBridge = strictBridge(await frames(), fixtureMeta())
+
+    const payload = await runCli(['run', '--spec', file, '--go', '--redo', 'idle:1'], { api, bridge: redoBridge })
+
+    expect(api.calls.length).toBe(1)
+    expect(redoBridge.calls.length).toBe(1)
+    const after = JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8'))
+    expect(after.strips.length).toBe(3)
+    // The re-done row's raw is the new bytes...
+    const redone = after.strips.find((s) => s.frame === 1)
+    expect(readFileSync(path.join(out, redone.file))).toEqual(replacement)
+    // ...and every other row is untouched, `seconds` included.
+    for (const frame of [0, 2]) {
+      const was = before.strips.find((s) => s.frame === frame)
+      const now = after.strips.find((s) => s.frame === frame)
+      expect(now).toEqual(was)
+    }
+    expect(payload.strips.length).toBe(3)
+  })
+
+  it('refuses a --redo key the plan does not have, and one it cannot parse', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    const apiCalls = { count: 0 }
+    const bridgeCalls = { count: 0 }
+
+    await expect(
+      runCli(['run', '--spec', file, '--go', '--redo', 'idle:9'], { apiCalls, bridgeCalls })
+    ).rejects.toThrow(/no such strip in the plan/)
+    await expect(
+      runCli(['run', '--spec', file, '--go', '--redo', 'idle:x'], { apiCalls, bridgeCalls })
+    ).rejects.toThrow(/must be state:frame/)
+
+    expect(apiCalls.count).toBe(0)
+    expect(bridgeCalls.count).toBe(0)
+    expect(existsSync(out)).toBe(false)
+  })
+})
+
+describe('ie anim — the ledger', () => {
+  it('keys every row once, and keeps the failed strip in frames[]', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    const good = dataUrlFromFile(FIXTURE)
+    const api = scriptedApi([good, { status: 503 }, { status: 503 }, { status: 503 }, good])
+    const bridge = strictBridge(await frames(), fixtureMeta())
+
+    const payload = await runCli(['run', '--spec', file, '--go', '--keep-going'], {
+      api,
+      bridge,
+      retryDelays: [0, 0],
+    })
+
+    const keys = payload.strips.map((s) => `${s.state}:${s.frame}`)
+    expect(new Set(keys).size).toBe(keys.length)
+    const set = JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8'))
+    // Shape is frozen (D-28): frames[] enumerates the plan's strips × cells —
+    // a failed strip stays in, and its verdict lives in strips[].ok.
+    expect(set.frames.length).toBe(3 * 8)
+    expect(set.strips.length).toBe(3)
+    expect(set.totals.calls).toBe(2)
+    expect(set.totals.cells).toBe(16)
+  })
+
+  it('refuses a ledger that already carries a duplicate key, without calling out', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    const apiCalls = { count: 0 }
+    const bridgeCalls = { count: 0 }
+
+    mkdirSync(out, { recursive: true })
+    const row = {
+      state: 'idle', frame: 0, file: 'raw/idle_f1_8dir.png', ok: true, seconds: 1,
+      requested: '4096x512', returned: '2048x246',
+      fitted: { spacing: 0, phase: 0, residualPct: 0, gutterOk: false },
+      field: { hex: '', cast: 0, preset: 'binary' }, steps: {}, prompt: 'x',
+    }
+    writeFileSync(path.join(out, 'set.json'), JSON.stringify({ schemaVersion: 1, strips: [row, row] }))
+
+    await expect(
+      runCli(['run', '--spec', file, '--go'], { apiCalls, bridgeCalls })
+    ).rejects.toMatchObject({ code: 'duplicate_ledger' })
+    expect(apiCalls.count).toBe(0)
+    expect(bridgeCalls.count).toBe(0)
+  })
+
+  it('refuses a ledger it cannot parse, without calling out', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    const apiCalls = { count: 0 }
+    const bridgeCalls = { count: 0 }
+
+    mkdirSync(out, { recursive: true })
+    writeFileSync(path.join(out, 'set.json'), '{ this is not json')
+
+    await expect(
+      runCli(['run', '--spec', file, '--go'], { apiCalls, bridgeCalls })
+    ).rejects.toMatchObject({ code: 'bad_ledger' })
+    expect(apiCalls.count).toBe(0)
+    expect(bridgeCalls.count).toBe(0)
+  })
+
+  it('leaves no temp file behind, in a failing run or a redo', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(threeFrameSpec(out), 'three.json')
+    const good = dataUrlFromFile(FIXTURE)
+    const bridge = strictBridge(await frames(), fixtureMeta())
+
+    await runCli(['run', '--spec', file, '--go', '--keep-going'], {
+      api: scriptedApi([good, { status: 503 }, { status: 503 }, { status: 503 }, good]),
+      bridge,
+      retryDelays: [0, 0],
+    })
+    expect(tempsIn(out)).toEqual([])
+
+    await runCli(['run', '--spec', file, '--go', '--redo', 'idle:0'], { api: scriptedApi([good]), bridge })
+    expect(tempsIn(out)).toEqual([])
+  })
+
+  it('keeps the raw and writes no derived frame when the op refuses the strip', async () => {
+    const out = path.join(root, 'out')
+    const file = specFile(spec({ out, states: ONE_STATE }), 'one.json')
+    const api = stubApi(dataUrlFromFile(FIXTURE))
+    // The strict bridge hands frames back *and* says ok:false — the runner must
+    // read the verdict, not the payload, and produce no half-set of frames.
+    const meta = { ...fixtureMeta(), ok: false, gutter: { ok: false, tolerance: 5, lines: [], unrescued: [2180] }, counters: { keyed: 0, centred: 0 } }
+    const bridge = strictBridge(await frames(), meta)
+    const notes = []
+
+    const payload = await runCli(['run', '--spec', file, '--go'], { api, bridge, note: (m) => notes.push(m) })
+
+    expect(payload.strips[0].ok).toBe(false)
+    expect(existsSync(path.join(out, 'raw/idle_f1_8dir.png'))).toBe(true)
+    expect(derivedNames(out)).toEqual([])
+    const set = JSON.parse(readFileSync(path.join(out, 'set.json'), 'utf8'))
+    expect(set.strips[0].steps).toEqual({ keyed: 0, centred: 0 })
+    expect(set.strips[0].fitted.gutterOk).toBe(false)
+    expect(set.strips[0].field.preset).toBe('binary')
+    expect(set.strips[0].returned).toBe('2048x246')
+    expect(notes.some((m) => m.includes('stopped after'))).toBe(true)
   })
 })

@@ -31,13 +31,13 @@ const SUBCOMMANDS = ['plan', 'run']
 // subcommand spellings are on their own lines — that is the only place the
 // names the gate greps for actually exist in the help output.
 const USAGE = 'ie anim plan --spec <file.json> [--out <dir>]\n' +
-  '       ie anim run  --spec <file.json> [--out <dir>] [--go]\n' +
+  '       ie anim run  --spec <file.json> [--out <dir>] [--go] [--keep-going] [--redo state:frame]…\n' +
   '       ie anim <plan|run> --actor <slug> --subject-file <f> --states <json> --dirs dirs8|dirs4 --cell <n> --style-file <f>'
 
 /** One line per subcommand, shared by `ie help anim` and `ie anim help`. */
 const SUBCOMMAND_LINES = [
   '  plan                                       逐 strip 画布 + 调用数 + 总量 + 输出根；零调用、零写入',
-  '  run [--go]                                 无 --go 与 plan 逐字节同；--go 才生成（串行、逐条原子落盘）',
+  '  run [--go] [--keep-going] [--redo k]…      无 --go 与 plan 逐字节同；--go 才生成（串行、逐条原子落盘）',
   '',
   'notes:',
   '  --states takes the spec\'s own states array as JSON, e.g.',
@@ -207,15 +207,56 @@ function planPayload(ctx, mods, spec, outRoot, model) {
   }
 }
 
-/** The strips already in the ledger. Unreadable is treated as empty — the next write repairs it. */
-function existingRecords(setFile) {
-  if (!existsSync(setFile)) return []
+/**
+ * The ledger `<out>/set.json`. Missing is a first run; unreadable or broken
+ * JSON is a loud failure — silently treating a paid-for ledger as empty would
+ * lose everything it recorded (D-28's Reversibility is costly for exactly this
+ * reason).
+ */
+function readLedger(ctx, setFile) {
+  if (!existsSync(setFile)) return { strips: [], frames: [] }
+  let text
   try {
-    const parsed = JSON.parse(readFileSync(setFile, 'utf8'))
-    return Array.isArray(parsed.strips) ? parsed.strips : []
-  } catch {
-    return []
+    text = readFileSync(setFile, 'utf8')
+  } catch (err) {
+    ctx.fail('bad_ledger', `${setFile} cannot be read: ${err.message}`)
   }
+  let parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch (err) {
+    ctx.fail('bad_ledger', `${setFile} is not readable JSON: ${err.message}`)
+  }
+  if (!parsed || !Array.isArray(parsed.strips)) {
+    ctx.fail('bad_ledger', `${setFile} has no strips[] array — it is not a ledger`)
+  }
+  return parsed
+}
+
+/**
+ * `--redo` keys, resolved against the plan before anything is called. Two bad
+ * shapes: a value that is not `state:frame`, and a key the plan does not
+ * contain (`--redo idle:9` must not become a silent no-op).
+ */
+function redoKeys(ctx, mods, spec, plan) {
+  // `--redo k1,k2` is one flag; repeated `--redo k1 --redo k2` is the same
+  // thing. Both spellings land here, so neither is silently a no-op.
+  const values = (ctx.flags.redo || []).flatMap((value) => String(value).split(','))
+  if (!values.length) return null
+  const known = new Set(plan.map((p) => mods.stripKey(p.state, p.frame)))
+  const keys = new Set()
+  for (const value of values) {
+    let key
+    try {
+      const parsed = mods.parseStripKey(value)
+      key = mods.stripKey(parsed.state, parsed.frame)
+    } catch {
+      throw new UsageError(`--redo must be state:frame, got "${value}"`, USAGE)
+    }
+    if (!known.has(key)) throw new UsageError(`--redo ${key}: no such strip in the plan`, USAGE)
+    keys.add(key)
+  }
+  return keys
 }
 
 /**
@@ -257,54 +298,89 @@ function recordFor(mods, item, spec, { ok, seconds, size, meta }) {
  * cuts exactly the bytes that landed → one atomic write per derived frame →
  * rewrite `set.json`.
  *
- * A strip the op itself calls `ok:false` (gutter / blank cell) is recorded as
- * `ok:false` and stops the run — the op owns that verdict, the CLI only books
- * it. Everything else throws: retry / keep-going / redo are the next wave, and
- * a retry must never wrap this whole pipeline, only the generation call (that
- * is the one that costs money twice).
+ * Three walk modes (D-30): the default stops after the first strip that cannot
+ * be finished, `--keep-going` runs the plan to its end, and `--redo` redoes
+ * exactly the named strips. A strip the op calls `ok:false` (gutter / blank
+ * cell) is booked `ok:false` and stops the run by default — the op owns that
+ * verdict, the CLI only records it. The retry wraps the generation call only.
  */
 async function runStrips(ctx, mods, spec, outRoot, model) {
   const dirs = mods.dirsForPreset(spec.dirs)
   const plan = mods.planStrips(spec)
   const provider = providerFor(ctx)
   const setFile = path.join(outRoot, 'set.json')
-  // Keyed by `state:frame`, so re-running a strip replaces its row instead of
+  const redo = redoKeys(ctx, mods, spec, plan)
+  const keepGoing = !!ctx.flags['keep-going']
+
+  // The ledger merges by `state:frame`: a re-run replaces its row instead of
   // appending a second one (the consumer's 17-rows-for-16-strips bug came from
-  // appending).
-  const strips = new Map(
-    existingRecords(setFile).map((record) => [mods.stripKey(record.state, record.frame), record])
-  )
+  // appending). A repeated key already on disk is a loud failure — the merge
+  // cannot tell which of the two rows is the paid-for one.
+  const load = readLedger(ctx, setFile)
+  const merged = new Map()
+  for (const row of load.strips) {
+    const key = mods.stripKey(row.state, row.frame)
+    if (merged.has(key)) {
+      ctx.fail('duplicate_ledger', `two rows for ${key} in ${setFile} — merge them before re-running`)
+    }
+    merged.set(key, row)
+  }
   const written = []
 
   const commit = (record) => {
-    strips.set(mods.stripKey(record.state, record.frame), record)
-    const setJson = mods.buildSetJson({ spec, strips: [...strips.values()], provider })
+    merged.set(mods.stripKey(record.state, record.frame), record)
+    // Row order is the plan's order, never the Map's insertion history.
+    const rows = plan.map((p) => merged.get(mods.stripKey(p.state, p.frame))).filter(Boolean)
+    const setJson = mods.buildSetJson({ spec, strips: rows, provider })
     const file = writeFileAtomic(setFile, Buffer.from(JSON.stringify(setJson, null, 2) + '\n'))
     if (!written.includes(file)) written.push(file)
     return record
   }
 
-  for (let i = 0; i < plan.length; i++) {
-    const item = plan[i]
+  const todo = plan.filter((p) => !redo || redo.has(mods.stripKey(p.state, p.frame)))
+  let ok = 0
+  let failed = 0
+
+  for (let i = 0; i < todo.length; i++) {
+    const item = todo[i]
     // Progress goes to stderr: stdout carries exactly one parseable object.
-    ctx.note(`[${i + 1}/${plan.length}] ${item.state} f${item.frame + 1} → ${item.width}x${item.height}`)
+    ctx.note(`[${i + 1}/${todo.length}] ${item.state} f${item.frame + 1} → ${item.width}x${item.height}`)
 
     const started = Date.now()
     // `<spec>.retryDelays` is the test seam: the four unit arms assert the real
     // 2s/8s table, while the pipeline arms inject ~0ms so a run that retries
     // does not cost ten seconds of wall clock per suite.
-    const { value: res, attempts } = await generateWithRetry(
-      () => ctx.api('generate', {
-        prompt: item.prompt,
-        width: item.width,
-        height: item.height,
-        model,
-        // profile/model ride in the BODY: a global `--profile` is ignored by the
-        // gateway (Phase 1 measured it). `llmFields()` is the only implementation.
-        ...ctx.llmFields(),
-      }),
-      { delays: ctx.spec && ctx.spec.retryDelays, onRetry: (n, ms, e) => ctx.note(`  retry ${n}/2 after ${ms / 1000}s: ${e.message}`) }
-    )
+    let res = null
+    let attempts = 1
+    try {
+      const outcome = await generateWithRetry(
+        () => ctx.api('generate', {
+          prompt: item.prompt,
+          width: item.width,
+          height: item.height,
+          model,
+          // profile/model ride in the BODY: a global `--profile` is ignored by
+          // the gateway (Phase 1 measured it). `llmFields()` is the only
+          // implementation.
+          ...ctx.llmFields(),
+        }),
+        { delays: ctx.spec && ctx.spec.retryDelays, onRetry: (n, ms, e) => ctx.note(`  retry ${n}/2 after ${ms / 1000}s: ${e.message}`) }
+      )
+      res = outcome.value
+      attempts = outcome.attempts
+    } catch (err) {
+      // Out of retries: the strip is a failed row, not a dead run. The paid-for
+      // attempts left nothing on disk (no reply arrived), so there is no raw.
+      const seconds = Number(((Date.now() - started) / 1000).toFixed(3))
+      failed++
+      ctx.note(`${item.state}:${item.frame} failed after ${err.attempts ? err.attempts.length : 1} attempt(s): ${err.message}`)
+      commit(recordFor(mods, item, spec, { ok: false, seconds, size: null, meta: null }))
+      if (!keepGoing) {
+        ctx.note(`stopped after ${item.state}:${item.frame} — pass --keep-going to run the rest`)
+        break
+      }
+      continue
+    }
     if (!res || !res.imageUrl) {
       ctx.fail('no_image', `generate answered without an imageUrl for ${item.state} f${item.frame + 1}`)
     }
@@ -315,32 +391,61 @@ async function runStrips(ctx, mods, spec, outRoot, model) {
     const rawPath = writeDataUrl(dataUrl, path.join(outRoot, mods.stripFile(item.state, item.frame, spec.dirs)))
     written.push(rawPath)
 
-    const op = ctx.bridge({ op: 'strip-frames', opts: { cell: spec.cell, dirs }, inputs: [rawPath] })
+    // `bridge_failed` (the op itself died) is booked like any other strip that
+    // could not be finished, then handled by the walk mode — a dead Chromium
+    // must not cost the ledger its record of what has been paid for.
+    let op
+    try {
+      op = ctx.bridge({ op: 'strip-frames', opts: { cell: spec.cell, dirs }, inputs: [rawPath] })
+    } catch (err) {
+      failed++
+      ctx.note(`${item.state}:${item.frame} failed: ${err.message}`)
+      commit(recordFor(mods, item, spec, { ok: false, seconds, size, meta: null }))
+      if (!keepGoing) {
+        ctx.note(`stopped after ${item.state}:${item.frame} — pass --keep-going to run the rest`)
+        break
+      }
+      continue
+    }
     const meta = op.meta
 
     if (meta && meta.ok === false) {
       ctx.note(`strip not ok: gutter ${JSON.stringify(meta.gutter && meta.gutter.unrescued)} counters ${JSON.stringify(meta.counters)}`)
+      failed++
       commit(recordFor(mods, item, spec, { ok: false, seconds, size, meta }))
       ctx.note(`failed (${seconds}s)`)
-      break
+      if (!keepGoing) {
+        ctx.note(`stopped after ${item.state}:${item.frame} — pass --keep-going to run the rest`)
+        break
+      }
+      continue
     }
     if (!op.data || op.data.length !== dirs.length) {
       const got = op.data ? op.data.length : 0
       ctx.note(`the op returned ${got} frames, the strip has ${dirs.length} directions`)
+      failed++
       commit(recordFor(mods, item, spec, { ok: false, seconds, size, meta }))
       ctx.note(`failed (${seconds}s)`)
-      break
+      if (!keepGoing) {
+        ctx.note(`stopped after ${item.state}:${item.frame} — pass --keep-going to run the rest`)
+        break
+      }
+      continue
     }
 
     // Names and order both come from Phase 2: `dirs` is the preset's own order.
     dirs.forEach((dir, cell) => {
       written.push(writeDataUrl(op.data[cell], path.join(outRoot, mods.frameFile(item.state, item.frame, dir))))
     })
+    ok++
     commit(recordFor(mods, item, spec, { ok: true, seconds, size, meta }))
     ctx.note(`ok ${seconds}s${attempts > 1 ? ` (${attempts} attempts)` : ''}`)
   }
 
-  return { written, strips: [...strips.values()], setJson: setFile }
+  if (failed) ctx.note(`${ok} ok, ${failed} failed`)
+  if (redo) ctx.note(`--redo: ${todo.length} strip(s) re-done, the other rows are untouched`)
+
+  return { written, strips: plan.map((p) => merged.get(mods.stripKey(p.state, p.frame))).filter(Boolean), setJson: setFile }
 }
 
 const anim = {
@@ -358,6 +463,8 @@ const anim = {
     style: { type: 'string' },
     'style-file': { type: 'string' },
     go: { type: 'boolean' },
+    'keep-going': { type: 'boolean' },
+    redo: { type: 'string', multiple: true },
     help: { type: 'boolean' },
   },
   async run(ctx) {
@@ -384,10 +491,18 @@ const anim = {
     if (sub === 'plan') {
       // A silently ignored `--go` turns "I did pass --go" into a misunderstanding.
       if (ctx.flags.go) throw new UsageError('plan never spends — --go belongs to run', USAGE)
+      // Neither does a dry run have a "continue" or a "redo".
+      if (ctx.flags['keep-going']) throw new UsageError('plan never continues — --keep-going belongs to run', USAGE)
+      if (ctx.flags.redo) throw new UsageError('plan never redoes — --redo belongs to run', USAGE)
       return planPayload(ctx, mods, spec, outRoot, model)
     }
 
+    // The dry path is the plan: `--keep-going` / `--redo` describe what a run
+    // does after a failure, so with no run there is nothing for them to mean.
     if (!ctx.flags.go) {
+      if (ctx.flags['keep-going'] || ctx.flags.redo) {
+        throw new UsageError('--keep-going / --redo only apply to a run — pass --go to spend', USAGE)
+      }
       const payload = planPayload(ctx, mods, spec, outRoot, model)
       ctx.note(`dry run: ${payload.plan.length} strips, ${payload.plan.length} calls — pass --go to spend`)
       return payload
