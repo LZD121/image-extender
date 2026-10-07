@@ -69,8 +69,12 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 03-01: `strip-frames` op：组合既有导出 + 计数器 + 断言
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 03-02: `node --test` 冒烟：真实 PNG 字节、几何断言、基线对齐缺席
 
 ### Phase 4: CLI runner（`ie anim plan` / `run --go`）
