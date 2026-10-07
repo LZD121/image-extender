@@ -13,9 +13,9 @@
 
 - [ ] **TRAN-01**: 每张 strip 都记录 `requested` 尺寸，并在返回后**从实际字节**计算 `returned` 尺寸
 - [ ] **TRAN-02**: `returned` 宽高比 ≠ `requested` 时该条 `ok:false` 且不进入切格
-- [ ] **TRAN-03**: 一次真实探针（一次付费调用）记录 returned 尺寸 / 拟合间距 / 场色，结论固化成常量或 profile 配置
-- [ ] **TRAN-04**: 若探针证明现有通路送不出 8:1/4:1，比例表按 spec §9.3 放宽，且六个既有 studio 请求的档位不变（回归断言）
-- [ ] **TRAN-05**: fallback 以 magpie profile（`baseUrl`+`apiKeyEnv`）表达，`PROVIDER_IDS` 数量不变（断言）
+- [x] **TRAN-03**: 一次真实探针（一次付费调用）记录 returned 尺寸 / 拟合间距 / 场色，结论固化成常量或 profile 配置
+- [x] **TRAN-04**: 若探针证明现有通路送不出 8:1/4:1，比例表按 spec §9.3 放宽，且六个既有 studio 请求的档位不变（回归断言）
+- [x] **TRAN-05**: fallback 以 magpie profile（`baseUrl`+`apiKeyEnv`）表达，`PROVIDER_IDS` 数量不变（断言）
 
 ### GEOM — 几何
 
