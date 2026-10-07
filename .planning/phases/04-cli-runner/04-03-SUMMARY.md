@@ -168,7 +168,7 @@ Each task was committed atomically:
 1. **Task 1: `decodesAsImage` — full decode, `metadata()` trap pinned** - `6336792` (feat)
 2. **Task 2: `collectFacts` + the aspect gate + `nextPending`-driven pending** - `dd4d730` (feat)
 
-**Plan metadata:** (this commit) (docs: complete plan)
+**Plan metadata:** `8479c7d` (docs: complete plan)
 
 ## Files Created/Modified
 
