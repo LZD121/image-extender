@@ -184,3 +184,90 @@
 ---
 
 *Phase 2 审阅：2026-10-07T03:57:34Z。对照 commit `6bac853`（4 个新文件，1257 行）与 `94001b3`（1 行产品改动 + 25 行测试 + 3 个 .md）。*
+
+---
+
+# Security Review — Phase 3（strip → frames 后处理，bridge op `strip-frames`）
+
+**范围:** 只审本 phase 实际改动的东西。逐条对照三个 phase-3 commit（`57881b1`、`f42a85f`、`a859cf7`）的 diff。
+**审阅者:** generic agent（替身 GSD 的 security 步骤）。本 phase 的执行者是 orchestrator 指挥下的通用执行代理；我未参与实现，下面每条都是自己在磁盘上重跑的。**零付费调用、零出网**。
+**基线:** 同 Phase 1/2 —— `.planning/PROJECT.md` 的威胁模型是 **BYOK + 只防"自己误操作"**，不按公网多租户标准评。
+
+## P3-1. 改动面（exactly 这些，别的没有）
+
+| 文件 | 性质 | 敏感面 |
+|---|---|---|
+| `app/lib/animFrames.ts`（新增 438 行） | 一张 strip → N 帧的唯一实现：拟合切格 → 二值抠底 → 去边 → 抢救 → 套 cell 居中 + 两级 gutter 闸门 | **决定"钱花之后"每帧像素长什么样，以及坏 strip 是产出错帧还是保留 raw**（见 P3-2/P3-3） |
+| `app/lib/chromaPresets.ts`（+12） | 新增 `binary` 一档 | 三个界面共用的预设表，改动会同时改既有 studio 观感（D-23 的 costly-reversibility） |
+| `app/lib/__tests__/chromaPresets.test.ts`（+13/−1） | 表变 5 档 + "软边为 0"的语义断言 | 无 |
+| `cli/native/bridge.mjs`（+12） | 新 `case 'strip-frames'` | 只摊平 `IE.planStripFrames` 的结果，不做像素运算 |
+| `cli/native/bundle.mjs`（+1/−1） | `BROWSER_IMPORTS` 收进 `animStrip` + `animFrames` | 决定什么模块进浏览器 IIFE（`page.evaluate` 只序列化函数源码） |
+| `cli/commands/prim.mjs`（+2/−2）、`docs/agent-api.md`（+1/−1） | `ie chroma` 枚举与文档同步 | 无 |
+| `cli/native/__tests__/bridge.smoke.test.mjs`（+304/−1） | 真 fixture 上的端到端冒烟（五臂 + 六子测） | 读 `.ie/probe/`（gitignored，存在才跑） |
+| `.planning/phases/03-strip-frames/*`、`ROADMAP.md`、`REQUIREMENTS.md`、`STATE.md` | 计划、两份 SUMMARY、状态翻牌 | 无 |
+
+**未触碰**（本 phase 的 diff 里 0 行）：`app/lib/animStrip.ts`、`app/lib/animSet.ts`、`app/lib/aspectRatio.ts`、`app/api/generate/route.ts`、`tests/fixtures/`、`package.json`、`package-lock.json`。`6bac853..HEAD` 里 `animSet.ts` 的那 1 行属 `94001b3`（Phase 2 的第二个 commit），不是本 phase。**本 phase 零新依赖**（`git diff --stat 6bac853..HEAD -- package.json package-lock.json` 为空）。
+
+## P3-2. 真正的边界（一）：预设名现在是**抛错**，不是回退
+
+- 这是本 phase 唯一一处"**用户可控字符串 → 像素行为**"的通道。`resolvePreset` 在 `animFrames.ts:151-155` 查表、查不到就 `throw new Error('unknown chroma preset: ' + name)`；`:236` 是**调用点**（`{ ...resolvePreset(presetName), ...(opts.key || {}) }`）。
+- **我实跑的复现**：`runJobs([{ op: 'strip-frames', opts: { cell: 512, dirs: DIRS, preset: 'nope' }, inputs: [F] }])` → **reject**，消息 `page.evaluate: Error: unknown chroma preset: nope`。经 CLI 层：stdout `{"ok":false,"error":"…unknown chroma preset: nope…"}`、**exit 1**。`runJobs` 只有 try/finally（`:380-398`），所以这一路**没有** `{ok:false}` 信封——它直接抛，这正是要的形态（静默回退才是失效模式）。
+- **为什么这是安全面而不是纯功能面**：一个 nullish 回退（`?? CHROMA_PRESETS.default`）会把**拼错的名字**变成**纯洋红抠底**——那正是 D-23 要消灭的失效模式，而且花的是真钱（Phase 4/6 会拿它跑付费 strip）。原版 `CHROMA_PRESETS[preset: string]` 是 `TS7053`（编译不过），但**加一个 `as` 就能编译过**——危险在于"能编译"，不在"不能编译"。
+- 闸门把这条钉死，且**不是空转**（我实跑确认）：正则要求 `?? CHROMA_PRESETS.default` **不出现**、`throw new Error('unknown chroma preset'` **出现**、`as Record<string, ChromaPreset | undefined>` 的守卫式索引形状**保持**，并且过滤掉 `function resolvePreset` 后 `resolvePreset(` 的**调用**次数 ≥ 1。plan-review 的最后一个 leak 正是"函数定义了但没被调用"，这条闸门就是为它装的。
+- **`binary` 的二值语义我独立验了**（不是读注释）：用 `chromaKeyToAlpha` 造一条 cast 从 0 到 255 的渐变条，`preset: 'binary'` 得 `a(127)=255, a(128)=0`、partial 计数 **0**；`preset: 'default'`（软边 30）得 partial **29**、cast 80 起归零。阶跃与斜坡的差别是硬的。
+
+## P3-3. 真正的边界（二）：op 的输入面**没有上限**
+
+- `planStripFrames` 对 `dirs` 为空、`cell`、`cells` 都做了正整数校验（`animFrames.ts:226-233`），但对 **`cell` 与 `cells` 都没有上界**。
+- **我实测的边界表**（本机，同一张 fixture）：
+
+| 输入 | 结果 |
+|---|---|
+| `dirs: []` / 缺整个 `opts` | reject：`strip-frames: opts.dirs must name at least one direction` |
+| `cell: 0` / `-1` / `1.5` | reject：`strip-frames: cell must be a positive integer, got …` |
+| `cells: 0` / `cells: "8"` | reject：`strip-frames: cells must be a positive integer, got …` |
+| `cell: 100000` | **`ok:true`、8 帧**、278 ms —— 每帧 100000×100000 |
+| `cells: 200000` | `ok:false`、零帧、1.98 s |
+
+- `cell: 100000` 是**本 phase 唯一一处未设界的高资源分配**：8 × 10^10 像素 × 4 B 的 canvas。它没崩（Chromium 把它当 0 填充画布处理，实测 278 ms 返回），但这条**没有任何测试或断言**——`cell 256/512` 两臂覆盖不到它。
+- **为什么这（在既定威胁模型下）不是本 phase 的缺口**：(a) `cell`/`cells` 的唯一来源是 spec（Phase 4）或界面（Phase 6），**不是网络输入**，BYOK + 单人的模型下"用户给自己指一个大 cell"不是攻击面；(b) 真正的闸门位置在 Phase 4 的**出网前预算**与 spec 校验（那里已有 `requireInteger` 全家桶，Phase 2 P2-4 已验）；本 phase 只是执行者。
+- **但它确实可测，值得一条断言**：`cell <= 4096 && cells <= 64` 之类的上限，或干脆在 Phase 4 的 spec 校验里收口。**现在不做**（会动本 phase 的 covered digest，且非本 phase 要求），**留给 Phase 4** —— 与 P2-3 把 `out` 移交 Phase 4 的处置一致。
+
+## P3-4. 零出网、零密钥；fixture 与 raw 的边界
+
+- 新 op 的整条路径**零网络**：`grep -nE "fetch\(|https?://|node:http|node:https|XMLHttpRequest" app/lib/animFrames.ts cli/native/bridge.mjs` → **0 命中**。`animFrames.ts` 只 import `chromaPresets` / `animStrip` / `imageProcessor`。
+- 本 phase 三个 commit 触及的文件里，`sk-…` / `Bearer …` / `"apiKey": "…"` **0 命中**。唯一两处正则命中在 `docs/agent-api.md:76,81` 的 `"apiKey": ""`——**空串示例**，Phase 1 就在那里，不是本 phase 加的。
+- `tests/fixtures/anim/chaser_idle_f1_8dir.png`（945309 B、已跟踪、`.gitattributes` 的 `*.png -diff` 覆盖）本 phase **未改**。`.ie/probe/` 的 raw（1480226 B）仍被 `.gitignore:59` 的 `.ie/` 覆盖，`git ls-files .ie/` → **0 条**。
+- 我在核验 skip 臂时临时把 raw 移走过一次，**已还原并以 `shasum -a 256` 复核**：`7e71962ab37b888ccc88800654805c79d43d6cfa5adea4720cf7603fa3846db5`（与移动前逐字节一致）。
+
+## P3-5. 仓库卫生：闸门临时文件、`/tmp` 遗留、未提交工作
+
+- 三个闸门各自带 `trap 'rm -f …' EXIT`。我跑完后：仓库根**无** `.p*-gate-entry.ts`；闸门自己会产出的 `/tmp/p3-{binary.png,chroma.log,strip.log,suite.log,smoke.log}` **全不存在**。这是"闸门用完即走"的可复核证据。
+- `/tmp` 里另有 45 个 **14:00–14:36** 的 planner/executor 遗留（`.sh`/`.js`/`.mjs`/`.log`/`.py`，含 3 份 ~92–160 KB 的打包产物），**时间戳全部早于本 phase 的执行提交（16:19:28）**，是 plan-review / 负向验证阶段的一次性产物，不在 `trap` 覆盖面上。我抽扫过其内容：只有闸门脚本与 esbuild 产物，**无 data URL、无键值**；且都在 `/tmp`，不随仓库走。**非本 phase 的安全面**，但建议顺手清掉以收口习惯（Phase 1 §6 末对同类残留给过同样的建议）。
+- `git status --porcelain`：只有 `?? .omp/` 与 `?? .planning/state.json`（harness 自写，预期内）；`--untracked-files=no` 输出为空——**无未提交的 phase 工作**。
+- 仓库里没有新增的 MB 级被跟踪二进制：本 phase 只新增两个 `.ts` 源码与两个测试文件。
+
+## P3-6. 我**没有**验证的（明确列出，不假装）
+
+1. **真实付费 strip 从未经本 op 跑过**（本 phase 零出网）。"八帧看起来像 chaser 的八个朝向"**没有任何人（含我）看过**——我只证了几何（尺寸、角点、留边、零半透明）。
+2. **Phase 4/6 的消费者不存在**：`cell`/`cells` 的实际上游、`set.json.steps` 的落盘、UI 调同名链（POST-04）都在后续 phase 才可审。
+3. **未做依赖/供应链审计**：本 phase 零新依赖（由 `git diff --stat` 证明），但既有 `sharp`/Next/Playwright 版本的 CVE 我没查（同 Phase 1 §7.3、Phase 2 P2-7.5）。
+4. **原图臂在干净 clone 上会 skip**（`.ie/` gitignored）：这不属安全面，是覆盖面诚实性，已在 `03-VERIFICATION.md` 的 `coincidental_reliance_items` 备案。
+5. **`cell: 100000` 那类资源行为**（P3-3）只在本机 macOS + 该 Chromium 上试过一种配置，没有跨平台或内存压力下的复核。
+
+## 结论
+
+本 phase 没有引入**新的**秘密暴露面（零出网、零密钥、零新依赖、零新增被跟踪的敏感产物）。真正的边界有三处，都守住了：
+
+1. **预设名**（决定"钱花之前的抠底行为"）——**抛错而非回退**，且"函数被调用"本身也有闸门钉住；`binary` 的二值语义有阶跃级实测。
+2. **两级 gutter 闸门**（决定"坏 strip 是产出错帧还是保留 raw"）——第一级的假绿有可复现证据（`castThreshold 256` 时 `fieldSurvived:8`、`after` 全 0 的真空读），第二级实跑抓住；原图那 58 px 是生物自己的像素，抢救失败即 `ok:false` + 零帧。
+3. **fixture 与 raw 的边界**——入库的是下采样、上盘的是 gitignored 原图，两者本 phase 都没被越界触碰（我在核验中移动过 raw 一次，已复原并逐字节复核）。
+
+**新发现的非阻断项 1 条**：`cell`/`cells` 无上限（P3-3），已移交 Phase 4 收口。
+**行为未行使项 2 条**：真实付费 strip 上"看起来对"（P3-6.1）、Phase 4/6 的下游接法（P3-6.2）。
+**Phase 1 的 6 条与 Phase 2 的 6 条未验证项**维持有效：Phase 1 §7.3 / Phase 2 P2-7.5（依赖审计）、Phase 1 §7.1（出网体无落盘证据）、Phase 2 P2-7.6（消费端读取路径）本 phase **仍未**触及。其中 Phase 1 §7.4（`.ie/` 下其他内容）我这次**部分覆盖**——见 P3-4 的 raw 复核与 P3-5 的 `/tmp` 遗留清点。
+
+---
+
+*Phase 3 审阅：2026-10-07T08:30:09Z。对照 commit `57881b1`（8 文件，+522/−5）、`f42a85f`（2 文件，+351/−1）、`a859cf7`（3 个 .md，状态翻牌）。*
+
