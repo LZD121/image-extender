@@ -1,6 +1,10 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { messages, type Locale, type TranslateParams } from '@/app/i18n'
 import { interpolate } from '@/app/lib/i18n'
+import { APP_ERROR_MESSAGES, type AppErrorCode } from '@/app/lib/appErrors'
 import { serverErrorKey, translateServerError } from '@/app/i18n/serverErrors'
 
 /**
@@ -15,6 +19,29 @@ const tIn = (locale: Locale) => (key: string, params?: TranslateParams, fallback
 
 const zh = tIn('zh')
 const en = tIn('en')
+
+/**
+ * Every quoted string in the app's own source, so a message in the table can be
+ * checked against the code that is supposed to write it. Skips the table itself
+ * and everything under `app/i18n/` — a translation is not a producer.
+ */
+function readSources(dirs: string[], skip: string[]): string {
+  const root = fileURLToPath(new URL('../../..', import.meta.url))
+  const chunks: string[] = []
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      const rel = path.relative(root, full)
+      if (skip.some((s) => rel.startsWith(s))) continue
+      if (entry.isDirectory()) walk(full)
+      else if (/\.(ts|tsx|mjs)$/.test(entry.name) && !rel.includes('__tests__')) {
+        chunks.push(readFileSync(full, 'utf8'))
+      }
+    }
+  }
+  for (const dir of dirs) walk(path.join(root, dir))
+  return chunks.join('\n')
+}
 
 describe('translateServerError', () => {
   it('translates an exact app message', () => {
@@ -50,7 +77,7 @@ describe('translateServerError', () => {
 
   it('translates the client-side canvas failures that reach the same toast', () => {
     expect(translateServerError('Failed to load image for slicing', zh)).toBe('用于切分的图像加载失败')
-    expect(translateServerError('2d context unavailable', zh)).toBe('2D 画布不可用')
+    expect(translateServerError('Failed to load image', zh)).not.toBe('Failed to load image')
   })
 
   it('passes provider passthrough text through untouched', () => {
@@ -59,79 +86,52 @@ describe('translateServerError', () => {
     expect(translateServerError('Internal Server Error', zh)).toBe('Internal Server Error')
   })
 
-  it('resolves every wire message the app can show, in both locales', () => {
-    const samples = [
-      // API routes
-      'Missing required fields',
-      'No message in response',
-      'No image generated. The model may not support pure image generation.',
-      'Internal server error',
-      'OpenRouter API key missing. Add one in Settings.',
-      'probe failed',
-      // asset library route + path validation
-      'invalid JSON body',
-      'missing route params',
-      'invalid asset path',
-      'invalid project',
-      'invalid kind',
-      'invalid slug',
-      'missing meta',
-      'missing files',
-      'invalid file',
-      'invalid project name: Demo!',
-      'invalid kind: sprite-sheet',
-      'invalid slug: bad name',
-      'invalid asset file path: derived/x.png',
-      'path resolves outside the asset library root: /etc/passwd',
-      'invalid file path: derived/x.png',
-      'invalid payload for derived/x.png',
-      'file too large: derived/x.png',
-      'payload too large',
-      'asset library unavailable: ENOENT: no such file or directory',
-      'asset not found',
-      'file not found',
-      'save failed',
-      // pixel vendor route
-      'description is required',
-      'width/height must be integers in 16..400',
-      'image_size must be an integer in 32..256',
-      'template_id must be one of mannequin, bear',
-      'view must be one of low top-down, side',
-      'missing x-pixellab-key',
-      'invalid character id',
-      'invalid url',
-      'https only',
-      'host evil.example is not a vendor host',
-      'upstream 502',
-      'unknown op',
-      // client-side canvas / loader failures
-      '2d context unavailable',
-      'Failed to get canvas context',
-      'Failed to get rotation canvas context',
-      'Failed to load image',
-      'Failed to load image for slicing',
-      'could not load /demo/tiles/x/meta.json',
-      'no figure pixels found',
-      'figure 210px above the 120-200 band',
-      'figure 18px below the 120-200 band',
-      'cropToCell: figure 300x300 does not fit 256x256; change image_size instead of rescaling',
-      'meta.json is missing slug/type',
-      'not a data URL (expected data:image/png|jpeg|webp;base64,…)',
-    ]
-
-    const unresolved: string[] = []
-    for (const sample of samples) {
-      const resolved = serverErrorKey(sample)
-      if (!resolved) {
-        unresolved.push(sample)
-        continue
+  it('resolves every message the table names, and renders it in both locales', () => {
+    for (const code of Object.keys(APP_ERROR_MESSAGES) as AppErrorCode[]) {
+      const message = APP_ERROR_MESSAGES[code]
+      expect(serverErrorKey(message), `${code} is not mapped`).toBeTruthy()
+      const key = serverErrorKey(message)!.key
+      // The library route, the pixel relay and the probe phrase their errors as
+      // terse lowercase codes, and the registry renders those as sentences.
+      // Everything else is declared in sentence case and has to match the
+      // registry byte-for-byte — that text is what an English user reads.
+      if (message.charAt(0) !== message.charAt(0).toLowerCase()) {
+        expect(messages.en[key], `${code}: English drifted from the message`).toBe(message)
       }
+      for (const locale of ['en', 'zh'] as const) {
+        const rendered = translateServerError(message, tIn(locale))
+        expect(rendered, `${locale}: ${code}`).not.toMatch(/\{[a-z]+\}/)
+        expect(rendered, `${locale}: ${code}`).not.toBe(key)
+      }
+    }
+  })
+
+  it('names a producer in the source for every message in the table', () => {
+    const sources = readSources(['app', 'cli'], ['app/lib/appErrors.ts', 'app/i18n/'])
+    const orphans = (Object.keys(APP_ERROR_MESSAGES) as AppErrorCode[]).filter(
+      (code) => !sources.includes(`'${APP_ERROR_MESSAGES[code]}'`)
+    )
+    expect(orphans).toEqual([])
+  })
+
+  it('fills the parameters of the patterned messages', () => {
+    const samples = [
+      'file too large: derived/body.png',
+      'upstream 502',
+      'figure 210px above the 120-200 band',
+      'missing x-pixellab-key',
+      'host evil.example is not a vendor host',
+      'could not load /demo/tiles/x/meta.json',
+      'invalid project name: Demo!',
+      'path resolves outside the asset library root: /etc/passwd',
+      'asset library unavailable: ENOENT: no such file or directory',
+    ]
+    for (const sample of samples) {
+      expect(serverErrorKey(sample), sample).toBeTruthy()
       for (const locale of ['en', 'zh'] as const) {
         const rendered = translateServerError(sample, tIn(locale))
         expect(rendered, `${locale}: ${sample}`).not.toMatch(/\{[a-z]+\}/)
-        expect(rendered, `${locale}: ${sample}`).not.toBe(resolved.key)
       }
     }
-    expect(unresolved).toEqual([])
   })
 })

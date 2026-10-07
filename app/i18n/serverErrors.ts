@@ -1,3 +1,4 @@
+import { APP_ERROR_MESSAGES, type AppErrorCode } from '@/app/lib/appErrors'
 import type { MessageKey, TranslateParams } from '@/app/i18n'
 
 /**
@@ -10,45 +11,52 @@ import type { MessageKey, TranslateParams } from '@/app/i18n'
  * ("rate limit exceeded", …) is third-party and has no translation.
  */
 
-const EXACT: Record<string, MessageKey> = {
-  'Missing required fields': 'errors.missingFields',
-  'No message in response': 'errors.noMessageInResponse',
-  'The model responded without an image. It may not support image extension yet.':
-    'errors.noImageInResponse',
-  'No image generated. The model may not support pure image generation.':
-    'errors.noImageGenerated',
-  'Internal server error': 'errors.internal',
-  'Failed to generate image': 'errors.failedGenerateImage',
-  'Failed to generate scene brief': 'errors.failedGenerateSceneBrief',
-  'Failed to review tileset': 'errors.failedReviewTileset',
-  'Failed to review sprite sheet': 'errors.failedReviewSpriteSheet',
-  'Failed to generate prop brief': 'errors.failedGeneratePropBrief',
-  'Missing biome prompt': 'errors.missingBiomePrompt',
-  'Missing anchor prompt': 'errors.missingAnchorPrompt',
-  'Missing preview image': 'errors.missingPreviewImage',
-  'Missing sprite sheet image': 'errors.missingSpriteSheetImage',
-  'No scene brief returned from model': 'errors.noSceneBrief',
-  'Art director returned no usable ideas': 'errors.noPropIdeas',
-  'Invalid JSON body': 'errors.invalidJsonBody',
-  'invalid JSON body': 'errors.invalidJsonBody',
-  'missing route params': 'errors.missingRouteParams',
-  'invalid asset path': 'errors.invalidAssetPath',
-  'invalid project': 'errors.invalidProject',
-  'invalid kind': 'errors.invalidKind',
-  'invalid slug': 'errors.invalidSlug',
-  'missing meta': 'errors.missingMeta',
-  'missing files': 'errors.missingFiles',
-  'payload too large': 'errors.payloadTooLarge',
-  'asset not found': 'errors.assetNotFound',
-  'file not found': 'errors.fileNotFound',
-  'save failed': 'errors.saveFailed',
-  'description is required': 'errors.descriptionRequired',
-  'invalid character id': 'errors.invalidCharacterId',
-  'invalid url': 'errors.invalidUrl',
-  'https only': 'errors.httpsOnly',
-  'unknown op': 'errors.unknownOp',
-  // Client-side canvas/loader failures share the toast with route errors.
-  '2d context unavailable': 'errors.context2dUnavailable',
+/**
+ * Every app-authored message a route can put on the wire, with the key it
+ * translates to. Exhaustive by type: adding a message to `APP_ERROR_MESSAGES`
+ * without a key here does not compile.
+ */
+const KEY_BY_CODE: Record<AppErrorCode, MessageKey> = {
+  missingFields: 'errors.missingFields',
+  missingPreviewImage: 'errors.missingPreviewImage',
+  missingAnchorPrompt: 'errors.missingAnchorPrompt',
+  missingBiomePrompt: 'errors.missingBiomePrompt',
+  noSceneBrief: 'errors.noSceneBrief',
+  noPropIdeas: 'errors.noPropIdeas',
+  noImageInResponse: 'errors.noImageInResponse',
+  noImageGenerated: 'errors.noImageGenerated',
+  noMessageInResponse: 'errors.noMessageInResponse',
+  gatewayInvalidJson: 'errors.gatewayInvalidJson',
+  invalidJsonBody: 'errors.invalidJsonBody',
+  internal: 'errors.internal',
+  missingRouteParams: 'errors.missingRouteParams',
+  invalidAssetPath: 'errors.invalidAssetPath',
+  invalidProject: 'errors.invalidProject',
+  invalidKind: 'errors.invalidKind',
+  invalidSlug: 'errors.invalidSlug',
+  missingMeta: 'errors.missingMeta',
+  missingFiles: 'errors.missingFiles',
+  payloadTooLarge: 'errors.payloadTooLarge',
+  assetNotFound: 'errors.assetNotFound',
+  fileNotFound: 'errors.fileNotFound',
+  saveFailed: 'errors.saveFailed',
+  metaMissingIds: 'errors.metaMissingIds',
+  notADataUrl: 'errors.notADataUrl',
+  invalidFile: 'errors.invalidFile',
+  descriptionRequired: 'errors.descriptionRequired',
+  invalidCharacterId: 'errors.invalidCharacterId',
+  invalidUrl: 'errors.invalidUrl',
+  httpsOnly: 'errors.httpsOnly',
+  unknownOp: 'errors.unknownOp',
+  probeFailed: 'errors.probeFailed',
+}
+
+/**
+ * Messages the browser's own canvas and loader helpers throw. They never cross
+ * the wire, so they are authored where they are thrown rather than registered
+ * in `app/lib/appErrors.ts` — but they share this toast, so they map here.
+ */
+const CLIENT_EXACT: Record<string, MessageKey> = {
   'Failed to get canvas context': 'errors.canvasContext',
   'Failed to get bbox source canvas': 'errors.bboxSourceCanvas',
   'Failed to get bbox destination canvas': 'errors.bboxDestCanvas',
@@ -64,10 +72,18 @@ const EXACT: Record<string, MessageKey> = {
   'Failed to load image for normalization': 'errors.normalizeLoadFailed',
   'Failed to load image for rotation': 'errors.rotationLoadFailed',
   'Failed to load image for slicing': 'errors.sliceLoadFailed',
-  'meta.json is missing slug/type': 'errors.metaMissingIds',
-  'invalid file': 'errors.invalidFile',
-  'probe failed': 'errors.probeFailed',
   'no figure pixels found': 'errors.pixelNoFigure',
+}
+
+/** Wire text and client text, both read back as keys. First match wins. */
+const EXACT: Record<string, MessageKey> = {
+  ...Object.fromEntries(
+    (Object.keys(APP_ERROR_MESSAGES) as AppErrorCode[]).map((code) => [
+      APP_ERROR_MESSAGES[code],
+      KEY_BY_CODE[code],
+    ])
+  ),
+  ...CLIENT_EXACT,
 }
 
 /** Order matters: the first matching pattern wins. */

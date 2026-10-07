@@ -12,6 +12,7 @@ export const errors: Namespace = {
   en: {
     'errors.missingFields': 'Missing required fields',
     'errors.noMessageInResponse': 'No message in response',
+    'errors.gatewayInvalidJson': 'Gateway returned invalid JSON',
     'errors.noImageInResponse':
       'The model responded without an image. It may not support image extension yet.',
     'errors.noImageGenerated':
@@ -97,6 +98,7 @@ export const errors: Namespace = {
   zh: {
     'errors.missingFields': '缺少必填字段',
     'errors.noMessageInResponse': '响应中没有消息',
+    'errors.gatewayInvalidJson': '网关返回的响应不是有效 JSON',
     'errors.noImageInResponse': '模型没有返回图像，可能尚不支持图像扩展。',
     'errors.noImageGenerated': '没有生成图像，模型可能不支持纯图像生成。',
     'errors.internal': '服务器内部错误',

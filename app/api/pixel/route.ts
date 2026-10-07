@@ -11,6 +11,7 @@ import {
   V3_MAX,
   V3_MIN,
 } from '@/app/lib/pixel'
+import { APP_ERROR_MESSAGES } from '@/app/lib/appErrors'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     payload = (await request.json()) as Record<string, unknown>
   } catch {
-    return json({ error: 'invalid JSON body' }, 400)
+    return json({ error: APP_ERROR_MESSAGES.invalidJsonBody }, 400)
   }
 
   // The browser client puts the op in the query string for every call, POSTs
