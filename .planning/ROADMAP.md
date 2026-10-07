@@ -71,11 +71,11 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 03-01: `strip-frames` op：组合既有导出 + 计数器 + 断言
+- [x] 03-01: `strip-frames` op：组合既有导出 + 计数器 + 断言
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-02: `node --test` 冒烟：真实 PNG 字节、几何断言、基线对齐缺席
+- [x] 03-02: `node --test` 冒烟：真实 PNG 字节、几何断言、基线对齐缺席
 
 ### Phase 4: CLI runner（`ie anim plan` / `run --go`）
 
@@ -165,7 +165,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|----------------|--------|-----------|
 | 1. 传输探针与精确尺寸透传 | 2/2 | Complete    | 2026-10-07 |
 | 2. 纯核心（animStrip + animSet） | 2/2 | Complete    | 2026-10-07 |
-| 3. strip → frames 后处理 | 0/2 | Not started | - |
+| 3. strip → frames 后处理 | 2/2 | Executed (verify pending) | 2026-10-07 |
 | 4. CLI runner | 0/3 | Not started | - |
 | 5. 库 kind、provenance 诚实性与载荷上限 | 0/2 | Not started | - |
 | 6. UI studio | 0/3 | Not started | - |

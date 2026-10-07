@@ -109,7 +109,7 @@
 | TRAN-04 | Phase 1 | Complete |
 | TRAN-05 | Phase 1 | Complete |
 | GEOM-01 | Phase 2 | Complete |
-| GEOM-02 | Phase 3 | Pending |
+| GEOM-02 | Phase 3 | Complete |
 | GEOM-03 | Phase 2 | Complete |
 | GEN-01 | Phase 4 | Pending |
 | GEN-02 | Phase 4 | Pending |
@@ -119,11 +119,11 @@
 | GEN-06 | Phase 4 | Pending |
 | GEN-07 | Phase 2 | Complete |
 | GEN-08 | Phase 2 | Complete |
-| POST-01 | Phase 3 | Pending |
-| POST-02 | Phase 3 | Pending |
-| POST-03 | Phase 3 | Pending |
+| POST-01 | Phase 3 | Complete |
+| POST-02 | Phase 3 | Complete |
+| POST-03 | Phase 3 | Complete |
 | POST-04 | Phase 6 | Pending |
-| POST-05 | Phase 3 | Pending |
+| POST-05 | Phase 3 | Complete |
 | LIB-01 | Phase 5 | Pending |
 | LIB-02 | Phase 5 | Pending |
 | LIB-03 | Phase 5 | Pending |
