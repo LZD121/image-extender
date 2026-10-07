@@ -17,7 +17,6 @@ import { SPRITE_CHARACTER_PRESETS, SpriteAnimType, SpritePreset } from '@/app/li
  * presets, and the per-plan UI copy. The matching anatomy logic lives in:
  *   • utils/poseRig.ts + utils/rigs/*   — the deterministic pose rigs
  *   • api/generate/route.ts             — choreography + anchor + guide text
- *   • api/sprite-review/route.ts        — QA expectations + acceptance rules
  * all keyed by the same `BodyPlan` id string.
  */
 export type BodyPlan = 'biped' | 'quadruped' | 'serpent' | 'flyer' | 'blob'

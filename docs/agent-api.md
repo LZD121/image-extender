@@ -133,7 +133,6 @@ unknown profile, 400 = bad input, 5xx = upstream).
 | `/api/scene-brief` | POST | art director: derive a scene brief from a prompt |
 | `/api/prop-brief` | POST | art director: invent N prop ideas for a biome |
 | `/api/tile-review` | POST | QA critic for an assembled tileset |
-| `/api/sprite-review` | POST | QA critic for a sprite sheet |
 | `/api/providers` | GET / POST | provider table (keyless) / probe one gateway's `/models` |
 | `/api/pixel` | POST / GET | PixelLab relay (pixflux, character / status, balance, image proxy) |
 | `/api/library` | GET / POST / DELETE | asset library index, meta, file bytes, save, delete |
@@ -188,11 +187,10 @@ the canvas builder produced.
 
 ### QA routes
 
-`/api/tile-review` takes `{ prompt?, previewImage, sheetImage?, … }` and
-`/api/sprite-review` takes `{ prompt?, anim?, bodyPlan?, sheetImage, anchorImage?, … }`.
-Both answer `{ "ok": true|false, "issues": ["…"], "fix": "…" }`. `ok: true` with
-empty arrays means approved. Treat *any* failure to get an answer as an approval —
-that is what the UI does, and a flaky critic must never block a generation.
+`/api/tile-review` takes `{ prompt?, previewImage, sheetImage?, … }` and answers
+`{ "ok": true|false, "issues": ["…"], "fix": "…" }`. `ok: true` with empty arrays
+means approved. Treat *any* failure to get an answer as an approval — that is
+what the UI does, and a flaky critic must never block a generation.
 
 ### /api/providers
 
@@ -391,7 +389,7 @@ Sharp edges that follow from that protocol:
   comes back in the model's own scale and is normalized by the aligner — check
   `manifest.returned` rather than assuming the requested size.
 - Chat and vision models work there too, so the art-director passes (`tile-review`,
-  `sprite-review`, `prop-brief`, `scene-brief`) run on the same profile.
+  `prop-brief`, `scene-brief`) run on the same profile.
 
 Everything else reaches a chat/completions gateway. A generic OpenAI-compatible
 endpoint is expressible either as a `magpie` profile with a custom `baseUrl` or as

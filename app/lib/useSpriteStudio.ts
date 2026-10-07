@@ -570,10 +570,10 @@ export function useSpriteStudio({
       // two (a duplicate creature, or a spillover from the neighbouring row or
       // column) and repaint with a fix instruction if any. That check is the
       // whole critic: the vision art-director pass was removed deliberately
-      // (4a8d674, "fast and predictable"), and /api/sprite-review stays
-      // reachable for anyone who wants it. The anchor identity is reused on
-      // every repaint so the character stays on-model, and the frames stay in
-      // their loading state while the repaint runs.
+      // (4a8d674, "fast and predictable"), and this pixel-math check is the
+      // same trade. The anchor identity is reused on every repaint so the
+      // character stays on-model, and the frames stay in their loading state
+      // while the repaint runs.
       phaseLabel = t('extender.phase.paintingFrames')
       let sheetResult = await runSpriteSheetPass(
         effectivePrompt,

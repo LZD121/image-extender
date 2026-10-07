@@ -671,8 +671,7 @@ app/
 │   ├── generate/route.ts      Text-to-image + tile-sheet + sprite-sheet prompts
 │   ├── scene-brief/route.ts   Distill a shared scene brief for a project
 │   ├── prop-brief/route.ts    Props "art director" — invents the next prop batch
-│   ├── tile-review/route.ts   Tile QA "art director" (vision critic)
-│   └── sprite-review/route.ts Sprite QA "art director" (vision critic)
+│   └── tile-review/route.ts   Tile QA "art director" (vision critic)
 ├── components/                UI split by workspace
 │   ├── TopBar / CommandBar / Workspace / VariantSelector / Modals / icons
 │   ├── ParallaxStudio.tsx
