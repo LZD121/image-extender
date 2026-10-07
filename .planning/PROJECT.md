@@ -21,6 +21,7 @@
 - ✓ 三套测试：vitest 单元/契约（node env）、Playwright + Midscene AI E2E、bridge smoke（`node --test`） — `vitest.config.ts`、`playwright.config.ts`、`cli/native/__tests__/bridge.smoke.test.mjs`
 - ✓ 像素线：PixelLab `pixflux` + 静态 8 向角色 + 强制像素网格（block/cell） — `app/lib/pixel.ts`、`app/utils/pixelGrid.ts`、`app/components/PixelStudio.tsx`
 - ✓ 六个 studio（Extender / Parallax / Tiles / Sprite / Props / Pixel）与 ZIP/manifest 导出（"逐字节不变"是既有不变量） — `app/page.tsx`、`app/lib/studioDownload.ts`
+- ✓ CLI 运行器 `ie anim plan|run`：预演零调用（真 CLI 在死端口下 exit 0）、`--go` 是唯一开关、每张完成即原子落盘、ledger 按 `(state, frame)` 合并、失败默认停止、`--redo state:frame` 只重跑该条、比例闸门只拦离谱形状 — `cli/commands/anim.mjs`、`cli/lib/media.mjs`、`cli/lib/server.mjs`
 
 ### Active
 
@@ -30,7 +31,7 @@
 - [ ] 传输：把"精确尺寸能否到达模型"钉成常量；只有在探针证明现有通路无论如何送不出 8:1/4:1 时，才条件性放宽 `SUPPORTED_IMAGE_ASPECT_RATIOS`（须重算 blast radius 并断言六个既有 studio 请求档位不变）
 - [ ] 纯核心：`app/lib/animSet.ts`（规格校验 / `planStrips` / `set.json` / 断点续跑判定）与 `app/lib/animStrip.ts`（strip prompt 组装 + cell↔方向映射），全部可单测
 - [ ] 生成与后处理：逐 strip 打 `/api/generate`（现有 plain 形状）→ **原子写** `raw/` → 新 bridge op `strip-frames`（**拟合面板网格 + gutter 断言**、抠底二值化、去边、套 cell 居中；**基线对齐显式关闭**）→ 写 `derived/` 与 `set.json`
-- [ ] CLI 面：`ie anim plan`（预演，打印调用数与尺寸）与 `ie anim run --go [--redo] [--keep-going]`；入库复用 `ie library save`
+- [ ] CLI 面的**入库一半**：`ie anim` 的产物走 `ie library save` 入库（CLI 运行器本身已在 Phase 4 交付）
 - [ ] 库面：新增 `AssetKind = 'animations'`，一个动画集 = 一个资产（`derived/*.png` + `set.json` + `meta.json`，**raw 永不入库**——16 张真实 raw = 363.8M base64 > route 上限 279.6M）；provenance 的 `params` 记 `calls/cells/seconds`，且 `backend` 与实际服务方一致、`cost.source === backend`（或 `cost === null`）；修掉 `ie library save` 硬编码的 `backend:'openrouter'`
 - [ ] UI 面：第 7 个模式 `anim`（规格表单 → 计划确认 → 逐 strip 进度 → 帧画廊 → Save to library）+ `app/i18n/messages/anim.ts`（en/zh）
 - [ ] 端到端验收：用 hero（idle+walk，8 次调用）实跑一遍 → 入库 → 刷新页面后仍能从面板找回
@@ -77,6 +78,11 @@
 | 后处理改为新 op `strip-frames`（弃用 `sprite-align`） | 后者无条件跑基线对齐，会把俯视/仰视格钉到同一地面并丢内容 | — Pending |
 | raw **永不入库** | 16 张真实 raw = 363.8M base64 > route 上限 279.6M，且 413 在 body 缓冲后才发生 | — Pending |
 | Teamo 直连表达为 **magpie profile** 而非第四个 provider | `ieConfig.ts` 允许 magpie 配 `baseUrl`；provider 表是"一处一个事实"的既有不变量 | — Pending |
+| **付费过的条永远有账本行**（生成之后的失败也要落账，`--keep-going` 也不许把它变成"没发生"） | 一条已付费但没落账的 strip 会被下一次运行当成 `missing` **再买一次**；这是本阶段存在的意义 | ✓ Good |
+| 重试**只包生成调用**，永不包整条流水线 | 包住整条会在后处理失败时二次付费 | ✓ Good |
+| `--redo k` 就是 **k，且只有 k** | 一个"重跑这条"的旗标顺手花掉其它 pending 条的钱，是操作者没同意的支出 | ✓ Good |
+| `set.json` 记**实际请求用的 model**（含 `--model` 覆盖） | Phase 5/6 只读它作为 provenance 来源；记错的 model 会被续跑复制下去 | ✓ Good |
+| 比例容差 `0.05`，常态漂移（3.977% / 4.065%）必须**通过** | Phase 1 实测那些漂移就是这条管线的**正常输出**；更紧的闸门会拒绝自己产出的每一张图（2% 曾同时拒掉探针与 fixture） | ✓ Good |
 
 ## Evolution
 
@@ -96,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-06 after initialization*
+*Last updated: 2026-10-08 after Phase 4*
