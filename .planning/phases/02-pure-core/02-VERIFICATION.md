@@ -15,7 +15,7 @@ covered_files:
   - app/lib/animSet.ts
   - app/lib/animStrip.ts
   - app/lib/aspectRatio.ts
-covered_digest: v1:sha256:5d47ce5786212a4902e00b3fdbf115a8e59c43f2ef93ee3e5048b89a5cc167c7
+covered_digest: v1:sha256:321d33f8e3b2b1bcf78413bee94b97b5b8261dee937940c55d6ca5993139c793
 behavior_unverified: 0
 behavior_unverified_items:
 coincidental_reliance_items:
