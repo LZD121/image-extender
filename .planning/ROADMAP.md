@@ -121,11 +121,14 @@ Plans:
   3. 一个由 magpie/OpenRouter/APIMart 生成的集，其 `meta.json.provenance.backend` 与实际服务方一致
   4. `meta.manifest` 不含帧清单；`provenance.params` 含 `calls/cells/seconds` 且与 `ok:true` 条数一致
 
-**Plans**: 2 plans
+**Plans**: 1/2 plans executed
 
 Plans:
 
-- [ ] 05-01: kind 扩宽 + collector 分支 + 面板分组
+- [x] 05-01-PLAN.md
+- [ ] 05-02-PLAN.md
+
+- [x] 05-01: kind 扩宽 + collector 分支 + 面板分组
 - [ ] 05-02: provenance 诚实性（BackendLabel/cost/CLI 硬编码）+ 载荷守卫
 
 ### Phase 6: UI studio（`AnimStudio` + i18n）
@@ -179,6 +182,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 2. 纯核心（animStrip + animSet） | 2/2 | Complete    | 2026-10-07 |
 | 3. strip → frames 后处理 | 2/2 | Complete    | 2026-10-07 |
 | 4. CLI runner | 4/3 | Complete    | 2026-10-08 |
-| 5. 库 kind、provenance 诚实性与载荷上限 | 0/2 | Not started | - |
+| 5. 库 kind、provenance 诚实性与载荷上限 | 1/2 | In Progress|  |
 | 6. UI studio | 0/3 | Not started | - |
 | 7. 端到端验收 | 0/1 | Not started | - |
