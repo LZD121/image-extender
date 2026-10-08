@@ -104,6 +104,13 @@ export function buildProvenance<Backend extends BackendLabel>(opts: {
   returned?: string | null
   cost?: ReportedCost | null
 }): Omit<Provenance, 'toolVersion'> & { backend: Backend } {
+  // LIB-03: a cost is recorded only when the vendor reported one, and when it
+  // did, the vendor it names must be the vendor that painted the asset. `source`
+  // is a free string (D-52), so this compares strings rather than tightening the
+  // type — that belongs to the second adapter, not here.
+  if (opts.cost != null && opts.cost.source !== opts.backend) {
+    throw new Error(`cost.source (${opts.cost.source}) must match backend (${opts.backend})`)
+  }
   return {
     backend: opts.backend,
     model: opts.model,

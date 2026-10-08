@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAssetMeta, collectSetAsset, collectStudioAsset, slugify } from '@/app/lib/libraryCollect'
+import { buildAssetMeta, buildProvenance, collectSetAsset, collectStudioAsset, slugify } from '@/app/lib/libraryCollect'
 import type { SetJson } from '@/app/lib/animSet'
 import { ASSET_KINDS, isBackendLabel } from '@/app/lib/libraryTypes'
 
@@ -335,5 +335,26 @@ describe('collectSetAsset (the animations kind)', () => {
     expect(() =>
       collectSetAsset({ ...SET_ARGS, setJson: { ...SET_JSON, backend: { provider: 'gpt-image-9', model: 'm' } } })
     ).toThrow(/not one of/)
+  })
+})
+
+// LIB-03. A cost is recorded only when the vendor reported one, and the vendor it
+// names has to be the vendor that painted the asset — otherwise `meta.json`
+// carries exactly the kind of lie this phase exists to end.
+describe('buildProvenance cost consistency (LIB-03)', () => {
+  it('throws when cost.source names another vendor', () => {
+    expect(() =>
+      buildProvenance({ backend: 'apimart', model: 'm', cost: { usd: 0.01, source: 'openrouter' } })
+    ).toThrow('cost.source (openrouter) must match backend (apimart)')
+  })
+
+  it('accepts an unreported cost as null', () => {
+    expect(buildProvenance({ backend: 'apimart', model: 'm', cost: null }).cost).toBe(null)
+  })
+
+  it('accepts a cost whose source is the backend', () => {
+    expect(
+      buildProvenance({ backend: 'openrouter', model: 'm', cost: { usd: 0.01, source: 'openrouter' } }).cost
+    ).toEqual({ usd: 0.01, source: 'openrouter' })
   })
 })
