@@ -22,6 +22,7 @@
 - ✓ 像素线：PixelLab `pixflux` + 静态 8 向角色 + 强制像素网格（block/cell） — `app/lib/pixel.ts`、`app/utils/pixelGrid.ts`、`app/components/PixelStudio.tsx`
 - ✓ 六个 studio（Extender / Parallax / Tiles / Sprite / Props / Pixel）与 ZIP/manifest 导出（"逐字节不变"是既有不变量） — `app/page.tsx`、`app/lib/studioDownload.ts`
 - ✓ CLI 运行器 `ie anim plan|run`：预演零调用（真 CLI 在死端口下 exit 0）、`--go` 是唯一开关、每张完成即原子落盘、ledger 按 `(state, frame)` 合并、失败默认停止、`--redo state:frame` 只重跑该条、比例闸门只拦离谱形状 — `cli/commands/anim.mjs`、`cli/lib/media.mjs`、`cli/lib/server.mjs`
+- ✓ 库的集资产：`AssetKind += 'animations'`（面板标签与 en/zh 由编译强制的穷尽性守住），一个动画集 = 一个资产（`derived/*.png` + `derived/set.json` + `meta.json`，**raw 永不入库**——载荷算术钉住：16 张真实 raw = 363.8M 字符 = 上限的 1.301×，derived-only 只占 26.9%）；provenance 从**账本**读（backend/model），`cost` 报才记且必须与 backend 同名，`params.calls/cells/seconds` 与账本 `ok:true` 条数不符即拒绝；`ie library save` 不再有默认 backend — `cli/commands/library.mjs`、`app/lib/libraryCollect.ts`、`app/lib/__tests__/payloadArithmetic.test.ts`
 
 ### Active
 
@@ -31,8 +32,6 @@
 - [ ] 传输：把"精确尺寸能否到达模型"钉成常量；只有在探针证明现有通路无论如何送不出 8:1/4:1 时，才条件性放宽 `SUPPORTED_IMAGE_ASPECT_RATIOS`（须重算 blast radius 并断言六个既有 studio 请求档位不变）
 - [ ] 纯核心：`app/lib/animSet.ts`（规格校验 / `planStrips` / `set.json` / 断点续跑判定）与 `app/lib/animStrip.ts`（strip prompt 组装 + cell↔方向映射），全部可单测
 - [ ] 生成与后处理：逐 strip 打 `/api/generate`（现有 plain 形状）→ **原子写** `raw/` → 新 bridge op `strip-frames`（**拟合面板网格 + gutter 断言**、抠底二值化、去边、套 cell 居中；**基线对齐显式关闭**）→ 写 `derived/` 与 `set.json`
-- [ ] CLI 面的**入库一半**：`ie anim` 的产物走 `ie library save` 入库（CLI 运行器本身已在 Phase 4 交付）
-- [ ] 库面：新增 `AssetKind = 'animations'`，一个动画集 = 一个资产（`derived/*.png` + `set.json` + `meta.json`，**raw 永不入库**——16 张真实 raw = 363.8M base64 > route 上限 279.6M）；provenance 的 `params` 记 `calls/cells/seconds`，且 `backend` 与实际服务方一致、`cost.source === backend`（或 `cost === null`）；修掉 `ie library save` 硬编码的 `backend:'openrouter'`
 - [ ] UI 面：第 7 个模式 `anim`（规格表单 → 计划确认 → 逐 strip 进度 → 帧画廊 → Save to library）+ `app/i18n/messages/anim.ts`（en/zh）
 - [ ] 端到端验收：用 hero（idle+walk，8 次调用）实跑一遍 → 入库 → 刷新页面后仍能从面板找回
 - [ ] 收尾：`dark-black/tools/gen_assets_teamo.py` 退役（改由本管线产出，游戏侧只留消费端脚本）
@@ -83,6 +82,10 @@
 | `--redo k` 就是 **k，且只有 k** | 一个"重跑这条"的旗标顺手花掉其它 pending 条的钱，是操作者没同意的支出 | ✓ Good |
 | `set.json` 记**实际请求用的 model**（含 `--model` 覆盖） | Phase 5/6 只读它作为 provenance 来源；记错的 model 会被续跑复制下去 | ✓ Good |
 | 比例容差 `0.05`，常态漂移（3.977% / 4.065%）必须**通过** | Phase 1 实测那些漂移就是这条管线的**正常输出**；更紧的闸门会拒绝自己产出的每一张图（2% 曾同时拒掉探针与 fixture） | ✓ Good |
+| `set.json` 是集资产的**唯一** provenance 来源（backend/model/totals 都从它读） | 它记的是实际请求用的 model 与真实条数；从 CLI 旗标或默认值猜，就是本阶段要修的那类谎 | ✓ Good |
+| `--backend` 没有默认值 | `?? 'openrouter'` 让一张 APIMart 的图被盖上一个从未画过它的网关；缺旗标即 usage error，比猜一个更诚实 | ✓ Good |
+| 载荷边界用**测试期算术**守住，不用运行期拒绝 | 运行期检查拦不住"某天有人放宽形状"；算术断言会在那天变红（且它读的是 route 自己的常量，不是抄来的副本） | ✓ Good |
+| `app/lib/**` 里只有 `library.ts` 能碰 `node:fs` | 这一层**也打进浏览器包**；把读盘放进 `collectSetAsset` 会把 `node:fs` 拖进客户端——所以读盘在 CLI，纯变换留在库里 | ✓ Good |
 
 ## Evolution
 
@@ -102,4 +105,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-08 after Phase 4*
+*Last updated: 2026-10-08 after Phase 5*
