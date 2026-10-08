@@ -282,6 +282,30 @@ export function collectSetAsset(args: {
     )
   }
 
+  // LIB-06 / D-47: the params recorded must agree with the ledger they came from.
+  // `buildSetJson` counts only `ok:true` strips (animSet.ts:345-387), so `totals`
+  // is the honest source; a mismatch means one of the two is wrong, and a pretty
+  // number is worse than a refusal. The empty set needs no special case — with no
+  // ok strips the three checks below already force every total to zero.
+  const okStrips = setJson.strips.filter((strip) => strip.ok)
+  if (setJson.totals.calls !== okStrips.length) {
+    throw new Error(
+      `set.json totals.calls (${setJson.totals.calls}) must equal its ok strips (${okStrips.length})`
+    )
+  }
+  const expectedCells = okStrips.length * setJson.dirs.order.length
+  if (setJson.totals.cells !== expectedCells) {
+    throw new Error(
+      `set.json totals.cells (${setJson.totals.cells}) must equal ok strips × directions (${expectedCells})`
+    )
+  }
+  const expectedSeconds = okStrips.reduce((sum, strip) => sum + strip.seconds, 0)
+  if (Math.abs(setJson.totals.seconds - expectedSeconds) > 0.001) {
+    throw new Error(
+      `set.json totals.seconds (${setJson.totals.seconds}) must equal the ok strips' seconds (${expectedSeconds})`
+    )
+  }
+
   const files: Record<string, string> = {}
   for (const frame of args.derived) files[`derived/${frame.name}`] = frame.dataUrl
   files['derived/set.json'] = args.setJsonDataUrl

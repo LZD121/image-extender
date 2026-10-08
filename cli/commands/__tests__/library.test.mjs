@@ -161,7 +161,9 @@ describe('ie library save — the animations kind', () => {
         },
         cell: 512,
         states: [{ name: 'idle', frames: 2, fps: 4, durationsMs: [250, 250], loop: true }],
-        strips: [],
+        // One finished strip — the totals below are its sum, and the collector
+        // refuses a ledger where the two disagree (LIB-06 / D-47).
+        strips: [{ ok: true, seconds: 12.5 }],
         frames: [],
         backend: { provider: 'apimart', model: 'teamo-router/gemini-3.1-flash-image' },
         totals: { calls: 1, cells: 8, seconds: 12.5 },

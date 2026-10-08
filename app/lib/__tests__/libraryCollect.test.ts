@@ -269,7 +269,9 @@ const SET_JSON: SetJson = {
   },
   cell: 512,
   states: [{ name: 'idle', frames: 2, fps: 4, durationsMs: [250, 250], loop: true }],
-  strips: [],
+  // One strip that finished, which is what the totals below are the sum of —
+  // `collectSetAsset` refuses a ledger whose totals disagree with its ok rows.
+  strips: [{ ok: true, seconds: 12.5 } as SetJson['strips'][number]],
   frames: [],
   backend: { provider: 'apimart', model: 'teamo-router/gemini-3.1-flash-image' },
   totals: { calls: 1, cells: 8, seconds: 12.5 },
@@ -335,6 +337,44 @@ describe('collectSetAsset (the animations kind)', () => {
     expect(() =>
       collectSetAsset({ ...SET_ARGS, setJson: { ...SET_JSON, backend: { provider: 'gpt-image-9', model: 'm' } } })
     ).toThrow(/not one of/)
+  })
+})
+
+// LIB-06 / D-47. A ledger whose totals disagree with its own ok rows is a ledger
+// nobody can trust, so the save refuses it instead of recording a tidy number.
+describe('collectSetAsset — the totals must match the ok rows', () => {
+  const withTotals = (totals: SetJson['totals'], strips: SetJson['strips']) => ({
+    ...SET_ARGS,
+    setJson: { ...SET_JSON, totals, strips },
+  })
+  const oneOkStrip = [{ ok: true, seconds: 12.5 } as SetJson['strips'][number]]
+
+  it('refuses a calls count the ok rows do not support', () => {
+    expect(() =>
+      collectSetAsset(withTotals({ calls: 5, cells: 40, seconds: 12.5 }, oneOkStrip))
+    ).toThrow('totals.calls (5) must equal its ok strips (1)')
+  })
+
+  it('refuses a cells count the ok rows do not support', () => {
+    expect(() =>
+      collectSetAsset(withTotals({ calls: 1, cells: 30, seconds: 12.5 }, oneOkStrip))
+    ).toThrow('totals.cells (30) must equal ok strips × directions (8)')
+  })
+
+  it('refuses seconds that are not the sum of the ok rows', () => {
+    expect(() =>
+      collectSetAsset(withTotals({ calls: 1, cells: 8, seconds: 99 }, oneOkStrip))
+    ).toThrow("totals.seconds (99) must equal the ok strips' seconds (12.5)")
+  })
+
+  it('accepts a set with nothing done, and still refuses a non-zero total there', () => {
+    // The empty set is the resume case: nothing ok, so every total is zero. No
+    // special branch enforces this — the three equalities already do.
+    const empty = collectSetAsset(withTotals({ calls: 0, cells: 0, seconds: 0 }, []))
+    expect(empty.meta.provenance.params).toMatchObject({ calls: 0, cells: 0, seconds: 0 })
+    expect(() => collectSetAsset(withTotals({ calls: 0, cells: 0, seconds: 5 }, []))).toThrow(
+      'totals.seconds (5)'
+    )
   })
 })
 
