@@ -31,6 +31,7 @@ const KIND_KEY: Record<AssetKind, string> = {
   props: 'shell.library.kind.props',
   parallax: 'shell.library.kind.parallax',
   extend: 'shell.library.kind.extend',
+  animations: 'shell.library.kind.animations',
 }
 
 /**

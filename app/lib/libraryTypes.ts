@@ -5,7 +5,7 @@
  */
 import { PROVIDER_IDS, type ProviderId } from '@/app/lib/providers'
 
-export const ASSET_KINDS = ['tiles', 'sprites', 'props', 'parallax', 'extend'] as const
+export const ASSET_KINDS = ['tiles', 'sprites', 'props', 'parallax', 'extend', 'animations'] as const
 export type AssetKind = (typeof ASSET_KINDS)[number]
 
 

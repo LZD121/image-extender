@@ -75,6 +75,7 @@ export const shell: Namespace = {
     'shell.library.kind.props': 'Props',
     'shell.library.kind.parallax': 'Parallax',
     'shell.library.kind.extend': 'Extender',
+    'shell.library.kind.animations': 'Animations',
   },
   zh: {
     // ── 顶栏 ────────────────────────────────────────────────────────────────
@@ -147,5 +148,6 @@ export const shell: Namespace = {
     'shell.library.kind.props': '道具',
     'shell.library.kind.parallax': '视差',
     'shell.library.kind.extend': '扩图',
+    'shell.library.kind.animations': '动画集',
   },
 }

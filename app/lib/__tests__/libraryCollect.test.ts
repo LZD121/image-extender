@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildAssetMeta, collectStudioAsset, slugify } from '@/app/lib/libraryCollect'
-import { isBackendLabel } from '@/app/lib/libraryTypes'
+import { ASSET_KINDS, isBackendLabel } from '@/app/lib/libraryTypes'
 
 const PNG = 'data:image/png;base64,AAAA'
 
@@ -239,5 +239,19 @@ describe('the facts an asset records', () => {
     expect(isBackendLabel('midjourney')).toBe(false)
     expect(isBackendLabel('')).toBe(false)
     expect(isBackendLabel(undefined)).toBe(false)
+  })
+})
+
+// LIB-01. The kind is a directory name on disk (`<project>/<kind>/<slug>/`), so
+// adding one is a data-layout commitment, not just a type change: `KIND_KEY`'s
+// `Record<AssetKind, string>` makes the panel label a compile error if it is
+// missed, and the length assertion here keeps a silent removal from passing.
+describe('ASSET_KINDS includes animations (LIB-01)', () => {
+  it('contains animations', () => {
+    expect(ASSET_KINDS).toContain('animations')
+  })
+
+  it('has exactly 6 kinds', () => {
+    expect(ASSET_KINDS).toHaveLength(6)
   })
 })
