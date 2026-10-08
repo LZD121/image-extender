@@ -9,7 +9,7 @@
  * exactly one key per module, so `ie library <sub> …` is how the five surfaces
  * share a namespace without a second dispatch layer.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { CliError, UsageError, positional } from '../lib/args.mjs'
 import { dataUrlFromFile, ensureFile } from '../lib/media.mjs'
@@ -23,9 +23,10 @@ const SUBCOMMAND_LINES = [
   '  file <project> <kind> <slug> <relpath> --out <file>   copy one stored file out',
   '  delete <project> <kind> <slug>              remove an asset and its files',
   '  save <project> <kind> <slug> --sheet <raw.png> --derived <a.png,b.png> [--overwrite] [--type <t>] [--meta <json>]',
+  '  save <project> animations <slug> --set-json <set.json> --derived-dir <dir/>   (no --sheet/--derived)',
 ]
 
-const USAGE = 'ie library <list|get|file|delete|save> [args] [flags]  (save: --sheet --derived --type --meta --backend <label>)'
+const USAGE = 'ie library <list|get|file|delete|save> [args] [flags]  (save: --sheet --derived --type --meta --backend <label>; animations: --set-json --derived-dir)'
 
 /**
  * Every app module the subcommands need, in one bundle. `libraryPath` is here
@@ -138,6 +139,12 @@ async function save(ctx, lib) {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
+  // An animation set arrives as a run directory, not as loose files (D-42): its
+  // payload is `derived/*.png` plus the ledger, and `--sheet`/`--derived` do not
+  // apply. Dispatch BEFORE the guard below, which would otherwise reject a save
+  // that is legitimately file-less.
+  if (kind === 'animations') return saveSet(ctx, lib, project, slug)
+
   if (!ctx.flags.sheet && !derived.length) {
     ctx.fail('usage', 'save needs at least one file: --sheet <raw.png> and/or --derived <a.png,b.png>')
   }
@@ -203,6 +210,61 @@ async function save(ctx, lib) {
   }
 }
 
+/**
+ * An animation set is a run directory, not loose files: the payload is the
+ * derived frames plus the ledger, and the provenance is read off that ledger
+ * (D-42/D-43) — a different input from `save`'s `--sheet`/`--derived`, so it gets
+ * its own entry point rather than a flag on the existing one.
+ *
+ * The reading and the encoding live here, not in `collectSetAsset`: that module
+ * sits in `app/lib`, which is bundled into the browser as well, and `node:fs`
+ * stays out of it.
+ */
+async function saveSet(ctx, lib, project, slug) {
+  if (!ctx.flags['set-json']) ctx.fail('missing_flag', '--set-json is required for the animations kind')
+  if (!ctx.flags['derived-dir']) ctx.fail('missing_flag', '--derived-dir is required for the animations kind')
+  const setJsonPath = path.resolve(ctx.flags['set-json'])
+  const derivedDir = path.resolve(ctx.flags['derived-dir'])
+  ensureFile(setJsonPath, '--set-json')
+
+  let setJson
+  try {
+    setJson = JSON.parse(readFileSync(setJsonPath, 'utf8'))
+  } catch (err) {
+    ctx.fail('bad_json', `--set-json is not valid JSON: ${err.message}`)
+  }
+
+  let names
+  try {
+    names = readdirSync(derivedDir).filter((f) => f.endsWith('.png')).sort()
+  } catch (err) {
+    ctx.fail('bad_dir', `--derived-dir cannot be read: ${err.message}`)
+  }
+  if (!names.length) ctx.fail('bad_dir', `--derived-dir holds no .png: ${derivedDir}`)
+
+  const { meta, files } = lib.collectSetAsset({
+    setJson,
+    setJsonDataUrl: dataUrlFromFile(setJsonPath),
+    // The collector keys the ledger as `derived/set.json`, the only spelling the
+    // route's path validator accepts (D-50).
+    derived: names.map((name) => ({ name, dataUrl: dataUrlFromFile(path.join(derivedDir, name)) })),
+    project,
+    slug,
+  })
+  meta.provenance.toolVersion = IE_VERSION
+  const written = await lib.saveAsset(project, 'animations', slug, meta, files, {
+    overwrite: !!ctx.flags.overwrite,
+  })
+  const dir = lib.resolveAssetDir(lib.assetsRoot(), project, 'animations', slug)
+  return {
+    summary: `saved ${project}/animations/${slug} (${written.length} files) → ${dir}`,
+    root: lib.assetsRoot(),
+    path: `${project}/animations/${slug}`,
+    written: written.map((rel) => path.join(dir, rel)),
+    meta,
+  }
+}
+
 const HANDLERS = { list, get, file, delete: remove, save }
 
 const library = {
@@ -216,6 +278,8 @@ const library = {
     type: { type: 'string' },
     backend: { type: 'string' },
     out: { type: 'string' },
+    'set-json': { type: 'string' },
+    'derived-dir': { type: 'string' },
     help: { type: 'boolean' },
   },
   async run(ctx) {

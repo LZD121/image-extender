@@ -4,7 +4,7 @@
  * the same context shape `cli/ie.mjs` builds, and the real on-disk library.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -115,5 +115,84 @@ describe('ie library', () => {
 
   it('rejects an unknown subcommand as a usage error', async () => {
     await expect(run(['frobnicate'])).rejects.toThrow(/unknown library subcommand/)
+  })
+})
+
+// LIB-02 / CLI-03. An animation set enters the library as a run directory — the
+// derived frames plus the ledger, never a raw — and its provenance is read off
+// that ledger rather than from a CLI default.
+describe('ie library save — the animations kind', () => {
+  /** A throwaway run directory: a real PNG twice over, plus a real ledger. */
+  const makeRunDir = async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'ie-run-'))
+    await mkdir(path.join(dir, 'derived'))
+    await cp(PNG, path.join(dir, 'derived/idle_f1_east.png'))
+    await cp(PNG, path.join(dir, 'derived/idle_f1_south.png'))
+    await writeFile(
+      path.join(dir, 'set.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: 'animation-set',
+        actor: 'chaser',
+        dirs: {
+          preset: 'dirs8',
+          order: ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'],
+        },
+        cell: 512,
+        states: [{ name: 'idle', frames: 2, fps: 4, durationsMs: [250, 250], loop: true }],
+        strips: [],
+        frames: [],
+        backend: { provider: 'apimart', model: 'teamo-router/gemini-3.1-flash-image' },
+        totals: { calls: 1, cells: 8, seconds: 12.5 },
+      })
+    )
+    return dir
+  }
+
+  it('saves from a run directory with no --sheet and no --derived', async () => {
+    const dir = await makeRunDir()
+    try {
+      const payload = await run(['save', 'dungeon', 'animations', 'chaser-idle'], {
+        'set-json': path.join(dir, 'set.json'),
+        'derived-dir': path.join(dir, 'derived'),
+      })
+      expect(payload.path).toBe('dungeon/animations/chaser-idle')
+
+      const assetDir = path.join(root, 'dungeon/animations/chaser-idle')
+      const meta = JSON.parse(await readFile(path.join(assetDir, 'meta.json'), 'utf8'))
+      expect(meta.kind).toBe('animations')
+      expect(meta.files.sheet).toBe(null)
+      expect(meta.files.derived).toEqual([
+        'derived/idle_f1_east.png',
+        'derived/idle_f1_south.png',
+        'derived/set.json',
+      ])
+      expect(meta.manifest).not.toHaveProperty('strips')
+      expect(meta.manifest.states[0]).not.toHaveProperty('motion')
+      expect(meta.provenance.backend).toBe('apimart')
+      expect(meta.provenance.model).toBe('teamo-router/gemini-3.1-flash-image')
+      expect(meta.provenance.params.calls).toBe(1)
+
+      // D-50's whole point: the ledger really lands where the validator accepts
+      // it. A top-level `set.json` would have thrown before any disk I/O.
+      await stat(path.join(assetDir, 'derived/set.json'))
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('names the missing flag instead of guessing a path', async () => {
+    await expect(run(['save', 'dungeon', 'animations', 'x'], {})).rejects.toMatchObject({
+      code: 'missing_flag',
+    })
+    await expect(
+      run(['save', 'dungeon', 'animations', 'x'], { 'set-json': '/tmp/nope.json' })
+    ).rejects.toMatchObject({ code: 'missing_flag' })
+  })
+
+  it('still demands a file for every other kind', async () => {
+    // The animations dispatch sits before this guard; the guard must still fire
+    // for the kinds it was written for.
+    await expect(run(['save', 'dungeon', 'tiles', 'x'], {})).rejects.toThrow(/needs at least one file/)
   })
 })
