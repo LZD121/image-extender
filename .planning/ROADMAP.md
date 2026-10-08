@@ -10,7 +10,7 @@
 - [x] **Phase 2: 纯核心（animStrip + animSet）** - 规格校验、计划、prompt、set.json、续跑判定、面板拟合代数，全部无 DOM/网络/磁盘 (completed 2026-10-07)
 - [x] **Phase 3: strip → frames 后处理（bridge op `strip-frames`）** - 一张 strip 切成 N 帧并归一化，基线对齐显式关闭，每步可计数 (completed 2026-10-07)
 - [x] **Phase 4: CLI runner（`ie anim plan` / `run --go`）** - 计划闸门、原子写、按 `(state, frame)` 合并的 ledger、续跑与重跑 (completed 2026-10-08)
-- [ ] **Phase 5: 库 kind、provenance 诚实性与载荷上限** - `animations` kind、backend/cost 一致、raw 不入库
+- [x] **Phase 5: 库 kind、provenance 诚实性与载荷上限** - `animations` kind、backend/cost 一致、raw 不入库 (completed 2026-10-08)
 - [ ] **Phase 6: UI studio（`AnimStudio` + i18n）** - 第 7 个模式：规格 → 计划确认 → 逐条进度 → 帧画廊 → 入库
 - [ ] **Phase 7: 端到端验收（消费端 hero 形状）** - hero idle+walk 8 次调用跑通并入库，刷新后仍在
 
@@ -129,7 +129,7 @@ Plans:
 - [x] 05-02-PLAN.md
 
 - [x] 05-01: kind 扩宽 + collector 分支 + 面板分组
-- [ ] 05-02: provenance 诚实性（BackendLabel/cost/CLI 硬编码）+ 载荷守卫
+- [x] 05-02: provenance 诚实性（BackendLabel/cost/CLI 硬编码）+ 载荷守卫
 
 ### Phase 6: UI studio（`AnimStudio` + i18n）
 
@@ -182,6 +182,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 2. 纯核心（animStrip + animSet） | 2/2 | Complete    | 2026-10-07 |
 | 3. strip → frames 后处理 | 2/2 | Complete    | 2026-10-07 |
 | 4. CLI runner | 4/3 | Complete    | 2026-10-08 |
-| 5. 库 kind、provenance 诚实性与载荷上限 | 2/2 | In Progress|  |
+| 5. 库 kind、provenance 诚实性与载荷上限 | 2/2 | Complete    | 2026-10-08 |
 | 6. UI studio | 0/3 | Not started | - |
 | 7. 端到端验收 | 0/1 | Not started | - |

@@ -44,18 +44,18 @@
 
 ### LIB — 库与 provenance
 
-- [ ] **LIB-01**: 新 kind `animations` 可保存/列出/读取/删除，面板按 kind 分组显示
-- [ ] **LIB-02**: 保存一个集只发 `derived/` + `set.json` + `meta.json`；raw 永不入库（含载荷断言）
-- [ ] **LIB-03**: provenance 的 `backend` 与实际服务方一致，且 `cost.source === backend`（或 `cost === null`）
-- [ ] **LIB-04**: `ie library save` 不再硬编码 `backend:'openrouter'`
-- [ ] **LIB-05**: `meta.manifest` 只含规格块（不含帧清单）
-- [ ] **LIB-06**: `provenance.params` 含 `dirs/states/frames/cell/calls/cells/seconds`
+- [x] **LIB-01**: 新 kind `animations` 可保存/列出/读取/删除，面板按 kind 分组显示
+- [x] **LIB-02**: 保存一个集只发 `derived/` + `set.json` + `meta.json`；raw 永不入库（含载荷断言）
+- [x] **LIB-03**: provenance 的 `backend` 与实际服务方一致，且 `cost.source === backend`（或 `cost === null`）
+- [x] **LIB-04**: `ie library save` 不再硬编码 `backend:'openrouter'`
+- [x] **LIB-05**: `meta.manifest` 只含规格块（不含帧清单）
+- [x] **LIB-06**: `provenance.params` 含 `dirs/states/frames/cell/calls/cells/seconds`
 
 ### CLI — 命令行面
 
 - [x] **CLI-01**: `ie anim plan|run` 注册进命令表且有 `ie help anim`
 - [x] **CLI-02**: 输出为 `okEnvelope`（plan 数组 / run `{written, strips, setJson}`）
-- [ ] **CLI-03**: 入库复用 `ie library save`，不新增命令
+- [x] **CLI-03**: 入库复用 `ie library save`，不新增命令
 
 ### UI — 界面面
 
@@ -125,15 +125,15 @@
 | POST-03 | Phase 3 | Complete |
 | POST-04 | Phase 6 | Pending |
 | POST-05 | Phase 3 | Complete |
-| LIB-01 | Phase 5 | Pending |
-| LIB-02 | Phase 5 | Pending |
-| LIB-03 | Phase 5 | Pending |
-| LIB-04 | Phase 5 | Pending |
-| LIB-05 | Phase 5 | Pending |
-| LIB-06 | Phase 5 | Pending |
+| LIB-01 | Phase 5 | Complete |
+| LIB-02 | Phase 5 | Complete |
+| LIB-03 | Phase 5 | Complete |
+| LIB-04 | Phase 5 | Complete |
+| LIB-05 | Phase 5 | Complete |
+| LIB-06 | Phase 5 | Complete |
 | CLI-01 | Phase 4 | Complete |
 | CLI-02 | Phase 4 | Complete |
-| CLI-03 | Phase 5 | Pending |
+| CLI-03 | Phase 5 | Complete |
 | UI-01 | Phase 6 | Pending |
 | UI-02 | Phase 6 | Pending |
 | UI-03 | Phase 6 | Pending |
