@@ -38,6 +38,10 @@
 - 集资产在 `set.json` 之外是否需要一个精简的 `animations` 规格视图（例如面板显示用的 `states/frames/fps` 摘要），由你定；只要 `set.json` 仍是唯一真相、且新视图可由它机械导出。
 - 删除一个集资产时 `derived/` 下多文件与 `set.json` 的清理顺序由你定；`ie library delete` 的既有语义不变。
 
+### 位置与边界（研究阶段发现的硬约束，--auto 决定）
+- **D-50:** `set.json` 在**资产目录里**落在 `derived/set.json`，**不是**顶层。理由（实测）：`isValidRelPath`（`app/lib/libraryPath.ts:16`）的正则是 `/^(raw|derived)\/[a-z0-9][a-z0-9._-]{0,118}\.[a-z0-9]{1,8}$/`——顶层 `set.json` 会被**拒绝**，而 AGENTS.md 的库边界约束明确只接受 `raw/`、`derived/` 下的文件名。取"放进 `derived/`"而不是"给校验器开白名单"：改数据的位置是零代码，放宽边界是永久让步。`meta.json` 不走这条校验（由 `saveAsset` 自己写）。— **Reversibility:** costly —— 它是磁盘上的资产布局。
+- **D-51:** 上面两条 Discretion 里的第一个问题就此关闭：**不新增**精简的 `animations` 规格视图。面板要显示什么就从 `derived/set.json` 机械导出（它是唯一真相）；多存一份摘要就是第二个会漂的真相。第二个问题（删除顺序）仍留给实现者：一次 `rm -rf` 整个资产目录（`deleteAsset`，`library.ts:133-137`）的既有语义不变。
+- **D-52:** `cost` 的断言按**字符串**比较：`ReportedCost.source` 是 `string` 而不是 `BackendLabel`（`libraryTypes.ts:17`），所以 D-45 的"`cost.source === backend`"写成 `cost === null || cost.source === backend`，不要为了它去收紧 `ReportedCost.source` 的类型（那是第二个适配器才需要的收紧）。今天的真实参照物：`app/lib/generateCost.ts:12-18` 给 `source:'openrouter'`，`app/lib/imageGeneration.ts:137` 给 `'apimart'`，其余 `null`。
 </decisions>
 
 <canonical_refs>
