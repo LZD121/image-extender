@@ -1,4 +1,5 @@
-import { type AssetKind, type AssetMeta, type BackendLabel, type Provenance, type ReportedCost } from '@/app/lib/libraryTypes'
+import { type AssetKind, type AssetMeta, type BackendLabel, BACKEND_LABELS, isBackendLabel, type Provenance, type ReportedCost } from '@/app/lib/libraryTypes'
+import type { SetJson } from '@/app/lib/animSet'
 import { TILESET_BY_ROLE, type TileSetRole } from '@/app/lib/tileset'
 
 /**
@@ -236,4 +237,85 @@ export function buildAssetMeta(
     // the browser panel writes 'web', the headless CLI writes 'ie@<version>'.
     provenance: { ...collected.provenance, toolVersion: opts.toolVersion ?? 'web' },
   }
+}
+
+/**
+ * Assemble an animation set's payload from the run's own artefacts — a sibling
+ * of `collectStudioAsset` rather than another `mode` on it, because the input
+ * genuinely differs: a `set.json` is read off disk after a CLI run, not handed
+ * over by a browser studio's state (D-49).
+ *
+ * Pure on purpose. `app/lib/**` is bundled into the browser as well as the CLI
+ * (this module is imported by `app/page.tsx` and `LibraryPanel.tsx`), and
+ * `library.ts` is the only module here allowed to touch `node:fs` — so the
+ * caller does the reading and the encoding, and this function only decides the
+ * shape.
+ *
+ * `raw/` cannot appear by construction: the payload is the derived frames plus
+ * the ledger (D-42). The byte arithmetic that keeps that structural lives in the
+ * payload guard, not here.
+ */
+export function collectSetAsset(args: {
+  /** The parsed `set.json` — the run's ledger, and the only provenance source. */
+  setJson: SetJson
+  /** The same bytes, already encoded; the ledger is a derived artefact too (D-50). */
+  setJsonDataUrl: string
+  /** The run's `derived/*.png`, already encoded, with their bare file names. */
+  derived: { name: string; dataUrl: string }[]
+  project: string
+  slug: string
+}): { meta: AssetMeta; files: Record<string, string> } {
+  const { setJson } = args
+  // A backend the allow-list does not know must stop the save rather than ride
+  // into `meta.json` unchecked — that is the class of lie LIB-03 exists to end.
+  const provider = setJson.backend.provider
+  if (!isBackendLabel(provider)) {
+    throw new Error(
+      `set.json names backend "${provider}", which is not one of ${BACKEND_LABELS.join('|')}`
+    )
+  }
+
+  const files: Record<string, string> = {}
+  for (const frame of args.derived) files[`derived/${frame.name}`] = frame.dataUrl
+  files['derived/set.json'] = args.setJsonDataUrl
+
+  // The spec block only. The frame list already lives in `set.json`; a second
+  // copy here would be a second truth that drifts (D-46 / LIB-05).
+  const manifest = {
+    type: setJson.kind,
+    actor: setJson.actor,
+    dirs: setJson.dirs,
+    cell: setJson.cell,
+    // `SetJson.states` has no `motion` (animSet.ts:323) — copy the shape it has.
+    states: setJson.states.map((s) => ({
+      name: s.name,
+      frames: s.frames,
+      fps: s.fps,
+      durationsMs: s.durationsMs,
+      loop: s.loop,
+    })),
+  }
+
+  const provenance = buildProvenance({
+    backend: provider,
+    model: setJson.backend.model,
+    // The gateway has not reported a cost for these calls; `null` is the honest
+    // value, not a zero (D-45).
+    cost: null,
+    params: {
+      dirs: setJson.dirs.order.length,
+      states: setJson.states.length,
+      frames: setJson.states.reduce((sum, s) => sum + s.frames, 0),
+      cell: setJson.cell,
+      calls: setJson.totals.calls,
+      cells: setJson.totals.cells,
+      seconds: setJson.totals.seconds,
+    },
+  })
+
+  const meta = buildAssetMeta(
+    { kind: 'animations', files, manifest, provenance },
+    { project: args.project, slug: args.slug }
+  )
+  return { meta, files }
 }

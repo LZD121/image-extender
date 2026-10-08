@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildAssetMeta, collectStudioAsset, slugify } from '@/app/lib/libraryCollect'
+import { buildAssetMeta, collectSetAsset, collectStudioAsset, slugify } from '@/app/lib/libraryCollect'
+import type { SetJson } from '@/app/lib/animSet'
 import { ASSET_KINDS, isBackendLabel } from '@/app/lib/libraryTypes'
 
 const PNG = 'data:image/png;base64,AAAA'
@@ -253,5 +254,86 @@ describe('ASSET_KINDS includes animations (LIB-01)', () => {
 
   it('has exactly 6 kinds', () => {
     expect(ASSET_KINDS).toHaveLength(6)
+  })
+})
+
+// LIB-05 / LIB-06. The set payload is the derived frames plus the ledger, and its
+// provenance is read off that ledger — never from a CLI default.
+const SET_JSON: SetJson = {
+  schemaVersion: 1,
+  kind: 'animation-set',
+  actor: 'chaser',
+  dirs: {
+    preset: 'dirs8',
+    order: ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'],
+  },
+  cell: 512,
+  states: [{ name: 'idle', frames: 2, fps: 4, durationsMs: [250, 250], loop: true }],
+  strips: [],
+  frames: [],
+  backend: { provider: 'apimart', model: 'teamo-router/gemini-3.1-flash-image' },
+  totals: { calls: 1, cells: 8, seconds: 12.5 },
+}
+
+const SET_ARGS = {
+  setJson: SET_JSON,
+  setJsonDataUrl: 'data:application/json;base64,e30=',
+  derived: [
+    { name: 'idle_f1_east.png', dataUrl: PNG },
+    { name: 'idle_f1_south.png', dataUrl: PNG },
+  ],
+  project: 'dungeon',
+  slug: 'chaser-idle',
+}
+
+describe('collectSetAsset (the animations kind)', () => {
+  it('sends derived frames plus the ledger, and never a raw', () => {
+    const { files } = collectSetAsset(SET_ARGS)
+    expect(Object.keys(files).sort()).toEqual([
+      'derived/idle_f1_east.png',
+      'derived/idle_f1_south.png',
+      'derived/set.json',
+    ])
+    expect(Object.keys(files).every((f) => f.startsWith('derived/'))).toBe(true)
+    expect(Object.keys(files).some((f) => f.startsWith('raw/'))).toBe(false)
+    // `files.sheet` is derived from a `raw/` entry, so an animations asset has none.
+    expect(collectSetAsset(SET_ARGS).meta.files.sheet).toBe(null)
+  })
+
+  it('carries the spec block and no frame list (LIB-05)', () => {
+    const manifest = collectSetAsset(SET_ARGS).meta.manifest!
+    expect(manifest.type).toBe('animation-set')
+    expect(manifest.actor).toBe('chaser')
+    expect(manifest.cell).toBe(512)
+    expect(manifest.dirs).toEqual(SET_JSON.dirs)
+    expect(manifest).not.toHaveProperty('frames')
+    expect(manifest).not.toHaveProperty('strips')
+    // The state shape the ledger actually has — `motion` was never in `SetJson`.
+    expect(manifest.states).toEqual([{ name: 'idle', frames: 2, fps: 4, durationsMs: [250, 250], loop: true }])
+    expect((manifest.states as Record<string, unknown>[])[0]).not.toHaveProperty('motion')
+  })
+
+  it('reads backend, model and the totals off the ledger (LIB-03 / LIB-06)', () => {
+    const { meta } = collectSetAsset(SET_ARGS)
+    expect(meta.kind).toBe('animations')
+    expect(meta.provenance.backend).toBe('apimart')
+    expect(meta.provenance.model).toBe('teamo-router/gemini-3.1-flash-image')
+    expect(meta.provenance.params).toEqual({
+      dirs: 8,
+      states: 1,
+      frames: 2,
+      cell: 512,
+      calls: 1,
+      cells: 8,
+      seconds: 12.5,
+    })
+    // Unknown cost is `null`, never a zero dressed up as a measurement (D-45).
+    expect(meta.provenance.cost).toBe(null)
+  })
+
+  it('refuses a backend the allow-list does not know, instead of stamping it', () => {
+    expect(() =>
+      collectSetAsset({ ...SET_ARGS, setJson: { ...SET_JSON, backend: { provider: 'gpt-image-9', model: 'm' } } })
+    ).toThrow(/not one of/)
   })
 })
