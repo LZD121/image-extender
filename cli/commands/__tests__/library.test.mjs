@@ -66,6 +66,7 @@ describe('ie library', () => {
       sheet: PNG,
       derived: PNG,
       type: 'dungeon-set',
+      backend: 'openrouter',
     })
     expect(save.path).toBe('demo/tiles/smoke')
     expect(save.written.length).toBe(2)
@@ -93,9 +94,15 @@ describe('ie library', () => {
   })
 
   it('refuses to clobber an existing asset without --overwrite, and allows it with', async () => {
-    await run(['save', 'demo', 'tiles', 'smoke'], { sheet: PNG })
-    await expect(run(['save', 'demo', 'tiles', 'smoke'], { sheet: PNG })).rejects.toMatchObject({ code: 'EEXISTS' })
-    const again = await run(['save', 'demo', 'tiles', 'smoke'], { sheet: PNG, overwrite: true })
+    await run(['save', 'demo', 'tiles', 'smoke'], { sheet: PNG, backend: 'openrouter' })
+    await expect(
+      run(['save', 'demo', 'tiles', 'smoke'], { sheet: PNG, backend: 'openrouter' })
+    ).rejects.toMatchObject({ code: 'EEXISTS' })
+    const again = await run(['save', 'demo', 'tiles', 'smoke'], {
+      sheet: PNG,
+      backend: 'openrouter',
+      overwrite: true,
+    })
     expect(again.written.length).toBe(1)
   })
 
@@ -109,9 +116,23 @@ describe('ie library', () => {
 
   it('requires a file and an --out where they make no sense to omit', async () => {
     await expect(run(['save', 'demo', 'tiles', 'smoke'])).rejects.toMatchObject({ code: 'usage' })
-    await run(['save', 'demo', 'tiles', 'smoke'], { sheet: PNG })
+    await run(['save', 'demo', 'tiles', 'smoke'], { sheet: PNG, backend: 'openrouter' })
     await expect(run(['file', 'demo', 'tiles', 'smoke', 'raw/body.png'])).rejects.toMatchObject({ code: 'usage' })
   })
+  it('names the gateway instead of defaulting to one (LIB-04)', async () => {
+    // The flag used to fall back to `openrouter`, so an APIMart asset could be
+    // stamped with a gateway that never painted it. It is required now, and the
+    // label it carries is the label that reaches `meta.json`.
+    await expect(run(['save', 'demo', 'tiles', 'x'], { sheet: PNG })).rejects.toMatchObject({
+      code: 'missing_flag',
+    })
+    await expect(run(['save', 'demo', 'tiles', 'x'], { sheet: PNG, backend: 'nope' })).rejects.toMatchObject({
+      code: 'bad_backend',
+    })
+    const saved = await run(['save', 'demo', 'tiles', 'x'], { sheet: PNG, backend: 'apimart' })
+    expect(saved.meta.provenance.backend).toBe('apimart')
+  })
+
 
   it('rejects an unknown subcommand as a usage error', async () => {
     await expect(run(['frobnicate'])).rejects.toThrow(/unknown library subcommand/)

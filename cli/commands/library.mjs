@@ -26,7 +26,7 @@ const SUBCOMMAND_LINES = [
   '  save <project> animations <slug> --set-json <set.json> --derived-dir <dir/>   (no --sheet/--derived)',
 ]
 
-const USAGE = 'ie library <list|get|file|delete|save> [args] [flags]  (save: --sheet --derived --type --meta --backend <label>; animations: --set-json --derived-dir)'
+const USAGE = 'ie library <list|get|file|delete|save> [args] [flags]  (save needs --backend <label>; --sheet --derived --type --meta; animations: --set-json --derived-dir, backend read from set.json)'
 
 /**
  * Every app module the subcommands need, in one bundle. `libraryPath` is here
@@ -163,10 +163,15 @@ async function save(ctx, lib) {
   }
   for (const rel of Object.keys(files)) checkRel(ctx, lib, rel)
 
-  // `ie library save` imports files the operator already has, so the producer is
-  // what they say it is — checked against the app's own table instead of guessed.
-  // The default keeps the value every existing script already records.
-  const backendLabel = ctx.flags.backend ?? 'openrouter'
+  // LIB-04: there is no default producer. The flag used to fall back to
+  // `openrouter`, which is how an APIMart asset came to be stamped with a
+  // gateway that never painted it — the lie this phase exists to end. An
+  // animation set never reaches this line: it is dispatched to `saveSet` above
+  // and reads its backend off the ledger (D-43).
+  if (!ctx.flags.backend) {
+    ctx.fail('missing_flag', '--backend is required: name the gateway that painted this asset')
+  }
+  const backendLabel = ctx.flags.backend
   if (!lib.isBackendLabel(backendLabel)) {
     ctx.fail('bad_backend', `--backend must be one of ${lib.BACKEND_LABELS.join('|')}, got "${backendLabel}"`)
   }
